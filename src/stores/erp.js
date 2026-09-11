@@ -1,13 +1,15 @@
-import { approvalRows, nextOrderNumber, orderRows } from '@/data/erp';
+import { nextOrderNumber } from '@/data/erp';
+import { getErpRepository } from '@/repositories/erp';
 import { computed, ref } from 'vue';
 
-const cloneApprovals = () => approvalRows.map((approval) => ({ ...approval }));
-const approvals = ref(cloneApprovals());
-const cloneOrders = () => orderRows.map((order) => ({ ...order }));
-const orders = ref(cloneOrders());
+const cloneRows = (rows) => rows.map((row) => ({ ...row }));
+const initialRepository = getErpRepository();
+const approvals = ref(cloneRows(initialRepository.listApprovals()));
+const orders = ref(cloneRows(initialRepository.listOrders()));
 const genericRecords = ref({});
-let nextOrderId = Math.max(...orderRows.map((order) => order.id), 0) + 1;
-let issuedOrderNumbers = new Set(orderRows.map((order) => order.number));
+const getNextOrderId = (rows) => rows.reduce((highest, order) => (Number.isInteger(order.id) ? Math.max(highest, order.id) : highest), 0) + 1;
+let nextOrderId = getNextOrderId(orders.value);
+let issuedOrderNumbers = new Set(orders.value.map((order) => order.number));
 const isPendingApproval = (approval) => approval.status === '승인 대기' || approval.status === '검토 중';
 const pendingApprovals = computed(() => approvals.value.filter(isPendingApproval));
 const pendingApprovalCount = computed(() => pendingApprovals.value.length);
@@ -21,9 +23,9 @@ function updateApprovalStatus(id, status) {
 function addOrder(order) {
     const issuedOrders = [...issuedOrderNumbers].map((number) => ({ number }));
     const created = {
+        ...order,
         id: nextOrderId++,
-        number: nextOrderNumber(issuedOrders, order.orderDate),
-        ...order
+        number: nextOrderNumber(issuedOrders, order.orderDate)
     };
     issuedOrderNumbers.add(created.number);
     orders.value.unshift(created);
@@ -35,7 +37,13 @@ function deleteOrder(id) {
 }
 
 function getGenericRecords(path) {
-    return genericRecords.value[path] || [];
+    if (!Object.hasOwn(genericRecords.value, path)) {
+        genericRecords.value = {
+            ...genericRecords.value,
+            [path]: cloneRows(getErpRepository().listGenericRecords(path))
+        };
+    }
+    return genericRecords.value[path];
 }
 
 function addGenericRecord(path, record) {
@@ -46,11 +54,12 @@ function addGenericRecord(path, record) {
 }
 
 function resetDemoState() {
-    approvals.value = cloneApprovals();
-    orders.value = cloneOrders();
+    const repository = getErpRepository();
+    approvals.value = cloneRows(repository.listApprovals());
+    orders.value = cloneRows(repository.listOrders());
     genericRecords.value = {};
-    nextOrderId = Math.max(...orderRows.map((order) => order.id), 0) + 1;
-    issuedOrderNumbers = new Set(orderRows.map((order) => order.number));
+    nextOrderId = getNextOrderId(orders.value);
+    issuedOrderNumbers = new Set(orders.value.map((order) => order.number));
 }
 
 export function useErpStore() {
