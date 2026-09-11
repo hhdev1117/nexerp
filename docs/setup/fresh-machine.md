@@ -56,8 +56,8 @@ Before handoff, run:
 
 ```bash
 npm test -- --run
-npm run build
 npx eslint src worker docs --quiet
+npm run build
 npx wrangler deploy --dry-run
 npm audit --omit=dev
 git diff --check

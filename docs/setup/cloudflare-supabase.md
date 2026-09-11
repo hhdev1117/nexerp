@@ -29,18 +29,39 @@ npx supabase db push
 
 The migration creates `profiles`, the `admin`/`approver`/`user` role type, the signup trigger, explicit grants, and RLS policies. New accounts always begin with the `user` role.
 
-After the intended first administrator has created an account, replace the placeholder below with that account's exact, already-known email. Run the statement only through an authorized Supabase SQL Editor or other authorized database session. Confirm the selected identity before committing the transaction; never broaden the predicate or promote every profile.
+After the intended first administrator has created an account, replace the placeholder below with that account's exact, already-known email. Run this read-only preflight in an authorized Supabase SQL Editor and confirm that it returns exactly one active profile with the expected identity:
+
+```sql
+select id, email, role, is_active
+from public.profiles
+where email = 'FIRST_ADMIN_EMAIL@example.invalid';
+```
+
+Only after the preflight is correct, replace the same placeholder in the block below and submit the entire block as one SQL Editor execution. Do not run its statements separately. The update is restricted to an active profile with the exact email, and the transaction raises an exception instead of committing unless exactly one row is updated.
 
 ```sql
 begin;
 
-update public.profiles
-set role = 'admin'::public.app_role
-where email = 'FIRST_ADMIN_EMAIL@example.invalid'
-returning id, email, role;
+do $$
+declare
+    affected_rows integer;
+begin
+    update public.profiles
+    set role = 'admin'::public.app_role
+    where email = 'FIRST_ADMIN_EMAIL@example.invalid'
+      and is_active = true;
+
+    get diagnostics affected_rows = row_count;
+    if affected_rows <> 1 then
+        raise exception 'Expected exactly one active profile; updated % rows.', affected_rows;
+    end if;
+end
+$$;
+
+commit;
 ```
 
-Inspect the `returning` result before finishing the transaction. If it is exactly the intended account, issue `commit;` as a separate statement. Otherwise issue `rollback;`. Do not leave the transaction open.
+Re-run the read-only preflight and confirm that the one intended profile now has role `admin`. If the guarded transaction raises an exception, investigate the account identity or active state; do not loosen the email or active-account conditions.
 
 ## Local Development
 
@@ -90,6 +111,7 @@ npx wrangler secret put SUPABASE_PUBLISHABLE_KEY
 Validate the Worker bundle without deploying, then build and deploy:
 
 ```bash
+npm run build
 npx wrangler deploy --dry-run
 npm run deploy
 ```
@@ -108,8 +130,8 @@ Run the complete credential-free verification set before deployment or handoff:
 
 ```bash
 npm test -- --run
-npm run build
 npx eslint src worker docs --quiet
+npm run build
 npx wrangler deploy --dry-run
 npm audit --omit=dev
 git diff --check
