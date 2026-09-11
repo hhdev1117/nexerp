@@ -1,0 +1,235 @@
+import { computed, ref } from 'vue';
+import { getSupabaseClient } from '@/lib/supabase/client';
+import { readSupabaseConfig } from '@/lib/supabase/config';
+
+const PROFILE_FIELDS = 'id, email, display_name, department, role, is_active';
+const NOT_CONFIGURED_MESSAGE = 'Supabase 연결 정보가 설정되지 않았습니다.';
+const INACTIVE_PROFILE_MESSAGE = '비활성화된 계정입니다. 관리자에게 문의해 주세요.';
+const MISSING_PROFILE_MESSAGE = '계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.';
+
+const normalizedError = (source, fallback = '인증 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.') => {
+    const message = typeof source?.message === 'string' ? source.message.toLowerCase() : '';
+    const status = Number(source?.status);
+
+    if (status === 400 || status === 401 || message.includes('invalid login') || message.includes('invalid credentials')) {
+        return '이메일 또는 비밀번호가 올바르지 않습니다.';
+    }
+    if (message.includes('network') || message.includes('failed to fetch') || message.includes('fetch failed')) {
+        return '네트워크 연결을 확인한 후 다시 시도해 주세요.';
+    }
+    return fallback;
+};
+
+const rejection = (message) => {
+    const authError = new Error(message);
+    authError.name = 'AuthError';
+    return authError;
+};
+
+export function createAuthStore({ client, configured }) {
+    const session = ref(null);
+    const user = ref(null);
+    const profile = ref(null);
+    const loading = ref(false);
+    const initialized = ref(false);
+    const error = ref(null);
+    const isConfigured = Boolean(configured && client);
+    const configuredState = computed(() => isConfigured);
+    const role = computed(() => (profile.value?.is_active ? profile.value.role || null : null));
+
+    let initializePromise = null;
+    let subscription = null;
+    let identityVersion = 0;
+    let pendingOperations = 0;
+    let latestAuthUpdate = Promise.resolve();
+    let signOutInProgress = false;
+
+    const beginOperation = () => {
+        pendingOperations += 1;
+        loading.value = true;
+    };
+
+    const endOperation = () => {
+        pendingOperations = Math.max(0, pendingOperations - 1);
+        loading.value = pendingOperations > 0;
+    };
+
+    const clearIdentity = () => {
+        identityVersion += 1;
+        session.value = null;
+        user.value = null;
+        profile.value = null;
+        error.value = null;
+    };
+
+    const loadIdentity = async (nextSession) => {
+        const version = ++identityVersion;
+        const nextUser = nextSession?.user || null;
+        session.value = nextSession || null;
+        user.value = nextUser;
+        profile.value = null;
+        error.value = null;
+
+        if (!nextUser) return;
+
+        let result;
+        try {
+            result = await client.from('profiles').select(PROFILE_FIELDS).eq('id', nextUser.id).maybeSingle();
+        } catch (cause) {
+            result = { data: null, error: cause };
+        }
+
+        if (version !== identityVersion || user.value?.id !== nextUser.id) return;
+
+        if (result.error) {
+            error.value = normalizedError(result.error, MISSING_PROFILE_MESSAGE);
+            return;
+        }
+        if (!result.data) {
+            error.value = MISSING_PROFILE_MESSAGE;
+            return;
+        }
+
+        profile.value = result.data;
+        if (!result.data.is_active) error.value = INACTIVE_PROFILE_MESSAGE;
+    };
+
+    const subscribe = () => {
+        if (subscription || !isConfigured) return;
+
+        const result = client.auth.onAuthStateChange((_event, nextSession) => {
+            if (signOutInProgress && !nextSession) return;
+            latestAuthUpdate = loadIdentity(nextSession).catch(() => undefined);
+            return latestAuthUpdate;
+        });
+        subscription = result?.data?.subscription || null;
+    };
+
+    const initialize = () => {
+        if (initializePromise) return initializePromise;
+
+        initializePromise = (async () => {
+            beginOperation();
+            try {
+                if (!isConfigured) return;
+
+                const startingVersion = identityVersion;
+                subscribe();
+                let response;
+                try {
+                    response = await client.auth.getSession();
+                } catch (cause) {
+                    if (identityVersion === startingVersion) {
+                        error.value = normalizedError(cause, '로그인 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                    }
+                    return;
+                }
+                const { data, error: sessionError } = response;
+                if (sessionError) {
+                    if (identityVersion === startingVersion) {
+                        error.value = normalizedError(sessionError, '로그인 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                    }
+                    return;
+                }
+                if (identityVersion === startingVersion) await loadIdentity(data?.session || null);
+                else await latestAuthUpdate;
+            } finally {
+                initialized.value = true;
+                endOperation();
+            }
+        })();
+
+        return initializePromise;
+    };
+
+    const signIn = async (email, password) => {
+        if (!isConfigured) {
+            error.value = NOT_CONFIGURED_MESSAGE;
+            throw rejection(NOT_CONFIGURED_MESSAGE);
+        }
+
+        beginOperation();
+        error.value = null;
+        const startingVersion = identityVersion;
+        try {
+            let response;
+            try {
+                response = await client.auth.signInWithPassword({ email, password });
+            } catch (cause) {
+                const message = normalizedError(cause, '로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                error.value = message;
+                throw rejection(message);
+            }
+            const { data, error: signInError } = response;
+            if (signInError) {
+                const message = normalizedError(signInError, '로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                error.value = message;
+                throw rejection(message);
+            }
+
+            if (identityVersion === startingVersion) await loadIdentity(data?.session || null);
+            else await latestAuthUpdate;
+
+            return { session: session.value, user: user.value };
+        } finally {
+            endOperation();
+        }
+    };
+
+    const signOut = async () => {
+        if (!isConfigured) {
+            error.value = NOT_CONFIGURED_MESSAGE;
+            throw rejection(NOT_CONFIGURED_MESSAGE);
+        }
+
+        beginOperation();
+        signOutInProgress = true;
+        try {
+            let response;
+            try {
+                response = await client.auth.signOut();
+            } catch (cause) {
+                const message = normalizedError(cause, '로그아웃하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                error.value = message;
+                throw rejection(message);
+            }
+            const { error: signOutError } = response;
+            if (signOutError) {
+                const message = normalizedError(signOutError, '로그아웃하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                error.value = message;
+                throw rejection(message);
+            }
+            clearIdentity();
+        } finally {
+            signOutInProgress = false;
+            endOperation();
+        }
+    };
+
+    const hasRole = (roles) => Array.isArray(roles) && Boolean(profile.value?.is_active) && roles.includes(role.value);
+
+    return {
+        session,
+        user,
+        profile,
+        role,
+        loading,
+        initialized,
+        configured: configuredState,
+        error,
+        initialize,
+        signIn,
+        signOut,
+        hasRole
+    };
+}
+
+let browserStore;
+
+export function useAuthStore() {
+    if (!browserStore) {
+        const config = readSupabaseConfig(import.meta.env);
+        browserStore = createAuthStore({ client: getSupabaseClient(), configured: config.configured });
+    }
+    return browserStore;
+}
