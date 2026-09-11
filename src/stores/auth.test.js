@@ -298,6 +298,114 @@ describe('Supabase auth store', () => {
         expect(store.role.value).toBe('admin');
     });
 
+    it('waits for a newer auth profile when the initial profile resolves first', async () => {
+        const oldProfile = deferred();
+        const newProfileRequest = deferred();
+        const oldSession = { user: { id: 'old-user', email: 'old@nexerp.test' } };
+        const newSession = { user: { id: 'new-user', email: 'new@nexerp.test' } };
+        const newProfile = { ...approverProfile, id: 'new-user', email: 'new@nexerp.test', role: 'admin' };
+        const fixture = createClient({
+            session: oldSession,
+            profiles: {
+                'old-user': oldProfile.promise,
+                'new-user': newProfileRequest.promise
+            }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        let initialized = false;
+
+        const initialization = store.initialize().then(() => {
+            initialized = true;
+        });
+        await Promise.resolve();
+        const authUpdate = fixture.emit('SIGNED_IN', newSession);
+        oldProfile.resolve({ data: { ...approverProfile, id: 'old-user' }, error: null });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(initialized).toBe(false);
+        newProfileRequest.resolve({ data: newProfile, error: null });
+        await authUpdate;
+        await initialization;
+        expect(store.user.value).toEqual(newSession.user);
+        expect(store.profile.value).toEqual(newProfile);
+    });
+
+    it('waits for a newer auth profile before successful sign-in resolves', async () => {
+        const oldProfile = deferred();
+        const newProfileRequest = deferred();
+        const oldSession = { user: { id: 'old-user', email: 'old@nexerp.test' } };
+        const newSession = { user: { id: 'new-user', email: 'new@nexerp.test' } };
+        const newProfile = { ...approverProfile, id: 'new-user', email: 'new@nexerp.test', role: 'user' };
+        const fixture = createClient({
+            profiles: {
+                'old-user': oldProfile.promise,
+                'new-user': newProfileRequest.promise
+            },
+            signInResult: { data: { session: oldSession, user: oldSession.user }, error: null }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+        let signedIn = false;
+
+        const signingIn = store.signIn('old@nexerp.test', 'password').then(() => {
+            signedIn = true;
+        });
+        await Promise.resolve();
+        const authUpdate = fixture.emit('SIGNED_IN', newSession);
+        oldProfile.resolve({ data: { ...approverProfile, id: 'old-user' }, error: null });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(signedIn).toBe(false);
+        newProfileRequest.resolve({ data: newProfile, error: null });
+        await authUpdate;
+        await signingIn;
+        expect(store.user.value).toEqual(newSession.user);
+        expect(store.profile.value).toEqual(newProfile);
+    });
+
+    it('reconciles a buffered signed-out event after explicit sign-out fails', async () => {
+        const signOutRequest = deferred();
+        const session = { user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+        fixture.client.auth.signOut.mockReturnValueOnce(signOutRequest.promise);
+        fixture.client.auth.getSession.mockResolvedValueOnce({ data: { session: null }, error: null });
+
+        const signingOut = store.signOut();
+        await fixture.emit('SIGNED_OUT', null);
+        signOutRequest.resolve({ error: new Error('network failed') });
+        await expect(signingOut).rejects.toThrow('네트워크 연결을 확인한 후 다시 시도해 주세요.');
+
+        expect(fixture.client.auth.getSession).toHaveBeenCalledTimes(2);
+        expect(store.user.value).toBeNull();
+        expect(store.profile.value).toBeNull();
+    });
+
+    it('keeps the sign-out event guard active until overlapping operations settle', async () => {
+        const firstRequest = deferred();
+        const secondRequest = deferred();
+        const session = { user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+        fixture.client.auth.signOut.mockReturnValueOnce(firstRequest.promise).mockReturnValueOnce(secondRequest.promise);
+        fixture.client.auth.getSession.mockResolvedValueOnce({ data: { session }, error: null });
+
+        const firstSignOut = store.signOut();
+        const secondSignOut = store.signOut();
+        firstRequest.resolve({ error: new Error('network failed') });
+        await expect(firstSignOut).rejects.toThrow('네트워크 연결을 확인한 후 다시 시도해 주세요.');
+        await fixture.emit('SIGNED_OUT', null);
+
+        expect(store.user.value).toEqual(session.user);
+        secondRequest.resolve({ error: new Error('network failed') });
+        await expect(secondSignOut).rejects.toThrow('네트워크 연결을 확인한 후 다시 시도해 주세요.');
+        expect(fixture.client.auth.getSession).toHaveBeenCalledTimes(2);
+        expect(store.user.value).toEqual(session.user);
+        expect(store.profile.value).toEqual(approverProfile);
+    });
+
     it('ignores a stale profile response after a newer auth session arrives', async () => {
         const oldProfile = deferred();
         const oldSession = { user: { id: 'old-user', email: 'old@nexerp.test' } };

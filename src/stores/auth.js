@@ -42,7 +42,9 @@ export function createAuthStore({ client, configured }) {
     let identityVersion = 0;
     let pendingOperations = 0;
     let latestAuthUpdate = Promise.resolve();
-    let signOutInProgress = false;
+    let nextSignOutOperationId = 0;
+    const activeSignOutOperations = new Set();
+    let bufferedSignedOut = false;
 
     const beginOperation = () => {
         pendingOperations += 1;
@@ -94,15 +96,45 @@ export function createAuthStore({ client, configured }) {
         if (!result.data.is_active) error.value = INACTIVE_PROFILE_MESSAGE;
     };
 
+    const trackIdentity = (nextSession) => {
+        latestAuthUpdate = loadIdentity(nextSession).catch(() => undefined);
+        return latestAuthUpdate;
+    };
+
+    const awaitIdentitySettled = async () => {
+        let update;
+        let version;
+        do {
+            update = latestAuthUpdate;
+            version = identityVersion;
+            await update;
+        } while (update !== latestAuthUpdate || version !== identityVersion);
+    };
+
     const subscribe = () => {
         if (subscription || !isConfigured) return;
 
         const result = client.auth.onAuthStateChange((_event, nextSession) => {
-            if (signOutInProgress && !nextSession) return;
-            latestAuthUpdate = loadIdentity(nextSession).catch(() => undefined);
-            return latestAuthUpdate;
+            if (activeSignOutOperations.size > 0 && !nextSession) {
+                bufferedSignedOut = true;
+                return;
+            }
+            return trackIdentity(nextSession);
         });
         subscription = result?.data?.subscription || null;
+    };
+
+    const reconcileSession = async () => {
+        const startingVersion = identityVersion;
+        let response;
+        try {
+            response = await client.auth.getSession();
+        } catch {
+            return;
+        }
+        if (response?.error) return;
+        if (identityVersion === startingVersion) trackIdentity(response?.data?.session || null);
+        await awaitIdentitySettled();
     };
 
     const initialize = () => {
@@ -131,9 +163,9 @@ export function createAuthStore({ client, configured }) {
                     }
                     return;
                 }
-                if (identityVersion === startingVersion) await loadIdentity(data?.session || null);
-                else await latestAuthUpdate;
+                if (identityVersion === startingVersion) trackIdentity(data?.session || null);
             } finally {
+                await awaitIdentitySettled();
                 initialized.value = true;
                 endOperation();
             }
@@ -167,8 +199,8 @@ export function createAuthStore({ client, configured }) {
                 throw rejection(message);
             }
 
-            if (identityVersion === startingVersion) await loadIdentity(data?.session || null);
-            else await latestAuthUpdate;
+            if (identityVersion === startingVersion) trackIdentity(data?.session || null);
+            await awaitIdentitySettled();
 
             return { session: session.value, user: user.value };
         } finally {
@@ -183,25 +215,35 @@ export function createAuthStore({ client, configured }) {
         }
 
         beginOperation();
-        signOutInProgress = true;
+        const operationId = ++nextSignOutOperationId;
+        activeSignOutOperations.add(operationId);
+        let failureMessage = null;
         try {
             let response;
             try {
                 response = await client.auth.signOut();
             } catch (cause) {
                 const message = normalizedError(cause, '로그아웃하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                failureMessage = message;
                 error.value = message;
                 throw rejection(message);
             }
             const { error: signOutError } = response;
             if (signOutError) {
                 const message = normalizedError(signOutError, '로그아웃하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                failureMessage = message;
                 error.value = message;
                 throw rejection(message);
             }
+            bufferedSignedOut = false;
             clearIdentity();
         } finally {
-            signOutInProgress = false;
+            activeSignOutOperations.delete(operationId);
+            if (activeSignOutOperations.size === 0 && bufferedSignedOut) {
+                bufferedSignedOut = false;
+                await reconcileSession();
+                if (failureMessage && !error.value) error.value = failureMessage;
+            }
             endOperation();
         }
     };

@@ -12,6 +12,8 @@ const fieldErrors = ref({ email: '', password: '' });
 const submitError = ref('');
 const submitting = ref(false);
 const errorSummary = ref(null);
+const AUTH_FAILURE_MESSAGE = '로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+const NAVIGATION_FAILURE_MESSAGE = '화면을 이동하지 못했습니다. 다시 시도해 주세요.';
 
 const localRedirect = (value) => (typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/');
 
@@ -29,6 +31,11 @@ const focus = async (id) => {
     document.getElementById(id)?.focus();
 };
 
+const focusErrorSummary = async () => {
+    await nextTick();
+    errorSummary.value?.focus();
+};
+
 const submit = async () => {
     submitError.value = '';
     const errors = validate();
@@ -39,12 +46,20 @@ const submit = async () => {
 
     submitting.value = true;
     try {
-        await authStore.signIn(email.value.trim(), password.value);
-        await router.replace(localRedirect(route.query.redirect));
-    } catch (cause) {
-        submitError.value = cause instanceof Error ? cause.message : '로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.';
-        await nextTick();
-        errorSummary.value?.focus();
+        try {
+            await authStore.signIn(email.value.trim(), password.value);
+        } catch {
+            submitError.value = authStore.error.value || AUTH_FAILURE_MESSAGE;
+            await focusErrorSummary();
+            return;
+        }
+
+        try {
+            await router.replace(localRedirect(route.query.redirect));
+        } catch {
+            submitError.value = NAVIGATION_FAILURE_MESSAGE;
+            await focusErrorSummary();
+        }
     } finally {
         submitting.value = false;
     }

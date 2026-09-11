@@ -123,6 +123,7 @@ describe('login view', () => {
     });
 
     it('presents a sign-in error accessibly and focuses its summary', async () => {
+        authStore.error.value = '이메일 또는 비밀번호가 올바르지 않습니다.';
         authStore.signIn.mockRejectedValueOnce(new Error('이메일 또는 비밀번호가 올바르지 않습니다.'));
         const { wrapper } = await mountLogin();
         await wrapper.get('#email').setValue('user@nexerp.test');
@@ -134,6 +135,32 @@ describe('login view', () => {
         const summary = wrapper.get('[role="alert"]');
         expect(summary.text()).toContain('이메일 또는 비밀번호가 올바르지 않습니다.');
         expect(document.activeElement).toBe(summary.element);
+    });
+
+    it('does not render raw sign-in exception details', async () => {
+        authStore.signIn.mockRejectedValueOnce(new Error('sentinel-secret-auth-detail'));
+        const { wrapper } = await mountLogin();
+        await wrapper.get('#email').setValue('user@nexerp.test');
+        await wrapper.get('#password').setValue('password');
+
+        await wrapper.get('form').trigger('submit');
+        await flushPromises();
+
+        expect(wrapper.get('[role="alert"]').text()).toContain('로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        expect(wrapper.text()).not.toContain('sentinel-secret-auth-detail');
+    });
+
+    it('does not render raw router exception details after authentication', async () => {
+        const { wrapper, router } = await mountLogin();
+        vi.spyOn(router, 'replace').mockRejectedValueOnce(new Error('sentinel-secret-router-detail'));
+        await wrapper.get('#email').setValue('user@nexerp.test');
+        await wrapper.get('#password').setValue('password');
+
+        await wrapper.get('form').trigger('submit');
+        await flushPromises();
+
+        expect(wrapper.get('[role="alert"]').text()).toContain('화면을 이동하지 못했습니다. 다시 시도해 주세요.');
+        expect(wrapper.text()).not.toContain('sentinel-secret-router-detail');
     });
 
     it('uses email and current-password autocomplete without optional account links', async () => {
