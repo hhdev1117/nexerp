@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWorkerApp } from './app';
+import { jsonResponse } from './http';
 
 const activeProfile = {
     id: 'user-1',
@@ -27,6 +28,32 @@ const createSupabaseFixture = ({ user = { id: 'user-1', email: 'login@example.co
 };
 
 describe('Cloudflare Worker app', () => {
+    it.each([
+        ['plain object', { 'cache-control': 'public, max-age=3600', 'x-request-id': 'object-header' }, 'object-header'],
+        ['Headers instance', new Headers({ 'cache-control': 'public, max-age=3600', 'x-request-id': 'headers-instance' }), 'headers-instance'],
+        [
+            'iterable',
+            [
+                ['cache-control', 'public, max-age=3600'],
+                ['x-request-id', 'iterable-header']
+            ],
+            'iterable-header'
+        ]
+    ])('normalizes %s response headers without dropping caller values', async (_label, headers, expectedRequestId) => {
+        const response = jsonResponse(
+            { ok: true },
+            {
+                status: 202,
+                headers
+            }
+        );
+
+        expect(response.status).toBe(202);
+        expect(response.headers.get('cache-control')).toBe('no-store');
+        expect(response.headers.get('x-request-id')).toBe(expectedRequestId);
+        expect(await response.json()).toEqual({ ok: true });
+    });
+
     it('requires authorization for the current-user endpoint', async () => {
         const app = createWorkerApp();
         const response = await app.fetch(new Request('https://erp.test/api/me'), {});

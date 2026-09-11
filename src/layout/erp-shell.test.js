@@ -178,6 +178,23 @@ describe('ERP application shell', () => {
         expect(wrapper.get('[aria-controls="profile-actions-menu"]').attributes('aria-label')).toContain('user@nexerp.test');
     });
 
+    it('keeps long profile text constrained while exposing each full value', async () => {
+        const source = readLayoutSource('AppTopbar.vue');
+        const longName = 'Very Long Database Profile Name That Must Not Expand The Topbar';
+        const longDepartment = 'International Enterprise Operations And Strategic Planning Department';
+        authStore.profile.value = { display_name: longName, department: longDepartment, role: 'user', is_active: true };
+        const { wrapper } = await mountTopbar();
+
+        expect(source).toMatch(/\.erp-user-copy\s*\{[^}]*min-width:\s*0;[^}]*max-width:/s);
+        expect(source).toMatch(/\.erp-user-copy strong,\s*\.erp-user-copy small\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
+        expect(source).toMatch(/@media \(max-width:\s*520px\)[\s\S]*\.erp-user-copy\s*\{[^}]*max-width:/);
+        expect(wrapper.get('.erp-user-copy strong').text()).toBe(longName);
+        expect(wrapper.get('.erp-user-copy strong').attributes('title')).toBe(longName);
+        expect(wrapper.get('.erp-user-copy small').text()).toBe(longDepartment);
+        expect(wrapper.get('.erp-user-copy small').attributes('title')).toBe(longDepartment);
+        expect(wrapper.get('[aria-controls="profile-actions-menu"]').attributes('aria-label')).toContain(`${longName} · ${longDepartment}`);
+    });
+
     it('falls back to generic Korean identity labels when profile and email are empty', async () => {
         authStore.user.value = { id: 'user-1', email: '  ' };
         authStore.profile.value = null;

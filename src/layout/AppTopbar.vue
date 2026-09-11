@@ -266,8 +266,8 @@ const profileItems = computed(() => [
                         >
                             <span class="erp-user-avatar" aria-hidden="true">{{ avatar }}</span>
                             <span class="erp-user-copy">
-                                <strong>{{ displayName }}</strong>
-                                <small>{{ department }}</small>
+                                <strong :title="displayName">{{ displayName }}</strong>
+                                <small :title="department">{{ department }}</small>
                             </span>
                             <i class="pi pi-angle-down erp-user-chevron" aria-hidden="true"></i>
                         </button>
@@ -344,6 +344,8 @@ const profileItems = computed(() => [
 .layout-topbar .erp-user-action {
     width: auto;
     min-width: 8.75rem;
+    max-width: min(15rem, 32vw);
+    overflow: hidden;
     padding: 0.25rem 0.55rem 0.25rem 0.3rem;
     gap: 0.5rem;
     border-radius: var(--content-border-radius);
@@ -365,7 +367,18 @@ const profileItems = computed(() => [
 
 .erp-user-copy {
     display: flex !important;
-    min-width: 4.9rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: min(11rem, 24vw);
+}
+
+.erp-user-copy strong,
+.erp-user-copy small {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .erp-user-copy strong {
@@ -390,11 +403,14 @@ const profileItems = computed(() => [
     }
 
     .layout-topbar .erp-user-action {
+        width: 100%;
         min-width: 0;
+        max-width: 100%;
     }
 
     .erp-user-copy {
         display: flex !important;
+        max-width: min(11rem, calc(100vw - 9rem));
     }
 
     .erp-notification-badge {
@@ -411,6 +427,10 @@ const profileItems = computed(() => [
 
     .erp-brand-copy strong {
         font-size: 1rem;
+    }
+
+    .erp-user-copy {
+        max-width: min(9rem, 42vw);
     }
 }
 </style>
