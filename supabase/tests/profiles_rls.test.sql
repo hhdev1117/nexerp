@@ -12,11 +12,8 @@ values
     ('10000000-0000-0000-0000-000000000002', 'user-two@example.test', '{}'::jsonb),
     ('10000000-0000-0000-0000-000000000003', 'admin@example.test', '{}'::jsonb);
 
-select hasnt_table_privilege(
-    'anon',
-    'public',
-    'profiles',
-    'select',
+select ok(
+    not pg_catalog.has_table_privilege('anon', 'public.profiles', 'SELECT'),
     'anonymous clients have no select grant on profiles'
 );
 
