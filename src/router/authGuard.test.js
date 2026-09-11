@@ -48,6 +48,36 @@ describe('authentication route guard', () => {
         await expect(guard(route({ name: 'login', fullPath: '/auth/login', meta: { public: true, guestOnly: true } }))).resolves.toBe('/');
     });
 
+    it.each([
+        ['missing', null],
+        ['inactive', { role: 'user', is_active: false }]
+    ])('allows an authenticated user with a %s profile to stay on a guest-only route', async (_state, profile) => {
+        const guard = createAuthGuard(makeStore({ user: { id: 'user-1' }, profile }));
+
+        await expect(guard(route({ name: 'login', fullPath: '/auth/login', meta: { public: true, guestOnly: true } }))).resolves.toBe(true);
+    });
+
+    it('denies a user with a missing profile access to a role-less ERP route', async () => {
+        const guard = createAuthGuard(makeStore({ user: { id: 'user-1' }, profile: null }));
+
+        await expect(guard(route({ name: 'sales-orders', fullPath: '/sales/orders' }))).resolves.toEqual({ name: 'access-denied' });
+    });
+
+    it('denies a user with an inactive profile access to a role-less ERP route', async () => {
+        const guard = createAuthGuard(makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: false } }));
+
+        await expect(guard(route({ name: 'sales-orders', fullPath: '/sales/orders' }))).resolves.toEqual({ name: 'access-denied' });
+    });
+
+    it.each([
+        ['missing', null],
+        ['inactive', { role: 'user', is_active: false }]
+    ])('allows an authenticated user with a %s profile to visit access denied', async (_state, profile) => {
+        const guard = createAuthGuard(makeStore({ user: { id: 'user-1' }, profile }));
+
+        await expect(guard(route({ name: 'access-denied', fullPath: '/auth/access-denied' }))).resolves.toBe(true);
+    });
+
     it('denies an ordinary user access to approvals', async () => {
         const store = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true } });
         const guard = createAuthGuard(store);

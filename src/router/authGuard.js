@@ -15,6 +15,8 @@ export const createAuthGuard = (authStore) => async (to) => {
     if (to.meta.guestOnly && active) return '/';
     if (to.meta.public) return true;
     if (!authenticated) return { name: 'login', query: { redirect: to.fullPath } };
+    if (to.name === 'access-denied') return true;
+    if (!active) return { name: 'access-denied' };
     if (to.meta.roles && !authStore.hasRole(to.meta.roles)) return { name: 'access-denied' };
 
     return true;
