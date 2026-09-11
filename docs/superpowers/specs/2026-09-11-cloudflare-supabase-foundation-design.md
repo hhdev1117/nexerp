@@ -94,6 +94,12 @@ Committed examples describe, but do not contain, credentials:
 
 Development commands will cover the normal Vite UI loop and a Wrangler-integrated full-stack loop. Deployment uses a production build followed by Wrangler deploy.
 
+## Source Control and Handoff
+
+`https://github.com/hhdev1117/nxe-erd.git` is the canonical remote repository. The default branch is `main`. Each completed implementation stage is committed and pushed after its tests pass so another computer can continue from a clean pull. Secrets, local environment files, build output, dependency directories, and temporary clone artifacts are never committed.
+
+The README documents fresh-machine setup, required tool versions, environment-file creation, Supabase migration commands, local Worker development, verification, and deployment. Work is considered synchronized only after the corresponding commit exists on `origin/main`; uncommitted local state is not treated as a handoff point.
+
 ## Error Handling
 
 - Frontend authentication operations normalize Supabase errors into Korean user-facing messages.
