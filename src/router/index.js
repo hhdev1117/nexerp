@@ -1,6 +1,8 @@
 import { erpMenu, flattenMenuRoutes } from '@/data/erp';
 import AppLayout from '@/layout/AppLayout.vue';
+import { useAuthStore } from '@/stores/auth';
 import { createRouter, createWebHistory } from 'vue-router';
+import { createAuthGuard } from './authGuard';
 
 const dedicatedViews = {
     '/': () => import('@/views/Dashboard.vue'),
@@ -19,7 +21,9 @@ const erpRoutes = flattenMenuRoutes(erpMenu).map((item) => ({
     meta: {
         title: item.label,
         description: item.description,
-        icon: item.icon
+        icon: item.icon,
+        ...(item.to === '/approvals' ? { roles: ['admin', 'approver'] } : {}),
+        ...(item.to === '/settings/access' ? { roles: ['admin'] } : {})
     }
 }));
 
@@ -27,6 +31,24 @@ const router = createRouter({
     history: createWebHistory(),
     scrollBehavior: () => ({ top: 0 }),
     routes: [
+        {
+            path: '/auth/login',
+            name: 'login',
+            component: () => import('@/views/auth/LoginView.vue'),
+            meta: { title: '로그인', public: true, guestOnly: true }
+        },
+        {
+            path: '/auth/setup',
+            name: 'setup-required',
+            component: () => import('@/views/auth/SetupRequiredView.vue'),
+            meta: { title: '연결 설정', public: true }
+        },
+        {
+            path: '/auth/access-denied',
+            name: 'access-denied',
+            component: () => import('@/views/auth/AccessDeniedView.vue'),
+            meta: { title: '접근 권한 없음' }
+        },
         {
             path: '/',
             component: AppLayout,
@@ -39,6 +61,8 @@ const router = createRouter({
         }
     ]
 });
+
+router.beforeEach(createAuthGuard(useAuthStore()));
 
 router.afterEach((to) => {
     document.title = to.meta.title ? `${to.meta.title} | Sakai ERP` : 'Sakai ERP';

@@ -1,6 +1,7 @@
 <script setup>
 import { useLayout } from '@/layout/composables/layout';
 import { useErpStore } from '@/stores/erp';
+import { useAuthStore } from '@/stores/auth';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
@@ -9,6 +10,7 @@ import AppConfigurator from './AppConfigurator.vue';
 const { layoutConfig, layoutState, toggleMenu, toggleDarkMode, isDarkTheme, isDesktop } = useLayout();
 const router = useRouter();
 const toast = useToast();
+const authStore = useAuthStore();
 const { pendingApprovals, pendingApprovalCount } = useErpStore();
 const isMobileViewport = ref(!isDesktop());
 const mobileActionsOpen = ref(false);
@@ -16,6 +18,7 @@ const configOpen = ref(false);
 const quickMenuOpen = ref(false);
 const notificationMenuOpen = ref(false);
 const profileMenuOpen = ref(false);
+const signingOut = ref(false);
 const configRegion = ref();
 const configButton = ref();
 const topbarActions = ref();
@@ -29,6 +32,12 @@ const isMenuOpen = computed(() => {
 const menuToggleLabel = computed(() => (isMenuOpen.value ? '메뉴 닫기' : '메뉴 열기'));
 const mobileActionsLabel = computed(() => (mobileActionsOpen.value ? '업무 메뉴 닫기' : '업무 메뉴 열기'));
 const configLabel = computed(() => (configOpen.value ? '테마 설정 닫기' : '테마 설정 열기'));
+const roleLabels = { admin: '관리자', approver: '결재자', user: '사용자' };
+const displayName = computed(() => authStore.profile.value?.display_name?.trim() || authStore.user.value?.email?.trim() || '계정');
+const department = computed(() => authStore.profile.value?.department?.trim() || roleLabels[authStore.profile.value?.role] || '사용자');
+const avatar = computed(() => [...displayName.value][0]?.toUpperCase() || '계');
+const profileMenuLabel = computed(() => `${displayName.value} · ${department.value} 계정 메뉴${signingOut.value ? ' 로그아웃 처리 중' : ''}`);
+const profileMenuButtonLabel = computed(() => `${profileMenuLabel.value} ${profileMenuOpen.value ? '닫기' : '열기'}`);
 
 const updateViewportState = () => {
     isMobileViewport.value = !isDesktop();
@@ -93,6 +102,26 @@ const navigate = (to) => {
     router.push(to);
 };
 const showMessage = (summary, detail) => toast.add({ severity: 'info', summary, detail, life: 2600 });
+const signOut = async () => {
+    if (signingOut.value) return;
+
+    signingOut.value = true;
+    try {
+        await authStore.signOut();
+    } catch {
+        toast.add({ severity: 'error', summary: '로그아웃 실패', detail: '로그아웃하지 못했습니다. 잠시 후 다시 시도해 주세요.', life: 3200 });
+        signingOut.value = false;
+        return;
+    }
+
+    try {
+        await router.replace({ name: 'login' });
+    } catch {
+        toast.add({ severity: 'error', summary: '화면 이동 실패', detail: '로그인 화면으로 이동하지 못했습니다. 다시 시도해 주세요.', life: 3200 });
+    } finally {
+        signingOut.value = false;
+    }
+};
 
 const notificationItems = computed(() => [
     {
@@ -122,17 +151,17 @@ const quickItems = ref([
     }
 ]);
 
-const profileItems = ref([
+const profileItems = computed(() => [
     {
-        label: '김서준 · 영업관리팀',
+        label: `${displayName.value} · ${department.value}`,
         items: [
-            { label: '내 프로필', icon: 'pi pi-user', command: () => showMessage('내 프로필', '프로필 데모 메뉴를 선택했습니다.') },
+            { label: '내 프로필', icon: 'pi pi-user', command: () => showMessage('내 프로필', '프로필 기능은 준비 중입니다.') },
             { label: '회사 · 사업장 설정', icon: 'pi pi-building', command: () => navigate('/settings/company') },
-            { label: '사용자 · 권한', icon: 'pi pi-shield', command: () => navigate('/settings/access') }
+            ...(authStore.hasRole(['admin']) ? [{ label: '사용자 · 권한', icon: 'pi pi-shield', command: () => navigate('/settings/access') }] : [])
         ]
     },
     { separator: true },
-    { label: '로그아웃', icon: 'pi pi-sign-out', command: () => showMessage('로그아웃', '데모 화면에서는 로그인 상태가 유지됩니다.') }
+    { label: signingOut.value ? '로그아웃 중' : '로그아웃', icon: 'pi pi-sign-out', disabled: signingOut.value, command: signOut }
 ]);
 </script>
 
@@ -228,21 +257,21 @@ const profileItems = ref([
                         <button
                             type="button"
                             class="layout-topbar-action erp-user-action"
-                            :title="profileMenuOpen ? '사용자 메뉴 닫기' : '사용자 메뉴 열기'"
-                            :aria-label="profileMenuOpen ? '사용자 메뉴 닫기' : '사용자 메뉴 열기'"
+                            :title="profileMenuButtonLabel"
+                            :aria-label="profileMenuButtonLabel"
                             aria-haspopup="menu"
                             :aria-expanded="profileMenuOpen"
                             aria-controls="profile-actions-menu"
                             @click="openProfileMenu"
                         >
-                            <span class="erp-user-avatar" aria-hidden="true">김</span>
+                            <span class="erp-user-avatar" aria-hidden="true">{{ avatar }}</span>
                             <span class="erp-user-copy">
-                                <strong>김서준</strong>
-                                <small>영업관리팀</small>
+                                <strong>{{ displayName }}</strong>
+                                <small>{{ department }}</small>
                             </span>
                             <i class="pi pi-angle-down erp-user-chevron" aria-hidden="true"></i>
                         </button>
-                        <Menu id="profile-actions-menu" ref="profileMenu" :model="profileItems" :popup="true" @show="profileMenuOpen = true" @hide="profileMenuOpen = false" />
+                        <Menu id="profile-actions-menu" ref="profileMenu" :model="profileItems" :popup="true" :aria-label="profileMenuLabel" @show="profileMenuOpen = true" @hide="profileMenuOpen = false" />
                     </div>
                 </div>
             </Transition>

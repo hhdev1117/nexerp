@@ -1,8 +1,77 @@
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { resolve } from 'node:path';
+// @vitest-environment jsdom
 
-const readLayoutSource = (name) => readFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), 'utf8');
+import { flushPromises, mount } from '@vue/test-utils';
+import PrimeVue from 'primevue/config';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTick, ref } from 'vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
+import AppTopbar from './AppTopbar.vue';
+
+const toastAdd = vi.hoisted(() => vi.fn());
+const authStore = {
+    user: ref({ id: 'user-1', email: 'user@nexerp.test' }),
+    profile: ref({ display_name: '박지민', department: '재무팀', role: 'user', is_active: true }),
+    hasRole: vi.fn((roles) => roles.includes(authStore.profile.value?.role)),
+    signOut: vi.fn()
+};
+
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => authStore }));
+vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: toastAdd }) }));
+
+const readSource = (...segments) => readFileSync(resolve(process.cwd(), ...segments), 'utf8');
+const readLayoutSource = (name) => readSource('src', 'layout', name);
+const wrappers = [];
+
+const deferred = () => {
+    let resolve;
+    let reject;
+    const promise = new Promise((onResolve, onReject) => {
+        resolve = onResolve;
+        reject = onReject;
+    });
+    return { promise, resolve, reject };
+};
+
+const mountTopbar = async (path = '/') => {
+    const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [
+            { path: '/', name: 'dashboard', component: { template: '<main />' } },
+            { path: '/auth/login', name: 'login', component: { template: '<main />' } },
+            { path: '/settings/company', component: { template: '<main />' } },
+            { path: '/settings/access', component: { template: '<main />' } }
+        ]
+    });
+    await router.push(path);
+    await router.isReady();
+    const wrapper = mount(AppTopbar, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
+    wrappers.push(wrapper);
+    return { wrapper, router };
+};
+
+const openProfileMenu = async (wrapper) => {
+    await wrapper.get('[aria-controls="profile-actions-menu"]').trigger('click');
+    await flushPromises();
+};
+
+beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+    });
+    authStore.user.value = { id: 'user-1', email: 'user@nexerp.test' };
+    authStore.profile.value = { display_name: '박지민', department: '재무팀', role: 'user', is_active: true };
+    authStore.hasRole.mockClear();
+    authStore.signOut.mockReset().mockResolvedValue(undefined);
+    toastAdd.mockReset();
+});
+
+afterEach(() => {
+    while (wrappers.length) wrappers.pop().unmount();
+    document.body.innerHTML = '';
+});
 
 describe('ERP application shell', () => {
     it('renders the shared ERP navigation model through the animated Sakai menu item', () => {
@@ -92,6 +161,89 @@ describe('ERP application shell', () => {
         expect(source).not.toContain('var(--primary-50)');
     });
 
+    it('renders reactive authenticated identity values and matching accessible names', async () => {
+        const { wrapper } = await mountTopbar();
+
+        expect(wrapper.get('.erp-user-avatar').text()).toBe('박');
+        expect(wrapper.get('.erp-user-copy strong').text()).toBe('박지민');
+        expect(wrapper.get('.erp-user-copy small').text()).toBe('재무팀');
+        expect(wrapper.get('[aria-controls="profile-actions-menu"]').attributes('aria-label')).toContain('박지민');
+
+        authStore.profile.value = { display_name: '  ', department: '', role: 'approver', is_active: true };
+        await nextTick();
+
+        expect(wrapper.get('.erp-user-avatar').text()).toBe('U');
+        expect(wrapper.get('.erp-user-copy strong').text()).toBe('user@nexerp.test');
+        expect(wrapper.get('.erp-user-copy small').text()).toBe('결재자');
+        expect(wrapper.get('[aria-controls="profile-actions-menu"]').attributes('aria-label')).toContain('user@nexerp.test');
+    });
+
+    it('falls back to generic Korean identity labels when profile and email are empty', async () => {
+        authStore.user.value = { id: 'user-1', email: '  ' };
+        authStore.profile.value = null;
+        const { wrapper } = await mountTopbar();
+
+        expect(wrapper.get('.erp-user-avatar').text()).toBe('계');
+        expect(wrapper.get('.erp-user-copy strong').text()).toBe('계정');
+        expect(wrapper.get('.erp-user-copy small').text()).toBe('사용자');
+        await openProfileMenu(wrapper);
+        expect(document.body.textContent).toContain('계정 · 사용자');
+    });
+
+    it('shows access administration only to administrators', async () => {
+        const { wrapper } = await mountTopbar();
+
+        await openProfileMenu(wrapper);
+        expect(document.body.textContent).not.toContain('사용자 · 권한');
+
+        authStore.profile.value = { display_name: '관리자', department: '', role: 'admin', is_active: true };
+        await nextTick();
+        expect(document.body.textContent).toContain('사용자 · 권한');
+    });
+
+    it('signs out once and replaces the current route with login', async () => {
+        const pending = deferred();
+        authStore.signOut.mockReturnValueOnce(pending.promise);
+        const { wrapper, router } = await mountTopbar('/settings/company');
+        const replace = vi.spyOn(router, 'replace');
+        await openProfileMenu(wrapper);
+        const logout = [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent.includes('로그아웃'));
+        const logoutCommand = logout.querySelector('a, button');
+
+        logoutCommand.click();
+        logoutCommand.click();
+        await nextTick();
+
+        expect(authStore.signOut).toHaveBeenCalledOnce();
+        expect(wrapper.get('[aria-controls="profile-actions-menu"]').attributes('aria-label')).toContain('로그아웃 처리 중');
+
+        pending.resolve();
+        await flushPromises();
+        expect(replace).toHaveBeenCalledWith({ name: 'login' });
+    });
+
+    it('stays on the current route and shows a normalized toast when sign-out fails', async () => {
+        authStore.signOut.mockRejectedValueOnce(new Error('sentinel-secret-signout-detail'));
+        const { wrapper, router } = await mountTopbar('/settings/company');
+        const replace = vi.spyOn(router, 'replace');
+        await openProfileMenu(wrapper);
+        const logout = [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent.includes('로그아웃'));
+        const logoutCommand = logout.querySelector('a, button');
+
+        logoutCommand.click();
+        await flushPromises();
+
+        expect(router.currentRoute.value.path).toBe('/settings/company');
+        expect(replace).not.toHaveBeenCalled();
+        expect(toastAdd).toHaveBeenCalledWith({
+            severity: 'error',
+            summary: '로그아웃 실패',
+            detail: '로그아웃하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+            life: 3200
+        });
+        expect(JSON.stringify(toastAdd.mock.calls)).not.toContain('sentinel-secret-signout-detail');
+    });
+
     it('brands the footer for the ERP demo', () => {
         const source = readLayoutSource('AppFooter.vue');
 
@@ -100,9 +252,9 @@ describe('ERP application shell', () => {
     });
 
     it('uses an accessible primary tone and Korean PrimeVue labels', () => {
-        const mainSource = readFileSync(fileURLToPath(new URL('../main.js', import.meta.url)), 'utf8');
+        const mainSource = readSource('src', 'main.js');
         const configuratorSource = readLayoutSource('AppConfigurator.vue');
-        const themeSource = readFileSync(fileURLToPath(new URL('../theme/erpTheme.js', import.meta.url)), 'utf8');
+        const themeSource = readSource('src', 'theme', 'erpTheme.js');
 
         expect(mainSource).toContain('erpThemePreset');
         expect(mainSource).toContain('koPrimeVueLocale');
