@@ -50,7 +50,10 @@ describe('Cloudflare Worker app', () => {
     });
 
     it('rejects an invalid session with a stable error', async () => {
-        const fixture = createSupabaseFixture({ user: null, authError: new Error('raw rejected token detail') });
+        const fixture = createSupabaseFixture({
+            user: null,
+            authError: { name: 'AuthApiError', status: 401, code: 'bad_jwt', message: 'raw rejected token detail' }
+        });
         const app = createWorkerApp({ createSupabaseClient: () => fixture.client });
         const response = await app.fetch(new Request('https://erp.test/api/me', { headers: { Authorization: 'Bearer rejected-token' } }), {});
         const body = await response.json();
@@ -59,6 +62,22 @@ describe('Cloudflare Worker app', () => {
         expect(body).toEqual({ error: { code: 'invalid_session', message: '유효하지 않은 로그인 세션입니다.' } });
         expect(JSON.stringify(body)).not.toContain('raw rejected token detail');
         expect(JSON.stringify(body)).not.toContain('rejected-token');
+    });
+
+    it.each([
+        ['retryable network error', { name: 'AuthRetryableFetchError', status: 0, code: undefined, message: 'raw retryable network detail' }, 'raw retryable network detail'],
+        ['HTTP 503 error', { name: 'AuthApiError', status: 503, code: 'unexpected_failure', message: 'raw 503 detail' }, 'raw 503 detail'],
+        ['rate limit error', { name: 'AuthApiError', status: 429, code: 'over_request_rate_limit', message: 'raw 429 detail' }, 'raw 429 detail']
+    ])('returns a stable upstream error for a returned %s', async (_label, authError, rawDetail) => {
+        const fixture = createSupabaseFixture({ user: null, authError });
+        const app = createWorkerApp({ createSupabaseClient: () => fixture.client });
+        const response = await app.fetch(new Request('https://erp.test/api/me', { headers: { Authorization: 'Bearer session-token' } }), {});
+        const body = await response.json();
+
+        expect(response.status).toBe(502);
+        expect(body).toEqual({ error: { code: 'upstream_error', message: '인증 서비스를 사용할 수 없습니다.' } });
+        expect(JSON.stringify(body)).not.toContain(rawDetail);
+        expect(fixture.from).not.toHaveBeenCalled();
     });
 
     it('returns a stable upstream error when authentication throws', async () => {

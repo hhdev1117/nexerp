@@ -3,6 +3,13 @@ import { getBearerToken } from './auth';
 import { createUserSupabaseClient } from './supabase';
 
 const apiError = (status, code, message) => jsonResponse({ error: { code, message } }, { status });
+const upstreamAuthErrorNames = new Set(['AuthRetryableFetchError', 'AuthUnknownError']);
+const upstreamAuthErrorCodes = new Set(['unexpected_failure', 'request_timeout', 'hook_timeout', 'hook_timeout_after_retry', 'over_request_rate_limit']);
+
+function isUpstreamAuthError(error) {
+    const status = error?.status;
+    return upstreamAuthErrorNames.has(error?.name) || upstreamAuthErrorCodes.has(error?.code) || status === 429 || (status >= 500 && status <= 599);
+}
 
 async function getCurrentUser(request, env, createSupabaseClient) {
     const token = getBearerToken(request);
@@ -26,7 +33,13 @@ async function getCurrentUser(request, env, createSupabaseClient) {
     }
 
     const user = authResult?.data?.user;
-    if (authResult?.error || !user) {
+    if (authResult?.error) {
+        if (isUpstreamAuthError(authResult.error)) {
+            return apiError(502, 'upstream_error', '인증 서비스를 사용할 수 없습니다.');
+        }
+        return apiError(401, 'invalid_session', '유효하지 않은 로그인 세션입니다.');
+    }
+    if (!user) {
         return apiError(401, 'invalid_session', '유효하지 않은 로그인 세션입니다.');
     }
 
