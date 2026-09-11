@@ -1,6 +1,52 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
+import { createAuthStore } from '@/stores/auth';
 import { createAuthGuard } from './authGuard';
+
+const deferred = () => {
+    let resolve;
+    const promise = new Promise((done) => {
+        resolve = done;
+    });
+    return { promise, resolve };
+};
+
+const createActualStoreFixture = ({ session, profileResults }) => {
+    let authListener;
+    let profileRequestIndex = 0;
+    const client = {
+        auth: {
+            getSession: vi.fn().mockResolvedValue({ data: { session }, error: null }),
+            onAuthStateChange: vi.fn((listener) => {
+                authListener = listener;
+                return { data: { subscription: { unsubscribe: vi.fn() } } };
+            }),
+            signInWithPassword: vi.fn(),
+            signOut: vi.fn()
+        },
+        from: vi.fn(() => ({
+            select() {
+                return this;
+            },
+            eq() {
+                return this;
+            },
+            maybeSingle() {
+                const result = profileResults[profileRequestIndex++];
+                return result instanceof Promise ? result : Promise.resolve(result);
+            }
+        }))
+    };
+    const store = createAuthStore({ client, configured: true });
+
+    return {
+        store,
+        client,
+        emit(event, nextSession) {
+            return authListener(event, nextSession);
+        }
+    };
+};
 
 const makeStore = ({ configured = true, user = null, profile = null, initialize } = {}) => ({
     configured: ref(configured),
@@ -130,5 +176,54 @@ describe('authentication route guard', () => {
 
         expect(result).toEqual({ name: 'login', query: { redirect: '/finance/summary?period=2026' } });
         expect(JSON.stringify(result)).not.toContain('sentinel-secret-initialize-detail');
+    });
+
+    it.each(['TOKEN_REFRESHED', 'SIGNED_IN'])('waits for an active approver profile during %s before authorizing', async (event) => {
+        const session = { user: { id: 'approver-1', email: 'approver@nexerp.test' } };
+        const approverProfile = { id: 'approver-1', email: session.user.email, display_name: 'Approver', department: 'Finance', role: 'approver', is_active: true };
+        const refreshedProfile = deferred();
+        const fixture = createActualStoreFixture({
+            session,
+            profileResults: [{ data: approverProfile, error: null }, refreshedProfile.promise]
+        });
+        await fixture.store.initialize();
+
+        const refresh = fixture.emit(event, session);
+        let guardSettled = false;
+        const decision = createAuthGuard(fixture.store)(route({ name: 'approvals', fullPath: '/approvals', meta: { roles: ['admin', 'approver'] } })).then((result) => {
+            guardSettled = true;
+            return result;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const settledWhileRefreshing = guardSettled;
+        const loadingWhileRefreshing = fixture.store.loading.value;
+
+        refreshedProfile.resolve({ data: approverProfile, error: null });
+        await refresh;
+
+        expect(settledWhileRefreshing).toBe(false);
+        expect(loadingWhileRefreshing).toBe(true);
+        await expect(decision).resolves.toBe(true);
+        expect(fixture.store.loading.value).toBe(false);
+    });
+
+    it('allows protected navigation after a failed profile request is retried', async () => {
+        const session = { user: { id: 'approver-1', email: 'approver@nexerp.test' } };
+        const approverProfile = { id: 'approver-1', email: session.user.email, display_name: 'Approver', department: 'Finance', role: 'approver', is_active: true };
+        const fixture = createActualStoreFixture({
+            session,
+            profileResults: [
+                { data: null, error: new TypeError('Failed to fetch private profile endpoint') },
+                { data: approverProfile, error: null }
+            ]
+        });
+        const guard = createAuthGuard(fixture.store);
+        const approvals = route({ name: 'approvals', fullPath: '/approvals', meta: { roles: ['admin', 'approver'] } });
+
+        await expect(guard(approvals)).resolves.toEqual({ name: 'access-denied', query: { redirect: '/approvals' } });
+        await fixture.store.retryProfile();
+
+        expect(fixture.client.from).toHaveBeenCalledTimes(2);
+        await expect(guard(approvals)).resolves.toBe(true);
     });
 });

@@ -33,6 +33,7 @@ export function createAuthStore({ client, configured }) {
     const loading = ref(false);
     const initialized = ref(false);
     const error = ref(null);
+    const profileLoadFailed = ref(false);
     const isConfigured = Boolean(configured && client);
     const configuredState = computed(() => isConfigured);
     const role = computed(() => (profile.value?.is_active ? profile.value.role || null : null));
@@ -61,16 +62,21 @@ export function createAuthStore({ client, configured }) {
         session.value = null;
         user.value = null;
         profile.value = null;
+        profileLoadFailed.value = false;
         error.value = null;
     };
 
     const loadIdentity = async (nextSession) => {
         const version = ++identityVersion;
         const nextUser = nextSession?.user || null;
+        const keepRecoverableFailure = Boolean(nextUser && user.value?.id === nextUser.id && profileLoadFailed.value);
         session.value = nextSession || null;
         user.value = nextUser;
         profile.value = null;
-        error.value = null;
+        if (!keepRecoverableFailure) {
+            profileLoadFailed.value = false;
+            error.value = null;
+        }
 
         if (!nextUser) return;
 
@@ -84,20 +90,31 @@ export function createAuthStore({ client, configured }) {
         if (version !== identityVersion || user.value?.id !== nextUser.id) return;
 
         if (result.error) {
+            profileLoadFailed.value = true;
             error.value = normalizedError(result.error, MISSING_PROFILE_MESSAGE);
             return;
         }
         if (!result.data) {
+            profileLoadFailed.value = false;
             error.value = MISSING_PROFILE_MESSAGE;
             return;
         }
 
+        profileLoadFailed.value = false;
+        error.value = null;
         profile.value = result.data;
         if (!result.data.is_active) error.value = INACTIVE_PROFILE_MESSAGE;
     };
 
     const trackIdentity = (nextSession) => {
-        latestAuthUpdate = loadIdentity(nextSession).catch(() => undefined);
+        latestAuthUpdate = (async () => {
+            beginOperation();
+            try {
+                await loadIdentity(nextSession);
+            } finally {
+                endOperation();
+            }
+        })().catch(() => undefined);
         return latestAuthUpdate;
     };
 
@@ -110,6 +127,8 @@ export function createAuthStore({ client, configured }) {
             await update;
         } while (update !== latestAuthUpdate || version !== identityVersion);
     };
+
+    const waitForIdentity = () => awaitIdentitySettled();
 
     const subscribe = () => {
         if (subscription || !isConfigured) return;
@@ -248,6 +267,24 @@ export function createAuthStore({ client, configured }) {
         }
     };
 
+    const retryProfile = async () => {
+        if (!isConfigured) {
+            error.value = NOT_CONFIGURED_MESSAGE;
+            throw rejection(NOT_CONFIGURED_MESSAGE);
+        }
+        if (!user.value || !session.value) {
+            const message = '로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.';
+            error.value = message;
+            throw rejection(message);
+        }
+
+        trackIdentity(session.value);
+        await awaitIdentitySettled();
+
+        if (!profile.value) throw rejection(error.value || MISSING_PROFILE_MESSAGE);
+        return profile.value;
+    };
+
     const hasRole = (roles) => Array.isArray(roles) && Boolean(profile.value?.is_active) && roles.includes(role.value);
 
     return {
@@ -259,9 +296,12 @@ export function createAuthStore({ client, configured }) {
         initialized,
         configured: configuredState,
         error,
+        profileLoadFailed,
         initialize,
+        waitForIdentity,
         signIn,
         signOut,
+        retryProfile,
         hasRole
     };
 }

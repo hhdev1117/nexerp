@@ -363,6 +363,95 @@ describe('Supabase auth store', () => {
         expect(store.profile.value).toEqual(newProfile);
     });
 
+    it('waits for the latest identity update when the observed update is superseded', async () => {
+        const oldProfileRequest = deferred();
+        const newProfileRequest = deferred();
+        const oldSession = { user: { id: 'old-user', email: 'old@nexerp.test' } };
+        const newSession = { user: { id: 'new-user', email: 'new@nexerp.test' } };
+        const newProfile = { ...approverProfile, id: 'new-user', email: 'new@nexerp.test', role: 'admin' };
+        const fixture = createClient({
+            profiles: {
+                'old-user': oldProfileRequest.promise,
+                'new-user': newProfileRequest.promise
+            }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+        let settled = false;
+
+        const oldUpdate = fixture.emit('TOKEN_REFRESHED', oldSession);
+        const waiting = store.waitForIdentity().then(() => {
+            settled = true;
+        });
+        const newUpdate = fixture.emit('SIGNED_IN', newSession);
+        oldProfileRequest.resolve({ data: { ...approverProfile, id: 'old-user' }, error: null });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(settled).toBe(false);
+        expect(store.loading.value).toBe(true);
+
+        newProfileRequest.resolve({ data: newProfile, error: null });
+        await Promise.all([oldUpdate, newUpdate, waiting]);
+
+        expect(store.user.value).toEqual(newSession.user);
+        expect(store.profile.value).toEqual(newProfile);
+        expect(store.loading.value).toBe(false);
+    });
+
+    it('retries the current profile after a temporary failure and normalizes the error', async () => {
+        const session = { user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const profiles = {
+            'user-1': { data: null, error: new TypeError('Failed to fetch https://private.example?access_token=secret') }
+        };
+        const fixture = createClient({ session, profiles });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        expect(store.profile.value).toBeNull();
+        expect(store.profileLoadFailed.value).toBe(true);
+        expect(store.error.value).toBe('네트워크 연결을 확인한 후 다시 시도해 주세요.');
+
+        const profileRequest = deferred();
+        profiles['user-1'] = profileRequest.promise;
+        const retrying = store.retryProfile();
+
+        expect(store.loading.value).toBe(true);
+        expect(store.profileLoadFailed.value).toBe(true);
+        profileRequest.resolve({ data: approverProfile, error: null });
+        await retrying;
+
+        expect(fixture.profileRequests).toHaveLength(2);
+        expect(store.profile.value).toEqual(approverProfile);
+        expect(store.profileLoadFailed.value).toBe(false);
+        expect(store.error.value).toBeNull();
+        expect(store.loading.value).toBe(false);
+    });
+
+    it('does not let a stale profile retry overwrite a newer signed-in identity', async () => {
+        const oldSession = { user: { id: 'old-user', email: 'old@nexerp.test' } };
+        const newSession = { user: { id: 'new-user', email: 'new@nexerp.test' } };
+        const oldProfileRetry = deferred();
+        const oldProfiles = { data: null, error: new Error('temporary profile failure') };
+        const newProfile = { ...approverProfile, id: 'new-user', email: 'new@nexerp.test', role: 'admin' };
+        const profiles = {
+            'old-user': oldProfiles,
+            'new-user': { data: newProfile, error: null }
+        };
+        const fixture = createClient({ session: oldSession, profiles });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+        profiles['old-user'] = oldProfileRetry.promise;
+
+        const retrying = store.retryProfile();
+        const newerUpdate = fixture.emit('SIGNED_IN', newSession);
+        oldProfileRetry.resolve({ data: { ...approverProfile, id: 'old-user' }, error: null });
+        await Promise.all([retrying, newerUpdate]);
+
+        expect(store.user.value).toEqual(newSession.user);
+        expect(store.profile.value).toEqual(newProfile);
+        expect(store.role.value).toBe('admin');
+    });
+
     it('reconciles a buffered signed-out event after explicit sign-out fails', async () => {
         const signOutRequest = deferred();
         const session = { user: { id: 'user-1', email: 'approver@nexerp.test' } };

@@ -12,7 +12,12 @@ import AccessDeniedView from './AccessDeniedView.vue';
 const authStore = {
     loading: ref(false),
     error: ref(null),
-    signIn: vi.fn()
+    user: ref(null),
+    profile: ref(null),
+    profileLoadFailed: ref(false),
+    signIn: vi.fn(),
+    retryProfile: vi.fn(),
+    signOut: vi.fn()
 };
 
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => authStore }));
@@ -45,10 +50,32 @@ const mountLogin = async (url = '/login') => {
     return { wrapper, router };
 };
 
+const mountAccessDenied = async (url = '/access-denied') => {
+    const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [
+            { path: '/', name: 'dashboard', component: { template: '<main>dashboard</main>' } },
+            { path: '/login', name: 'login', component: { template: '<main>login</main>' } },
+            { path: '/access-denied', name: 'access-denied', component: AccessDeniedView },
+            { path: '/approvals', name: 'approvals', component: { template: '<main>approvals</main>' } }
+        ]
+    });
+    await router.push(url);
+    await router.isReady();
+    const wrapper = mount(AccessDeniedView, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
+    wrappers.push(wrapper);
+    return { wrapper, router };
+};
+
 beforeEach(() => {
     authStore.loading.value = false;
     authStore.error.value = null;
+    authStore.user.value = null;
+    authStore.profile.value = null;
+    authStore.profileLoadFailed.value = false;
     authStore.signIn.mockReset().mockResolvedValue({ user: { id: 'user-1' } });
+    authStore.retryProfile.mockReset().mockResolvedValue(undefined);
+    authStore.signOut.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -187,16 +214,90 @@ describe('supporting auth views', () => {
         expect(reload).toHaveBeenCalledOnce();
     });
 
-    it('explains denied access and links back to the dashboard', () => {
-        const wrapper = mount(AccessDeniedView, {
-            global: {
-                plugins: [PrimeVue],
-                stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } }
-            }
-        });
-        wrappers.push(wrapper);
+    it('explains ordinary role denial and links back to the dashboard', async () => {
+        authStore.user.value = { id: 'user-1' };
+        authStore.profile.value = { role: 'user', is_active: true };
+        const { wrapper } = await mountAccessDenied();
 
         expect(wrapper.text()).toContain('권한');
         expect(wrapper.get('a').attributes('href')).toBe('/');
+    });
+
+    it('shows a recoverable profile error and keeps retry pending until safe redirect restoration', async () => {
+        const pending = deferred();
+        authStore.user.value = { id: 'user-1' };
+        authStore.profileLoadFailed.value = true;
+        authStore.error.value = '네트워크 연결을 확인한 후 다시 시도해 주세요.';
+        authStore.retryProfile.mockReturnValueOnce(pending.promise);
+        const { wrapper, router } = await mountAccessDenied('/access-denied?redirect=/approvals');
+
+        expect(wrapper.get('[role="alert"]').text()).toContain('네트워크 연결을 확인한 후 다시 시도해 주세요.');
+        const retry = wrapper.get('[aria-label="권한 정보 다시 불러오기"]');
+        await retry.trigger('click');
+        await nextTick();
+
+        expect(retry.attributes('disabled')).toBeDefined();
+        expect(retry.attributes('aria-busy')).toBe('true');
+        authStore.profileLoadFailed.value = false;
+        authStore.profile.value = { role: 'approver', is_active: true };
+        pending.resolve();
+        await flushPromises();
+
+        expect(authStore.retryProfile).toHaveBeenCalledOnce();
+        expect(router.currentRoute.value.fullPath).toBe('/approvals');
+    });
+
+    it('rejects a protocol-relative recovery redirect', async () => {
+        authStore.user.value = { id: 'user-1' };
+        authStore.profileLoadFailed.value = true;
+        authStore.error.value = '계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.';
+        authStore.retryProfile.mockImplementationOnce(async () => {
+            authStore.profileLoadFailed.value = false;
+            authStore.profile.value = { role: 'approver', is_active: true };
+        });
+        const { wrapper, router } = await mountAccessDenied('/access-denied?redirect=//evil.example/path');
+
+        await wrapper.get('[aria-label="권한 정보 다시 불러오기"]').trigger('click');
+        await flushPromises();
+
+        expect(router.currentRoute.value.fullPath).toBe('/');
+    });
+
+    it.each([
+        ['missing', null],
+        ['inactive', { role: 'user', is_active: false }]
+    ])('lets an authenticated user with a %s profile sign out to login', async (_state, profile) => {
+        const pending = deferred();
+        authStore.user.value = { id: 'user-1' };
+        authStore.profile.value = profile;
+        authStore.signOut.mockReturnValueOnce(pending.promise);
+        const { wrapper, router } = await mountAccessDenied();
+
+        const signOut = wrapper.get('[aria-label="로그아웃하고 로그인 화면으로 이동"]');
+        await signOut.trigger('click');
+        await nextTick();
+
+        expect(signOut.attributes('disabled')).toBeDefined();
+        expect(signOut.attributes('aria-busy')).toBe('true');
+        expect(router.currentRoute.value.name).toBe('access-denied');
+
+        pending.resolve();
+        await flushPromises();
+
+        expect(authStore.signOut).toHaveBeenCalledOnce();
+        expect(router.currentRoute.value.name).toBe('login');
+    });
+
+    it('shows a fixed sign-out failure without raw exception details', async () => {
+        authStore.user.value = { id: 'user-1' };
+        authStore.profile.value = null;
+        authStore.signOut.mockRejectedValueOnce(new Error('sentinel-secret-sign-out-detail'));
+        const { wrapper } = await mountAccessDenied();
+
+        await wrapper.get('[aria-label="로그아웃하고 로그인 화면으로 이동"]').trigger('click');
+        await flushPromises();
+
+        expect(wrapper.get('[role="alert"]').text()).toContain('로그아웃하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        expect(wrapper.text()).not.toContain('sentinel-secret-sign-out-detail');
     });
 });
