@@ -59,6 +59,7 @@ export function createAuthStore({ client, configured }) {
 
     const clearIdentity = () => {
         identityVersion += 1;
+        latestAuthUpdate = Promise.resolve();
         session.value = null;
         user.value = null;
         profile.value = null;

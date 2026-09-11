@@ -22,7 +22,7 @@ const createActualStoreFixture = ({ session, profileResults }) => {
                 return { data: { subscription: { unsubscribe: vi.fn() } } };
             }),
             signInWithPassword: vi.fn(),
-            signOut: vi.fn()
+            signOut: vi.fn().mockResolvedValue({ error: null })
         },
         from: vi.fn(() => ({
             select() {
@@ -225,5 +225,41 @@ describe('authentication route guard', () => {
 
         expect(fixture.client.from).toHaveBeenCalledTimes(2);
         await expect(guard(approvals)).resolves.toBe(true);
+    });
+
+    it('allows login immediately after sign-out invalidates a deferred profile retry', async () => {
+        const session = { user: { id: 'approver-1', email: 'approver@nexerp.test' } };
+        const approverProfile = { id: 'approver-1', email: session.user.email, display_name: 'Approver', department: 'Finance', role: 'approver', is_active: true };
+        const staleProfileRetry = deferred();
+        const fixture = createActualStoreFixture({
+            session,
+            profileResults: [{ data: approverProfile, error: null }, staleProfileRetry.promise]
+        });
+        await fixture.store.initialize();
+        const retrying = fixture.store.retryProfile().catch((authError) => authError);
+        expect(fixture.store.loading.value).toBe(true);
+
+        await fixture.store.signOut();
+        const login = route({ name: 'login', fullPath: '/auth/login', meta: { public: true, guestOnly: true } });
+        let navigationSettled = false;
+        let navigationResult;
+        const navigation = createAuthGuard(fixture.store)(login).then((result) => {
+            navigationSettled = true;
+            navigationResult = result;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const settledBeforeStaleRequest = navigationSettled;
+        const resultBeforeStaleRequest = navigationResult;
+        const loadingBeforeStaleRequest = fixture.store.loading.value;
+
+        staleProfileRetry.resolve({ data: approverProfile, error: null });
+        await Promise.all([retrying, navigation]);
+
+        expect(settledBeforeStaleRequest).toBe(true);
+        expect(resultBeforeStaleRequest).toBe(true);
+        expect(loadingBeforeStaleRequest).toBe(true);
+        expect(fixture.store.user.value).toBeNull();
+        expect(fixture.store.profile.value).toBeNull();
+        expect(fixture.store.loading.value).toBe(false);
     });
 });
