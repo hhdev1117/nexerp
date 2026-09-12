@@ -276,7 +276,8 @@ function normalizeCloudflareAnalytics(value) {
     const statusOrder = new Map(INVOCATION_STATUSES.map((status, index) => [status, index]));
     const series = [...hourly.values()].sort((left, right) => left.datetime.localeCompare(right.datetime) || statusOrder.get(left.status) - statusOrder.get(right.status));
     const byStatus = [...statuses.values()].sort((left, right) => statusOrder.get(left.status) - statusOrder.get(right.status));
-    const issues = cpuValues.includes(null) || seriesRows.length === CLOUDFLARE_SERIES_LIMIT ? ['metric_unavailable'] : [];
+    const seriesComplete = seriesRows.length < CLOUDFLARE_SERIES_LIMIT;
+    const issues = ['metric_unavailable'];
     return {
         state: issues.length ? 'partial' : 'ok',
         issues,
@@ -284,9 +285,11 @@ function normalizeCloudflareAnalytics(value) {
         errors: totalValues[1],
         errorRate: totalValues[0] === 0 ? null : (totalValues[1] / totalValues[0]) * 100,
         subrequests: totalValues[2],
-        cpuTimeMs: { p50: cpuValues[0], p99: cpuValues[1] },
-        byStatus,
-        series
+        cpuTimeUs: { p50: cpuValues[0], p99: cpuValues[1] },
+        responseBytes: null,
+        seriesComplete,
+        byStatus: seriesComplete ? byStatus : null,
+        series: seriesComplete ? series : []
     };
 }
 
@@ -308,7 +311,9 @@ const emptyCloudflare = () => ({
     errors: null,
     errorRate: null,
     subrequests: null,
-    cpuTimeMs: { p50: null, p99: null },
+    cpuTimeUs: { p50: null, p99: null },
+    responseBytes: null,
+    seriesComplete: null,
     byStatus: null,
     settings: null,
     series: []
@@ -364,7 +369,9 @@ async function collectCloudflare(env, window, fetchImpl, timeoutMs) {
               errors: analytics.errors,
               errorRate: analytics.errorRate,
               subrequests: analytics.subrequests,
-              cpuTimeMs: analytics.cpuTimeMs,
+              cpuTimeUs: analytics.cpuTimeUs,
+              responseBytes: analytics.responseBytes,
+              seriesComplete: analytics.seriesComplete,
               byStatus: analytics.byStatus,
               series: analytics.series
           }

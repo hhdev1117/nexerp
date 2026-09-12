@@ -39,6 +39,9 @@ const providerMeta = (provider) => stateMeta[provider?.state] || stateMeta.unava
 const formatMetric = (value, suffix = '') => {
     return value === null || value === undefined ? '확인 불가' : `${Number(value).toLocaleString('ko-KR')}${suffix}`;
 };
+const formatDurationUs = (value) => {
+    return value === null || value === undefined ? '확인 불가' : `${(value / 1000).toLocaleString('ko-KR', { maximumFractionDigits: 3 })} ms`;
+};
 const formatBytes = (value) => {
     if (value === null || value === undefined) return '확인 불가';
     if (value < 1024) return `${value.toLocaleString('ko-KR')} B`;
@@ -227,17 +230,21 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                         <span>서브요청</span><strong>{{ formatMetric(cloudflare?.subrequests) }}</strong>
                     </div>
                     <div class="metric-tile">
-                        <span>CPU P50</span><strong>{{ formatMetric(cloudflare?.cpuTimeMs?.p50, ' ms') }}</strong>
+                        <span>CPU P50</span><strong>{{ formatDurationUs(cloudflare?.cpuTimeUs?.p50) }}</strong>
                     </div>
                     <div class="metric-tile">
-                        <span>CPU P99</span><strong>{{ formatMetric(cloudflare?.cpuTimeMs?.p99, ' ms') }}</strong>
+                        <span>CPU P99</span><strong>{{ formatDurationUs(cloudflare?.cpuTimeUs?.p99) }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>응답 바이트</span><strong>{{ cloudflare?.responseBytes === null ? '제공 안 됨' : formatBytes(cloudflare?.responseBytes) }}</strong>
                     </div>
                 </div>
 
                 <p class="analytics-note">Cloudflare Analytics는 샘플링 기반 운영 지표이며 청구 사용량과 다를 수 있습니다.</p>
+                <p v-if="cloudflare?.seriesComplete === false" class="detail-limit" role="status">수집 한도에 도달해 상세 이력을 표시할 수 없습니다.</p>
 
-                <div class="details-grid cloudflare-details">
-                    <div class="detail-block">
+                <div class="details-grid cloudflare-details" :class="{ 'detail-only': cloudflare?.seriesComplete === false }">
+                    <div v-if="cloudflare?.seriesComplete !== false" class="detail-block">
                         <h3>상태별 호출</h3>
                         <div v-if="cloudflare?.byStatus?.length" class="table-scroll">
                             <table>
@@ -280,7 +287,7 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                     </div>
                 </div>
 
-                <div class="detail-block invocation-block">
+                <div v-if="cloudflare?.seriesComplete !== false" class="detail-block invocation-block">
                     <h3>시간별 운영 이력</h3>
                     <div v-if="cloudflare?.series?.length" class="table-scroll">
                         <table>
@@ -502,8 +509,20 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
     font-size: 0.8rem;
 }
 
+.detail-limit {
+    margin: 1rem 0 0;
+    padding: 0.8rem 0;
+    border-block: 1px solid var(--surface-border);
+    color: var(--text-color-secondary);
+    font-size: 0.875rem;
+}
+
 .cloudflare-details {
     grid-template-columns: minmax(20rem, 1.35fr) minmax(14rem, 0.65fr);
+}
+
+.cloudflare-details.detail-only {
+    grid-template-columns: minmax(0, 1fr);
 }
 
 .compact-empty {

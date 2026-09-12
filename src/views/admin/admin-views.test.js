@@ -186,6 +186,9 @@ describe('administrator infrastructure usage screen', () => {
         expect(infrastructureSource).toContain('aria-label="인프라 사용량 새로고침"');
         expect(infrastructureSource).toContain(':disabled="refreshDisabled"');
         expect(infrastructureSource).toContain('requestSequence');
+        expect(infrastructureSource).toContain('formatDurationUs');
+        expect(infrastructureSource).toContain('value / 1000');
+        expect(infrastructureSource).not.toContain('cpuTimeMs');
     });
 
     it('renders partial, unconfigured, unavailable, null metric, empty, and retry states without raw errors', () => {
@@ -201,6 +204,8 @@ describe('administrator infrastructure usage screen', () => {
         expect(infrastructureSource).not.toContain('CLOUDFLARE_ACCOUNT_ID');
         expect(infrastructureSource).toContain('샘플링 기반 운영 지표');
         expect(infrastructureSource).toContain('시간별 운영 이력');
+        expect(infrastructureSource).toContain('수집 한도에 도달해 상세 이력을 표시할 수 없습니다.');
+        expect(infrastructureSource).toContain('제공 안 됨');
     });
 
     it('uses full-width provider sections and responsive metric grids without nested cards', () => {

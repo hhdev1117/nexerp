@@ -79,12 +79,15 @@ describe('InfrastructureUsage', () => {
         getInfrastructureUsage.mockResolvedValue(
             usage(
                 provider('ok', { project: null, services: [], usage: null, disk: null }),
-                provider('ok', {
+                provider('partial', {
+                    issues: ['metric_unavailable'],
                     requests: 200,
                     errors: 5,
                     errorRate: 2.5,
                     subrequests: 80,
-                    cpuTimeMs: { p50: 1.25, p99: 9.5 },
+                    cpuTimeUs: { p50: 1250, p99: 9500 },
+                    responseBytes: null,
+                    seriesComplete: true,
                     byStatus: [{ status: 'exceededResources', requests: 5, errors: 5, subrequests: 1 }],
                     settings: { usageModel: 'standard', cpuMs: 50, subrequests: 1000 },
                     series: [{ datetime: '2026-09-12T01:00:00.000Z', status: 'exceededResources', requests: 5, errors: 5, subrequests: 1 }]
@@ -98,12 +101,42 @@ describe('InfrastructureUsage', () => {
         expect(wrapper.text()).toContain('2.5%');
         expect(wrapper.text()).toContain('CPU P50');
         expect(wrapper.text()).toContain('1.25 ms');
+        expect(wrapper.text()).toContain('응답 바이트');
+        expect(wrapper.text()).toContain('제공 안 됨');
         expect(wrapper.text()).toContain('상태별 호출');
         expect(wrapper.text()).toContain('exceededResources');
         expect(wrapper.text()).toContain('시간별 운영 이력');
         expect(wrapper.text()).toContain('standard');
         expect(wrapper.text()).toContain('샘플링 기반 운영 지표');
         expect(wrapper.text()).toContain('청구 사용량과 다를 수 있습니다.');
+    });
+
+    it('suppresses incomplete Cloudflare detail tables at the collection boundary', async () => {
+        getInfrastructureUsage.mockResolvedValue(
+            usage(
+                provider('ok', { project: null, services: [], usage: null, disk: null }),
+                provider('partial', {
+                    issues: ['metric_unavailable'],
+                    requests: 10000,
+                    errors: 25,
+                    errorRate: 0.25,
+                    subrequests: 400,
+                    cpuTimeUs: { p50: 800, p99: 3200 },
+                    responseBytes: null,
+                    seriesComplete: false,
+                    byStatus: null,
+                    settings: { usageModel: 'standard', cpuMs: 50, subrequests: 1000 },
+                    series: []
+                })
+            )
+        );
+        const wrapper = mountView();
+        await flushPromises();
+
+        expect(wrapper.text()).toContain('10,000');
+        expect(wrapper.text()).toContain('수집 한도에 도달해 상세 이력을 표시할 수 없습니다.');
+        expect(wrapper.text()).not.toContain('확인 가능한 상태별 호출이 없습니다.');
+        expect(wrapper.text()).not.toContain('조회된 호출 내역이 없습니다.');
     });
 
     it('does not let a stale range request overwrite the current range state', async () => {

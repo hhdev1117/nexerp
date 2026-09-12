@@ -43,6 +43,8 @@ describe('setup documentation', () => {
         expect(docs).toContain('CLOUDFLARE_API_TOKEN');
         expect(docs).toContain('Workers Scripts Read');
         expect(docs).toContain('청구 사용량');
+        expect(docs).toContain('cpuTimeUs');
+        expect(docs).toContain('responseBytes');
         expect(localExample).toContain('SUPABASE_MANAGEMENT_TOKEN=');
         expect(localExample).toContain('CLOUDFLARE_API_TOKEN=');
         expect(localExample).not.toMatch(/SUPABASE_MANAGEMENT_TOKEN=(?:sbp_|eyJ|[A-Za-z0-9_-]{20,})/);

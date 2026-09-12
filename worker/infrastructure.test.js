@@ -65,7 +65,7 @@ function cloudflareResponse(overrides = {}) {
             viewer: {
                 accounts: [
                     {
-                        totals: [{ sum: { requests: 160, errors: 30, subrequests: 70 }, quantiles: { cpuTimeP50: 2.5, cpuTimeP99: 12.75 } }],
+                        totals: [{ sum: { requests: 160, errors: 30, subrequests: 70 }, quantiles: { cpuTimeP50: 2500, cpuTimeP99: 12750 } }],
                         series: [
                             { dimensions: { datetime: '2026-09-12T01:12:30Z', status: 'success', scriptName: 'must-not-leak' }, sum: { requests: 10, errors: 1, subrequests: 4 } },
                             { dimensions: { datetime: '2026-09-12T01:48:00Z', status: 'success' }, sum: { requests: 4, errors: 0, subrequests: 2 } },
@@ -197,13 +197,15 @@ describe('administrator infrastructure usage API', () => {
                     disk: { sizeBytes: 1000, availableBytes: 400, usedBytes: 600, provisionedSizeGb: 8, iops: 3000, throughputMibps: 125, type: 'gp3' }
                 },
                 cloudflare: {
-                    state: 'ok',
-                    issues: [],
+                    state: 'partial',
+                    issues: ['metric_unavailable'],
                     requests: 160,
                     errors: 30,
                     errorRate: 18.75,
                     subrequests: 70,
-                    cpuTimeMs: { p50: 2.5, p99: 12.75 },
+                    cpuTimeUs: { p50: 2500, p99: 12750 },
+                    responseBytes: null,
+                    seriesComplete: true,
                     byStatus: [
                         { status: 'success', requests: 14, errors: 1, subrequests: 6 },
                         { status: 'exceededResources', requests: 6, errors: 2, subrequests: 3 }
@@ -243,6 +245,7 @@ describe('administrator infrastructure usage API', () => {
         expect(graphqlBody.query).toContain('limit: 1000');
         expect(graphqlBody.query).toContain('orderBy: [datetime_ASC]');
         expect(graphqlBody.query).not.toContain('datetimeHour');
+        expect(body.providers.cloudflare).not.toHaveProperty('cpuTimeMs');
 
         const settingsCall = fetchImpl.mock.calls.find(([url]) => url.endsWith('/workers/scripts/nexerp/settings'));
         expect(settingsCall[1].headers).toEqual({ Authorization: 'Bearer cloudflare-token-sentinel', Accept: 'application/json' });
@@ -320,7 +323,9 @@ describe('administrator infrastructure usage API', () => {
             errors: null,
             errorRate: null,
             subrequests: null,
-            cpuTimeMs: { p50: null, p99: null },
+            cpuTimeUs: { p50: null, p99: null },
+            responseBytes: null,
+            seriesComplete: null,
             byStatus: null,
             settings: null,
             series: []
@@ -388,7 +393,8 @@ describe('administrator infrastructure usage API', () => {
         const { app } = createApp({ fetchImpl });
         const valid = await (await app.fetch(request(), baseEnv)).json();
 
-        expect(valid.providers.cloudflare.state).toBe('ok');
+        expect(valid.providers.cloudflare.state).toBe('partial');
+        expect(valid.providers.cloudflare.issues).toEqual(['metric_unavailable']);
         expect(valid.providers.cloudflare.byStatus.map(({ status }) => status)).toEqual(statuses);
         expect(valid.providers.cloudflare.series.map(({ status }) => status)).toEqual(statuses);
 
@@ -420,26 +426,33 @@ describe('administrator infrastructure usage API', () => {
         const graphqlBody = JSON.parse(fetchImpl.mock.calls.find(([url]) => url === graphqlUrl)[1].body);
 
         expect(body.providers.cloudflare.series).toHaveLength(168);
+        expect(body.providers.cloudflare.seriesComplete).toBe(true);
         expect(body.providers.cloudflare.series[0].datetime).toBe('2026-09-05T04:00:00.000Z');
         expect(body.providers.cloudflare.series.at(-1).datetime).toBe('2026-09-12T03:00:00.000Z');
         expect(graphqlBody.query).toContain('limit: 1000');
         expect(graphqlBody.query).toContain('orderBy: [datetime_ASC]');
     });
 
-    it('marks analytics partial when the bounded series may be truncated', async () => {
+    it('suppresses incomplete detail when a dense seven-day series reaches the collection boundary', async () => {
         const graphqlUrl = 'https://api.cloudflare.com/client/v4/graphql';
+        const start = Date.parse('2026-09-05T03:05:00.000Z');
         const series = Array.from({ length: 1000 }, (_, index) => ({
-            dimensions: { datetime: new Date(Date.parse('2026-09-12T01:00:00.000Z') + index * 1000).toISOString(), status: 'success' },
+            dimensions: { datetime: new Date(start + index * 10 * 60 * 1000).toISOString(), status: 'success' },
             sum: { requests: 1, errors: 0, subrequests: 0 }
         }));
         const fetchImpl = createProviderFetch({ overrides: { [graphqlUrl]: () => json(cloudflareResponse({ series })) } });
         const { app } = createApp({ fetchImpl });
-        const body = await (await app.fetch(request(), baseEnv)).json();
+        const body = await (await app.fetch(request('range=7d'), baseEnv)).json();
 
+        expect(body.range.key).toBe('7d');
         expect(body.providers.cloudflare.state).toBe('partial');
         expect(body.providers.cloudflare.issues).toEqual(['metric_unavailable']);
         expect(body.providers.cloudflare.requests).toBe(160);
-        expect(body.providers.cloudflare.series).toHaveLength(1);
+        expect(body.providers.cloudflare.seriesComplete).toBe(false);
+        expect(body.providers.cloudflare.byStatus).toBeNull();
+        expect(body.providers.cloudflare.series).toEqual([]);
+        expect(body.providers.cloudflare.cpuTimeUs).toEqual({ p50: 2500, p99: 12750 });
+        expect(body.providers.cloudflare.responseBytes).toBeNull();
     });
 
     it('keeps analytics available when allowlisted script settings are malformed', async () => {
@@ -536,7 +549,9 @@ describe('administrator infrastructure usage API', () => {
             errors: null,
             errorRate: null,
             subrequests: null,
-            cpuTimeMs: { p50: null, p99: null },
+            cpuTimeUs: { p50: null, p99: null },
+            responseBytes: null,
+            seriesComplete: null,
             byStatus: null,
             settings: { usageModel: 'standard', cpuMs: 50, subrequests: 1000 },
             series: []
