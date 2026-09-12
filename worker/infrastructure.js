@@ -8,31 +8,27 @@ const RANGE_CONFIGURATION = Object.freeze({
 });
 const ISSUE_CODES = new Set(['missing_configuration', 'provider_auth_failed', 'provider_forbidden', 'provider_rate_limited', 'provider_unavailable', 'provider_invalid_response', 'metric_unavailable']);
 const SERVICE_NAMES = Object.freeze(['auth', 'db', 'pooler', 'realtime', 'rest', 'storage']);
-const PROJECT_STATUSES = new Set(['ACTIVE_HEALTHY', 'ACTIVE_UNHEALTHY', 'COMING_UP', 'GOING_DOWN', 'INACTIVE']);
+const PROJECT_STATUSES = new Set(['UNKNOWN', 'ACTIVE_HEALTHY', 'ACTIVE_UNHEALTHY', 'COMING_UP', 'GOING_DOWN', 'INACTIVE', 'INIT_FAILED', 'REMOVED', 'RESTORING', 'UPGRADING', 'PAUSING', 'RESTORE_FAILED', 'RESTARTING', 'PAUSE_FAILED', 'RESIZING']);
 const SERVICE_STATUSES = new Set(['ACTIVE_HEALTHY', 'ACTIVE_UNHEALTHY', 'COMING_UP', 'GOING_DOWN', 'INACTIVE', 'HEALTHY', 'UNHEALTHY', 'UNKNOWN']);
-const INVOCATION_STATUSES = new Set([
-    'success',
-    'clientDisconnected',
-    'scriptThrewException',
-    'exceededCpu',
-    'exceededMemory',
-    'unknown',
-    'internalError',
-    'exceededTimeLimit',
-    'scriptNotFound',
-    'canceled'
-]);
+const INVOCATION_STATUSES = Object.freeze(['success', 'clientDisconnected', 'scriptThrewException', 'exceededResources', 'internalError']);
+const INVOCATION_STATUS_SET = new Set(INVOCATION_STATUSES);
 const PROJECT_REF_PATTERN = /^[a-z0-9]{20}$/;
 const REGION_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
+const PROJECT_STATUS_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
+const CLOUDFLARE_ACCOUNT_PATTERN = /^[a-f0-9]{32}$/;
 const WORKER_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 const CLOUDFLARE_GRAPHQL_URL = 'https://api.cloudflare.com/client/v4/graphql';
+const CLOUDFLARE_SERIES_LIMIT = 1000;
+const CACHE_TTL_MS = 60_000;
+const defaultInfrastructureCache = { values: new Map(), inFlight: new Map() };
 const CLOUDFLARE_QUERY = `query GetWorkersAnalytics($accountTag: string, $datetimeStart: string, $datetimeEnd: string, $scriptName: string) {
   viewer {
     accounts(filter: {accountTag: $accountTag}) {
       totals: workersInvocationsAdaptive(limit: 1, filter: {scriptName: $scriptName, datetime_geq: $datetimeStart, datetime_leq: $datetimeEnd}) {
         sum { requests errors subrequests }
+        quantiles { cpuTimeP50 cpuTimeP99 }
       }
-      series: workersInvocationsAdaptive(limit: 100, filter: {scriptName: $scriptName, datetime_geq: $datetimeStart, datetime_leq: $datetimeEnd}) {
+      series: workersInvocationsAdaptive(limit: ${CLOUDFLARE_SERIES_LIMIT}, orderBy: [datetime_ASC], filter: {scriptName: $scriptName, datetime_geq: $datetimeStart, datetime_leq: $datetimeEnd}) {
         sum { requests errors subrequests }
         dimensions { datetime status }
       }
@@ -110,10 +106,10 @@ function projectOrigin(value) {
 function normalizeProject(value) {
     if (!value || typeof value !== 'object') throw new ProviderFailure('provider_invalid_response');
     const { name, region, status } = value;
-    if (typeof name !== 'string' || !name.trim() || name.length > 200 || typeof region !== 'string' || !REGION_PATTERN.test(region) || !PROJECT_STATUSES.has(status)) {
+    if (typeof name !== 'string' || !name.trim() || name.length > 200 || typeof region !== 'string' || !REGION_PATTERN.test(region) || typeof status !== 'string' || !PROJECT_STATUS_PATTERN.test(status)) {
         throw new ProviderFailure('provider_invalid_response');
     }
-    return { name: name.trim(), region, status };
+    return { name: name.trim(), region, status: PROJECT_STATUSES.has(status) ? status : 'UNKNOWN' };
 }
 
 function normalizeHealth(value) {
@@ -146,15 +142,18 @@ function normalizeUsage(value) {
 function normalizeDisk(utilization, configuration) {
     const metrics = utilization?.metrics;
     const attributes = configuration?.attributes;
-    const numericValues = [metrics?.fs_size_bytes, metrics?.fs_avail_bytes, metrics?.fs_used_bytes, attributes?.size_gb, attributes?.iops, attributes?.throughput_mibps];
-    if (!numericValues.every(isSafeNumber) || !['gp3', 'io2'].includes(attributes?.type)) throw new ProviderFailure('provider_invalid_response');
+    const numericValues = [metrics?.fs_size_bytes, metrics?.fs_avail_bytes, metrics?.fs_used_bytes, attributes?.size_gb, attributes?.iops];
+    const throughput = attributes?.throughput_mibps;
+    if (!numericValues.every(isSafeNumber) || (throughput !== undefined && throughput !== null && !isSafeNumber(throughput)) || !['gp3', 'io2'].includes(attributes?.type)) {
+        throw new ProviderFailure('provider_invalid_response');
+    }
     return {
         sizeBytes: metrics.fs_size_bytes,
         availableBytes: metrics.fs_avail_bytes,
         usedBytes: metrics.fs_used_bytes,
         provisionedSizeGb: attributes.size_gb,
         iops: attributes.iops,
-        throughputMibps: attributes.throughput_mibps,
+        throughputMibps: throughput ?? null,
         type: attributes.type
     };
 }
@@ -240,7 +239,13 @@ async function collectSupabase(env, range, fetchImpl, timeoutMs) {
     return { state: issues.length || hasUnhealthyService ? 'partial' : 'ok', issues: uniqueIssues(issues), ...normalized };
 }
 
-function normalizeCloudflare(value) {
+function addCounts(target, values) {
+    const next = [target.requests + values[0], target.errors + values[1], target.subrequests + values[2]];
+    if (!next.every(isSafeCount)) throw new ProviderFailure('provider_invalid_response');
+    [target.requests, target.errors, target.subrequests] = next;
+}
+
+function normalizeCloudflareAnalytics(value) {
     if (!value || (Array.isArray(value.errors) && value.errors.length) || value.errors !== null) throw new ProviderFailure('provider_invalid_response');
     const accounts = value.data?.viewer?.accounts;
     const totalsRows = accounts?.[0]?.totals;
@@ -248,27 +253,79 @@ function normalizeCloudflare(value) {
     if (!Array.isArray(accounts) || accounts.length !== 1 || !Array.isArray(totalsRows) || totalsRows.length !== 1 || !Array.isArray(seriesRows)) throw new ProviderFailure('provider_invalid_response');
     const totalValues = [totalsRows[0]?.sum?.requests, totalsRows[0]?.sum?.errors, totalsRows[0]?.sum?.subrequests];
     if (!totalValues.every(isSafeCount)) throw new ProviderFailure('provider_invalid_response');
-    const series = seriesRows.map((row) => {
+    const quantiles = totalsRows[0]?.quantiles;
+    const cpuValues = [quantiles?.cpuTimeP50 ?? null, quantiles?.cpuTimeP99 ?? null];
+    if (!cpuValues.every((metric) => metric === null || isSafeNumber(metric))) throw new ProviderFailure('provider_invalid_response');
+
+    const hourly = new Map();
+    const statuses = new Map();
+    for (const row of seriesRows) {
         const datetime = new Date(row?.dimensions?.datetime);
         const status = row?.dimensions?.status;
         const values = [row?.sum?.requests, row?.sum?.errors, row?.sum?.subrequests];
-        if (Number.isNaN(datetime.getTime()) || !INVOCATION_STATUSES.has(status) || !values.every(isSafeCount)) throw new ProviderFailure('provider_invalid_response');
-        return { datetime: datetime.toISOString(), status, requests: values[0], errors: values[1], subrequests: values[2] };
-    });
-    return { state: 'ok', issues: [], requests: totalValues[0], errors: totalValues[1], subrequests: totalValues[2], series };
+        if (Number.isNaN(datetime.getTime()) || !INVOCATION_STATUS_SET.has(status) || !values.every(isSafeCount)) throw new ProviderFailure('provider_invalid_response');
+        datetime.setUTCMinutes(0, 0, 0);
+        const hour = datetime.toISOString();
+        const hourKey = `${hour}:${status}`;
+        if (!hourly.has(hourKey)) hourly.set(hourKey, { datetime: hour, status, requests: 0, errors: 0, subrequests: 0 });
+        if (!statuses.has(status)) statuses.set(status, { status, requests: 0, errors: 0, subrequests: 0 });
+        addCounts(hourly.get(hourKey), values);
+        addCounts(statuses.get(status), values);
+    }
+
+    const statusOrder = new Map(INVOCATION_STATUSES.map((status, index) => [status, index]));
+    const series = [...hourly.values()].sort((left, right) => left.datetime.localeCompare(right.datetime) || statusOrder.get(left.status) - statusOrder.get(right.status));
+    const byStatus = [...statuses.values()].sort((left, right) => statusOrder.get(left.status) - statusOrder.get(right.status));
+    const issues = cpuValues.includes(null) || seriesRows.length === CLOUDFLARE_SERIES_LIMIT ? ['metric_unavailable'] : [];
+    return {
+        state: issues.length ? 'partial' : 'ok',
+        issues,
+        requests: totalValues[0],
+        errors: totalValues[1],
+        errorRate: totalValues[0] === 0 ? null : (totalValues[1] / totalValues[0]) * 100,
+        subrequests: totalValues[2],
+        cpuTimeMs: { p50: cpuValues[0], p99: cpuValues[1] },
+        byStatus,
+        series
+    };
 }
 
-const unavailableCloudflare = (issue) => ({ state: 'unavailable', issues: uniqueIssues([issue, 'metric_unavailable']), requests: null, errors: null, subrequests: null, series: [] });
-const unconfiguredCloudflare = () => ({ state: 'unconfigured', issues: ['missing_configuration', 'metric_unavailable'], requests: null, errors: null, subrequests: null, series: [] });
+function normalizeCloudflareSettings(value) {
+    if (!value || value.success !== true || !Array.isArray(value.errors) || value.errors.length || !value.result || typeof value.result !== 'object') {
+        throw new ProviderFailure('provider_invalid_response');
+    }
+    const usageModel = value.result.usage_model ?? null;
+    const cpuMs = value.result.limits?.cpu_ms ?? null;
+    const subrequests = value.result.limits?.subrequests ?? null;
+    if ((usageModel !== null && !['standard', 'bundled', 'unbound'].includes(usageModel)) || (cpuMs !== null && !isSafeNumber(cpuMs)) || (subrequests !== null && !isSafeCount(subrequests))) {
+        throw new ProviderFailure('provider_invalid_response');
+    }
+    return { usageModel, cpuMs, subrequests };
+}
+
+const emptyCloudflare = () => ({
+    requests: null,
+    errors: null,
+    errorRate: null,
+    subrequests: null,
+    cpuTimeMs: { p50: null, p99: null },
+    byStatus: null,
+    settings: null,
+    series: []
+});
+const unavailableCloudflare = (issues) => ({ state: 'unavailable', issues: uniqueIssues([...(Array.isArray(issues) ? issues : [issues]), 'metric_unavailable']), ...emptyCloudflare() });
+const unconfiguredCloudflare = () => ({ state: 'unconfigured', issues: ['missing_configuration', 'metric_unavailable'], ...emptyCloudflare() });
 
 async function collectCloudflare(env, window, fetchImpl, timeoutMs) {
-    if (!isConfiguredText(env.CLOUDFLARE_API_TOKEN) || !isConfiguredText(env.CLOUDFLARE_ACCOUNT_ID) || !WORKER_NAME_PATTERN.test(env.CLOUDFLARE_WORKER_NAME || '')) {
+    if (!isConfiguredText(env.CLOUDFLARE_API_TOKEN) || !CLOUDFLARE_ACCOUNT_PATTERN.test(env.CLOUDFLARE_ACCOUNT_ID || '') || !WORKER_NAME_PATTERN.test(env.CLOUDFLARE_WORKER_NAME || '')) {
         return unconfiguredCloudflare();
     }
-    try {
-        const payload = await fetchJson(fetchImpl, CLOUDFLARE_GRAPHQL_URL, {
+    const headers = { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`, Accept: 'application/json' };
+    const settingsUrl = `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${env.CLOUDFLARE_WORKER_NAME}/settings`;
+    const results = await Promise.allSettled([
+        fetchJson(fetchImpl, CLOUDFLARE_GRAPHQL_URL, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+            headers: { ...headers, 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 query: CLOUDFLARE_QUERY,
                 variables: {
@@ -279,17 +336,63 @@ async function collectCloudflare(env, window, fetchImpl, timeoutMs) {
                 }
             }),
             timeoutMs
-        });
-        return normalizeCloudflare(payload);
-    } catch (error) {
-        return unavailableCloudflare(error?.issue || 'provider_unavailable');
-    }
+        }),
+        fetchJson(fetchImpl, settingsUrl, { headers, timeoutMs })
+    ]);
+
+    const issues = [];
+    const normalizeSettled = (result, normalize) => {
+        if (result.status === 'rejected') {
+            issues.push(result.reason?.issue || 'provider_unavailable');
+            return null;
+        }
+        try {
+            return normalize(result.value);
+        } catch (error) {
+            issues.push(error?.issue || 'provider_invalid_response');
+            return null;
+        }
+    };
+    const analytics = normalizeSettled(results[0], normalizeCloudflareAnalytics);
+    const settings = normalizeSettled(results[1], normalizeCloudflareSettings);
+    if (analytics?.issues?.length) issues.push(...analytics.issues);
+    if (!analytics || !settings) issues.push('metric_unavailable');
+    if (!analytics && !settings) return unavailableCloudflare(issues);
+    const metrics = analytics
+        ? {
+              requests: analytics.requests,
+              errors: analytics.errors,
+              errorRate: analytics.errorRate,
+              subrequests: analytics.subrequests,
+              cpuTimeMs: analytics.cpuTimeMs,
+              byStatus: analytics.byStatus,
+              series: analytics.series
+          }
+        : emptyCloudflare();
+    return {
+        ...metrics,
+        settings,
+        state: issues.length ? 'partial' : 'ok',
+        issues: uniqueIssues(issues)
+    };
+}
+
+async function collectInfrastructureUsage(env, rangeConfig, window, fetchImpl, timeoutMs) {
+    const providers = await Promise.allSettled([collectSupabase(env, rangeConfig, fetchImpl, timeoutMs), collectCloudflare(env, window, fetchImpl, timeoutMs)]);
+    return {
+        generatedAt: window.end,
+        range: window,
+        providers: {
+            supabase: providers[0].status === 'fulfilled' ? providers[0].value : unavailableSupabase(['provider_unavailable']),
+            cloudflare: providers[1].status === 'fulfilled' ? providers[1].value : unavailableCloudflare('provider_unavailable')
+        }
+    };
 }
 
 export async function handleInfrastructureUsageRequest(
     request,
     env,
-    { createSupabaseClient = createUserSupabaseClient, fetchImpl = fetch, now = () => new Date(), timeoutMs = 8000 } = {}
+    { createSupabaseClient = createUserSupabaseClient, fetchImpl = fetch, now = () => new Date(), timeoutMs = 8000, cache = defaultInfrastructureCache, cacheTtlMs = CACHE_TTL_MS } = {}
 ) {
     const authorization = await authorizeAdministrator(request, env, createSupabaseClient);
     if (authorization.response) return authorization.response;
@@ -302,14 +405,20 @@ export async function handleInfrastructureUsageRequest(
     const endDate = new Date(now());
     if (Number.isNaN(endDate.getTime())) return invalidRange();
     const window = { key: rangeKey, start: new Date(endDate.getTime() - rangeConfig.durationMs).toISOString(), end: endDate.toISOString() };
+    const cached = cache.values.get(rangeKey);
+    if (cached && cached.expiresAt > endDate.getTime()) return jsonResponse(cached.value);
+    if (cached) cache.values.delete(rangeKey);
 
-    const providers = await Promise.allSettled([collectSupabase(env, rangeConfig, fetchImpl, timeoutMs), collectCloudflare(env, window, fetchImpl, timeoutMs)]);
-    return jsonResponse({
-        generatedAt: window.end,
-        range: window,
-        providers: {
-            supabase: providers[0].status === 'fulfilled' ? providers[0].value : unavailableSupabase(['provider_unavailable']),
-            cloudflare: providers[1].status === 'fulfilled' ? providers[1].value : unavailableCloudflare('provider_unavailable')
-        }
-    });
+    let pending = cache.inFlight.get(rangeKey);
+    if (!pending) {
+        pending = Promise.resolve().then(() => collectInfrastructureUsage(env, rangeConfig, window, fetchImpl, timeoutMs));
+        cache.inFlight.set(rangeKey, pending);
+    }
+    try {
+        const value = await pending;
+        cache.values.set(rangeKey, { expiresAt: endDate.getTime() + cacheTtlMs, value });
+        return jsonResponse(value);
+    } finally {
+        if (cache.inFlight.get(rangeKey) === pending) cache.inFlight.delete(rangeKey);
+    }
 }

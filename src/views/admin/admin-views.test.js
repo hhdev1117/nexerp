@@ -181,9 +181,11 @@ describe('administrator infrastructure usage screen', () => {
     it('loads both supported ranges and offers an icon refresh action', () => {
         expect(infrastructureSource).toContain("{ label: '24시간', value: '24h' }");
         expect(infrastructureSource).toContain("{ label: '7일', value: '7d' }");
-        expect(infrastructureSource).toContain('await adminApi.getInfrastructureUsage(selectedRange.value)');
+        expect(infrastructureSource).toContain('await adminApi.getInfrastructureUsage(requestedRange)');
         expect(infrastructureSource).toContain('icon="pi pi-refresh"');
         expect(infrastructureSource).toContain('aria-label="인프라 사용량 새로고침"');
+        expect(infrastructureSource).toContain(':disabled="refreshDisabled"');
+        expect(infrastructureSource).toContain('requestSequence');
     });
 
     it('renders partial, unconfigured, unavailable, null metric, empty, and retry states without raw errors', () => {
@@ -197,6 +199,8 @@ describe('administrator infrastructure usage screen', () => {
         expect(infrastructureSource).not.toContain('error.message');
         expect(infrastructureSource).not.toContain('SUPABASE_URL');
         expect(infrastructureSource).not.toContain('CLOUDFLARE_ACCOUNT_ID');
+        expect(infrastructureSource).toContain('샘플링 기반 운영 지표');
+        expect(infrastructureSource).toContain('시간별 운영 이력');
     });
 
     it('uses full-width provider sections and responsive metric grids without nested cards', () => {

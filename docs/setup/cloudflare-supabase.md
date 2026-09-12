@@ -8,7 +8,7 @@ The browser uses only `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. A
 
 The Worker uses `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for user-scoped requests. It forwards the signed-in user's bearer token so Supabase evaluates those requests under that user and applies RLS. Account creation additionally uses `SUPABASE_SECRET_KEY` only after the Worker validates the caller and verifies an active `admin` profile. The secret key is server-only and must never enter browser code, a `VITE_*` variable, a response, or a log.
 
-The administrator-only infrastructure screen uses `SUPABASE_MANAGEMENT_TOKEN` for allowlisted Supabase Management API health and usage reads, and `CLOUDFLARE_API_TOKEN` for Cloudflare Workers analytics. Both are Worker-only secrets. The Cloudflare token needs the narrow analytics-read permission for the configured account, while the Supabase token needs project, health, analytics usage, and disk configuration read permissions. The nonsecret Cloudflare account and Worker names are committed as Worker vars.
+The administrator-only infrastructure screen uses `SUPABASE_MANAGEMENT_TOKEN` for allowlisted Supabase Management API health and usage reads, and `CLOUDFLARE_API_TOKEN` for Cloudflare Workers analytics and allowlisted script settings. Both are Worker-only secrets. The Cloudflare token needs the narrow analytics-read permission and `Workers Scripts Read` for the configured account, while the Supabase token needs project, health, analytics usage, and disk configuration read permissions. The nonsecret Cloudflare account and Worker names are committed as Worker vars.
 
 For local development, create ignored files from the committed examples:
 
@@ -99,7 +99,7 @@ Unknown `/api/*` paths return `404`. Client responses omit raw Supabase errors, 
 
 Active administrators can use `GET /api/admin/accounts`, `POST /api/admin/accounts`, and `PATCH /api/admin/accounts/:id`. These endpoints validate the caller before account operations, return only whitelisted profile fields, and normalize provider failures without exposing credentials. Account creation requires the Worker-only secret key; listing and profile updates retain the signed-in user's authorization boundary.
 
-`GET /api/admin/infrastructure/usage?range=24h` and `range=7d` validate an active administrator before provider access. The response contains only normalized service states and usage metrics. Missing configuration or a provider outage remains isolated to that provider and never exposes project references, account identifiers, URLs, tokens, raw errors, headers, or bindings.
+`GET /api/admin/infrastructure/usage?range=24h` and `range=7d` validate an active administrator before provider access. The response contains only normalized service states and usage metrics. Cloudflare Analytics is sampled operational telemetry and may differ from 청구 사용량; the screen does not estimate quotas, remaining capacity, or provider billing. Missing configuration or a provider outage remains isolated to that provider and never exposes project references, account identifiers, URLs, tokens, raw errors, headers, bindings, or annotations.
 
 ## Cloudflare Deployment
 

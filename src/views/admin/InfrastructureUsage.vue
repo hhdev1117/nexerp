@@ -1,6 +1,6 @@
 <script setup>
 import { useAdminApi } from '@/services/adminApi';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 const adminApi = useAdminApi();
 const rangeOptions = Object.freeze([
@@ -27,6 +27,10 @@ const selectedRange = ref('24h');
 const usage = ref(null);
 const loading = ref(true);
 const loadError = ref(false);
+const refreshCoolingDown = ref(false);
+const refreshDisabled = computed(() => loading.value || refreshCoolingDown.value);
+let requestSequence = 0;
+let refreshTimer;
 
 const supabase = computed(() => usage.value?.providers?.supabase || null);
 const cloudflare = computed(() => usage.value?.providers?.cloudflare || null);
@@ -49,27 +53,41 @@ const formatBytes = (value) => {
 };
 const formatTime = (value) => {
     const date = new Date(value);
-    return Number.isNaN(date.getTime())
-        ? '확인 불가'
-        : new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'Asia/Seoul' }).format(date);
+    return Number.isNaN(date.getTime()) ? '확인 불가' : new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'Asia/Seoul' }).format(date);
 };
 const issueText = (issue) => issueLabels[issue] || issueLabels.metric_unavailable;
 
 async function loadUsage() {
+    const requestId = ++requestSequence;
+    const requestedRange = selectedRange.value;
     loading.value = true;
     loadError.value = false;
     try {
-        usage.value = await adminApi.getInfrastructureUsage(selectedRange.value);
+        const result = await adminApi.getInfrastructureUsage(requestedRange);
+        if (requestId !== requestSequence || requestedRange !== selectedRange.value) return;
+        usage.value = result;
     } catch {
+        if (requestId !== requestSequence) return;
         usage.value = null;
         loadError.value = true;
     } finally {
-        loading.value = false;
+        if (requestId === requestSequence) loading.value = false;
     }
+}
+
+function refreshUsage() {
+    if (refreshDisabled.value) return;
+    refreshCoolingDown.value = true;
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+        refreshCoolingDown.value = false;
+    }, 60_000);
+    loadUsage();
 }
 
 watch(selectedRange, loadUsage);
 onMounted(loadUsage);
+onBeforeUnmount(() => clearTimeout(refreshTimer));
 </script>
 
 <template>
@@ -81,7 +99,7 @@ onMounted(loadUsage);
             </div>
             <div class="page-actions">
                 <SelectButton v-model="selectedRange" :options="rangeOptions" optionLabel="label" optionValue="value" :allowEmpty="false" aria-label="조회 기간" />
-                <Button icon="pi pi-refresh" severity="secondary" outlined rounded aria-label="인프라 사용량 새로고침" :loading="loading" @click="loadUsage" />
+                <Button icon="pi pi-refresh" severity="secondary" outlined rounded aria-label="인프라 사용량 새로고침" :loading="loading" :disabled="refreshDisabled" @click="refreshUsage" />
             </div>
         </header>
 
@@ -117,29 +135,58 @@ onMounted(loadUsage);
                 </div>
 
                 <div class="metric-grid">
-                    <div class="metric-tile"><span>전체 API 요청</span><strong>{{ formatMetric(supabase?.usage?.totalRequests) }}</strong></div>
-                    <div class="metric-tile"><span>Auth 요청</span><strong>{{ formatMetric(supabase?.usage?.authRequests) }}</strong></div>
-                    <div class="metric-tile"><span>REST 요청</span><strong>{{ formatMetric(supabase?.usage?.restRequests) }}</strong></div>
-                    <div class="metric-tile"><span>Realtime 요청</span><strong>{{ formatMetric(supabase?.usage?.realtimeRequests) }}</strong></div>
-                    <div class="metric-tile"><span>Storage 요청</span><strong>{{ formatMetric(supabase?.usage?.storageRequests) }}</strong></div>
-                    <div class="metric-tile"><span>디스크 사용량</span><strong>{{ formatBytes(supabase?.disk?.usedBytes) }}</strong></div>
+                    <div class="metric-tile">
+                        <span>전체 API 요청</span><strong>{{ formatMetric(supabase?.usage?.totalRequests) }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>Auth 요청</span><strong>{{ formatMetric(supabase?.usage?.authRequests) }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>REST 요청</span><strong>{{ formatMetric(supabase?.usage?.restRequests) }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>Realtime 요청</span><strong>{{ formatMetric(supabase?.usage?.realtimeRequests) }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>Storage 요청</span><strong>{{ formatMetric(supabase?.usage?.storageRequests) }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>디스크 사용량</span><strong>{{ formatBytes(supabase?.disk?.usedBytes) }}</strong>
+                    </div>
                 </div>
 
                 <div class="details-grid">
                     <div class="detail-block">
                         <h3>프로젝트</h3>
                         <dl>
-                            <div><dt>상태</dt><dd>{{ supabase?.project?.status || '확인 불가' }}</dd></div>
-                            <div><dt>리전</dt><dd>{{ supabase?.project?.region || '확인 불가' }}</dd></div>
-                            <div><dt>할당 디스크</dt><dd>{{ formatMetric(supabase?.disk?.provisionedSizeGb, ' GB') }}</dd></div>
-                            <div><dt>가용 공간</dt><dd>{{ formatBytes(supabase?.disk?.availableBytes) }}</dd></div>
+                            <div>
+                                <dt>상태</dt>
+                                <dd>{{ supabase?.project?.status || '확인 불가' }}</dd>
+                            </div>
+                            <div>
+                                <dt>리전</dt>
+                                <dd>{{ supabase?.project?.region || '확인 불가' }}</dd>
+                            </div>
+                            <div>
+                                <dt>할당 디스크</dt>
+                                <dd>{{ formatMetric(supabase?.disk?.provisionedSizeGb, ' GB') }}</dd>
+                            </div>
+                            <div>
+                                <dt>가용 공간</dt>
+                                <dd>{{ formatBytes(supabase?.disk?.availableBytes) }}</dd>
+                            </div>
                         </dl>
                     </div>
                     <div class="detail-block service-block">
                         <h3>서비스 상태</h3>
                         <div v-if="supabase?.services?.length" class="table-scroll">
                             <table>
-                                <thead><tr><th scope="col">서비스</th><th scope="col">상태</th></tr></thead>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">서비스</th>
+                                        <th scope="col">상태</th>
+                                    </tr>
+                                </thead>
                                 <tbody>
                                     <tr v-for="service in supabase.services" :key="service.name">
                                         <td>{{ service.name }}</td>
@@ -167,19 +214,92 @@ onMounted(loadUsage);
                 </div>
 
                 <div class="metric-grid">
-                    <div class="metric-tile"><span>요청</span><strong>{{ formatMetric(cloudflare?.requests) }}</strong></div>
-                    <div class="metric-tile"><span>오류</span><strong>{{ formatMetric(cloudflare?.errors) }}</strong></div>
-                    <div class="metric-tile"><span>서브요청</span><strong>{{ formatMetric(cloudflare?.subrequests) }}</strong></div>
+                    <div class="metric-tile">
+                        <span>요청</span><strong>{{ formatMetric(cloudflare?.requests) }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>오류</span><strong>{{ formatMetric(cloudflare?.errors) }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>오류율</span><strong>{{ formatMetric(cloudflare?.errorRate, '%') }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>서브요청</span><strong>{{ formatMetric(cloudflare?.subrequests) }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>CPU P50</span><strong>{{ formatMetric(cloudflare?.cpuTimeMs?.p50, ' ms') }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>CPU P99</span><strong>{{ formatMetric(cloudflare?.cpuTimeMs?.p99, ' ms') }}</strong>
+                    </div>
+                </div>
+
+                <p class="analytics-note">Cloudflare Analytics는 샘플링 기반 운영 지표이며 청구 사용량과 다를 수 있습니다.</p>
+
+                <div class="details-grid cloudflare-details">
+                    <div class="detail-block">
+                        <h3>상태별 호출</h3>
+                        <div v-if="cloudflare?.byStatus?.length" class="table-scroll">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">상태</th>
+                                        <th scope="col">요청</th>
+                                        <th scope="col">오류</th>
+                                        <th scope="col">서브요청</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="row in cloudflare.byStatus" :key="row.status">
+                                        <td>{{ row.status }}</td>
+                                        <td>{{ formatMetric(row.requests) }}</td>
+                                        <td>{{ formatMetric(row.errors) }}</td>
+                                        <td>{{ formatMetric(row.subrequests) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p v-else class="empty-row compact-empty">확인 가능한 상태별 호출이 없습니다.</p>
+                    </div>
+                    <div class="detail-block">
+                        <h3>실행 설정</h3>
+                        <dl>
+                            <div>
+                                <dt>사용 모델</dt>
+                                <dd>{{ cloudflare?.settings?.usageModel || '확인 불가' }}</dd>
+                            </div>
+                            <div>
+                                <dt>CPU 제한</dt>
+                                <dd>{{ formatMetric(cloudflare?.settings?.cpuMs, ' ms') }}</dd>
+                            </div>
+                            <div>
+                                <dt>서브요청 제한</dt>
+                                <dd>{{ formatMetric(cloudflare?.settings?.subrequests) }}</dd>
+                            </div>
+                        </dl>
+                    </div>
                 </div>
 
                 <div class="detail-block invocation-block">
-                    <h3>호출 내역</h3>
+                    <h3>시간별 운영 이력</h3>
                     <div v-if="cloudflare?.series?.length" class="table-scroll">
                         <table>
-                            <thead><tr><th scope="col">시각</th><th scope="col">상태</th><th scope="col">요청</th><th scope="col">오류</th><th scope="col">서브요청</th></tr></thead>
+                            <thead>
+                                <tr>
+                                    <th scope="col">시각</th>
+                                    <th scope="col">상태</th>
+                                    <th scope="col">요청</th>
+                                    <th scope="col">오류</th>
+                                    <th scope="col">서브요청</th>
+                                </tr>
+                            </thead>
                             <tbody>
                                 <tr v-for="row in cloudflare.series" :key="`${row.datetime}-${row.status}`">
-                                    <td>{{ formatTime(row.datetime) }}</td><td>{{ row.status }}</td><td>{{ formatMetric(row.requests) }}</td><td>{{ formatMetric(row.errors) }}</td><td>{{ formatMetric(row.subrequests) }}</td>
+                                    <td>{{ formatTime(row.datetime) }}</td>
+                                    <td>{{ row.status }}</td>
+                                    <td>{{ formatMetric(row.requests) }}</td>
+                                    <td>{{ formatMetric(row.errors) }}</td>
+                                    <td>{{ formatMetric(row.subrequests) }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -374,6 +494,20 @@ onMounted(loadUsage);
 
 .invocation-block {
     margin-top: 1.5rem;
+}
+
+.analytics-note {
+    margin: 0.85rem 0 0;
+    color: var(--text-color-secondary);
+    font-size: 0.8rem;
+}
+
+.cloudflare-details {
+    grid-template-columns: minmax(20rem, 1.35fr) minmax(14rem, 0.65fr);
+}
+
+.compact-empty {
+    min-height: 4rem;
 }
 
 .table-scroll {

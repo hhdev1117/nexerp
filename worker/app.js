@@ -70,7 +70,7 @@ async function getCurrentUser(request, env, createSupabaseClient) {
     });
 }
 
-export function createWorkerApp({ createSupabaseClient = createUserSupabaseClient, createAdminClient = createAdminSupabaseClient, fetchImpl = fetch, now = () => new Date(), providerTimeoutMs = 8000 } = {}) {
+export function createWorkerApp({ createSupabaseClient = createUserSupabaseClient, createAdminClient = createAdminSupabaseClient, fetchImpl = fetch, now = () => new Date(), providerTimeoutMs = 8000, infrastructureCache } = {}) {
     return {
         async fetch(request, env) {
             const { pathname } = new URL(request.url);
@@ -91,7 +91,7 @@ export function createWorkerApp({ createSupabaseClient = createUserSupabaseClien
             }
 
             if (pathname === '/api/admin/infrastructure/usage' && request.method === 'GET') {
-                return handleInfrastructureUsageRequest(request, env, { createSupabaseClient, fetchImpl, now, timeoutMs: providerTimeoutMs });
+                return handleInfrastructureUsageRequest(request, env, { createSupabaseClient, fetchImpl, now, timeoutMs: providerTimeoutMs, cache: infrastructureCache });
             }
 
             if (pathname === '/api/health' && request.method === 'GET') {

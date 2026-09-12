@@ -17,8 +17,16 @@ const mountView = () =>
     mount(InfrastructureUsage, {
         global: {
             stubs: {
-                Button: { props: ['label'], inheritAttrs: false, template: '<button v-bind="$attrs">{{ label }}</button>' },
-                SelectButton: { template: '<div role="group"></div>' },
+                Button: {
+                    props: ['label', 'loading', 'disabled'],
+                    inheritAttrs: false,
+                    template: '<button v-bind="$attrs" :disabled="disabled || loading">{{ label }}</button>'
+                },
+                SelectButton: {
+                    props: ['modelValue'],
+                    emits: ['update:modelValue'],
+                    template: '<div role="group"><button data-test="range-7d" @click="$emit(\'update:modelValue\', \'7d\')">7일</button></div>'
+                },
                 Tag: { props: ['value'], template: '<span>{{ value }}</span>' },
                 ProgressSpinner: { template: '<span>loading</span>' }
             }
@@ -26,7 +34,10 @@ const mountView = () =>
     });
 
 describe('InfrastructureUsage', () => {
-    beforeEach(() => getInfrastructureUsage.mockReset());
+    beforeEach(() => {
+        vi.useRealTimers();
+        getInfrastructureUsage.mockReset();
+    });
 
     it('renders partial and unconfigured providers with null metrics as unavailable', async () => {
         getInfrastructureUsage.mockResolvedValue(
@@ -49,12 +60,7 @@ describe('InfrastructureUsage', () => {
     it('retries a failed page request from the rendered action', async () => {
         getInfrastructureUsage
             .mockRejectedValueOnce(new Error('raw-view-sentinel'))
-            .mockResolvedValueOnce(
-                usage(
-                    provider('unconfigured', { issues: [], project: null, services: [], usage: null, disk: null }),
-                    provider('unconfigured', { issues: [], requests: null, errors: null, subrequests: null, series: [] })
-                )
-            );
+            .mockResolvedValueOnce(usage(provider('unconfigured', { issues: [], project: null, services: [], usage: null, disk: null }), provider('unconfigured', { issues: [], requests: null, errors: null, subrequests: null, series: [] })));
         const wrapper = mountView();
         await flushPromises();
 
@@ -67,5 +73,85 @@ describe('InfrastructureUsage', () => {
         expect(getInfrastructureUsage).toHaveBeenCalledTimes(2);
         expect(wrapper.text()).toContain('Supabase');
         expect(wrapper.text()).toContain('Cloudflare Workers');
+    });
+
+    it('renders operational Cloudflare metrics, status breakdown, and allowlisted settings', async () => {
+        getInfrastructureUsage.mockResolvedValue(
+            usage(
+                provider('ok', { project: null, services: [], usage: null, disk: null }),
+                provider('ok', {
+                    requests: 200,
+                    errors: 5,
+                    errorRate: 2.5,
+                    subrequests: 80,
+                    cpuTimeMs: { p50: 1.25, p99: 9.5 },
+                    byStatus: [{ status: 'exceededResources', requests: 5, errors: 5, subrequests: 1 }],
+                    settings: { usageModel: 'standard', cpuMs: 50, subrequests: 1000 },
+                    series: [{ datetime: '2026-09-12T01:00:00.000Z', status: 'exceededResources', requests: 5, errors: 5, subrequests: 1 }]
+                })
+            )
+        );
+        const wrapper = mountView();
+        await flushPromises();
+
+        expect(wrapper.text()).toContain('오류율');
+        expect(wrapper.text()).toContain('2.5%');
+        expect(wrapper.text()).toContain('CPU P50');
+        expect(wrapper.text()).toContain('1.25 ms');
+        expect(wrapper.text()).toContain('상태별 호출');
+        expect(wrapper.text()).toContain('exceededResources');
+        expect(wrapper.text()).toContain('시간별 운영 이력');
+        expect(wrapper.text()).toContain('standard');
+        expect(wrapper.text()).toContain('샘플링 기반 운영 지표');
+        expect(wrapper.text()).toContain('청구 사용량과 다를 수 있습니다.');
+    });
+
+    it('does not let a stale range request overwrite the current range state', async () => {
+        let resolve24;
+        let resolve7;
+        getInfrastructureUsage.mockImplementation(
+            (range) =>
+                new Promise((resolve) => {
+                    if (range === '24h') resolve24 = resolve;
+                    else resolve7 = resolve;
+                })
+        );
+        const wrapper = mountView();
+        await flushPromises();
+        await wrapper.get('[data-test="range-7d"]').trigger('click');
+        await flushPromises();
+
+        resolve24(usage(provider('ok', { project: null, services: [], usage: { totalRequests: 24 }, disk: null }), provider('ok', { requests: 24, errors: 0, subrequests: 0, series: [] })));
+        await flushPromises();
+        const staleValueRendered = wrapper.text().includes('24');
+        const staleRequestStoppedLoading = wrapper.get('[aria-label="인프라 사용량 새로고침"]').attributes('disabled') === undefined;
+
+        const sevenDayUsage = usage(provider('ok', { project: null, services: [], usage: { totalRequests: 700 }, disk: null }), provider('ok', { requests: 700, errors: 0, subrequests: 0, series: [] }));
+        sevenDayUsage.range.key = '7d';
+        resolve7(sevenDayUsage);
+        await flushPromises();
+        expect(staleValueRendered).toBe(false);
+        expect(staleRequestStoppedLoading).toBe(false);
+        expect(wrapper.text()).toContain('700');
+    });
+
+    it('keeps manual refresh disabled for a 60-second cooldown after loading', async () => {
+        vi.useFakeTimers();
+        try {
+            getInfrastructureUsage.mockResolvedValue(usage(provider('unconfigured', { project: null, services: [], usage: null, disk: null }), provider('unconfigured', { requests: null, errors: null, subrequests: null, series: [] })));
+            const wrapper = mountView();
+            await flushPromises();
+            const refresh = wrapper.get('[aria-label="인프라 사용량 새로고침"]');
+            expect(refresh.attributes('disabled')).toBeUndefined();
+
+            await refresh.trigger('click');
+            await flushPromises();
+            expect(refresh.attributes('disabled')).toBeDefined();
+
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect(refresh.attributes('disabled')).toBeUndefined();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

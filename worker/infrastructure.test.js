@@ -7,7 +7,7 @@ const baseEnv = Object.freeze({
     SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_sentinel',
     SUPABASE_MANAGEMENT_TOKEN: 'supabase-management-sentinel',
     CLOUDFLARE_API_TOKEN: 'cloudflare-token-sentinel',
-    CLOUDFLARE_ACCOUNT_ID: 'cloudflare-account-sentinel',
+    CLOUDFLARE_ACCOUNT_ID: 'fb3e0684f8d1a9ced906edc27c0f3c8b',
     CLOUDFLARE_WORKER_NAME: 'nexerp'
 });
 
@@ -59,23 +59,39 @@ function managementResponses() {
     };
 }
 
-function cloudflareResponse() {
+function cloudflareResponse(overrides = {}) {
     return {
         data: {
             viewer: {
                 accounts: [
                     {
-                        totals: [{ sum: { requests: 160, errors: 30, subrequests: 70 } }],
+                        totals: [{ sum: { requests: 160, errors: 30, subrequests: 70 }, quantiles: { cpuTimeP50: 2.5, cpuTimeP99: 12.75 } }],
                         series: [
-                            { dimensions: { datetime: '2026-09-12T01:00:00Z', status: 'success', scriptName: 'must-not-leak' }, sum: { requests: 10, errors: 1, subrequests: 4 } },
-                            { dimensions: { datetime: '2026-09-12T02:00:00Z', status: 'scriptThrewException' }, sum: { requests: 6, errors: 2, subrequests: 3 } }
-                        ]
+                            { dimensions: { datetime: '2026-09-12T01:12:30Z', status: 'success', scriptName: 'must-not-leak' }, sum: { requests: 10, errors: 1, subrequests: 4 } },
+                            { dimensions: { datetime: '2026-09-12T01:48:00Z', status: 'success' }, sum: { requests: 4, errors: 0, subrequests: 2 } },
+                            { dimensions: { datetime: '2026-09-12T02:00:00Z', status: 'exceededResources' }, sum: { requests: 6, errors: 2, subrequests: 3 } }
+                        ],
+                        ...overrides
                     }
                 ]
             }
         },
         errors: null,
         extensions: { trace: 'must-not-leak' }
+    };
+}
+
+function cloudflareSettingsResponse(overrides = {}) {
+    return {
+        success: true,
+        result: {
+            usage_model: 'standard',
+            limits: { cpu_ms: 50, subrequests: 1000 },
+            bindings: [{ name: 'must-not-leak-binding', type: 'secret_text' }],
+            annotations: { 'workers/message': 'must-not-leak-annotation' },
+            ...overrides
+        },
+        errors: []
     };
 }
 
@@ -90,15 +106,23 @@ function createProviderFetch({ events = [], overrides = {} } = {}) {
         if (url === `https://api.supabase.com/v1/projects/${projectRef}/config/disk/util`) return json(responses.diskUtil);
         if (url === `https://api.supabase.com/v1/projects/${projectRef}/config/disk`) return json(responses.diskConfig);
         if (url === 'https://api.cloudflare.com/client/v4/graphql') return json(cloudflareResponse());
+        if (url === `https://api.cloudflare.com/client/v4/accounts/${baseEnv.CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${baseEnv.CLOUDFLARE_WORKER_NAME}/settings`) return json(cloudflareSettingsResponse());
         if (url === `${baseEnv.SUPABASE_URL}/auth/v1/health`) return json({ version: 'must-not-leak-public-version' });
         throw new Error(`Unexpected provider URL: ${url}`);
     });
 }
 
-function createApp({ events = [], userFixture = createUserClientFixture({ events }), fetchImpl = createProviderFetch({ events }), timeoutMs = 50 } = {}) {
+function createApp({
+    events = [],
+    userFixture = createUserClientFixture({ events }),
+    fetchImpl = createProviderFetch({ events }),
+    timeoutMs = 50,
+    now = () => new Date('2026-09-12T03:04:05.000Z'),
+    infrastructureCache = { values: new Map(), inFlight: new Map() }
+} = {}) {
     const createSupabaseClient = vi.fn(() => userFixture.client);
     return {
-        app: createWorkerApp({ createSupabaseClient, fetchImpl, now: () => new Date('2026-09-12T03:04:05.000Z'), providerTimeoutMs: timeoutMs }),
+        app: createWorkerApp({ createSupabaseClient, fetchImpl, now, providerTimeoutMs: timeoutMs, infrastructureCache }),
         createSupabaseClient,
         fetchImpl,
         userFixture
@@ -177,10 +201,17 @@ describe('administrator infrastructure usage API', () => {
                     issues: [],
                     requests: 160,
                     errors: 30,
+                    errorRate: 18.75,
                     subrequests: 70,
+                    cpuTimeMs: { p50: 2.5, p99: 12.75 },
+                    byStatus: [
+                        { status: 'success', requests: 14, errors: 1, subrequests: 6 },
+                        { status: 'exceededResources', requests: 6, errors: 2, subrequests: 3 }
+                    ],
+                    settings: { usageModel: 'standard', cpuMs: 50, subrequests: 1000 },
                     series: [
-                        { datetime: '2026-09-12T01:00:00.000Z', status: 'success', requests: 10, errors: 1, subrequests: 4 },
-                        { datetime: '2026-09-12T02:00:00.000Z', status: 'scriptThrewException', requests: 6, errors: 2, subrequests: 3 }
+                        { datetime: '2026-09-12T01:00:00.000Z', status: 'success', requests: 14, errors: 1, subrequests: 6 },
+                        { datetime: '2026-09-12T02:00:00.000Z', status: 'exceededResources', requests: 6, errors: 2, subrequests: 3 }
                     ]
                 }
             }
@@ -197,7 +228,7 @@ describe('administrator infrastructure usage API', () => {
         const graphqlBody = JSON.parse(graphqlCall[1].body);
         expect(graphqlCall[1].headers).toEqual({ Authorization: 'Bearer cloudflare-token-sentinel', Accept: 'application/json', 'Content-Type': 'application/json' });
         expect(graphqlBody.variables).toEqual({
-            accountTag: 'cloudflare-account-sentinel',
+            accountTag: 'fb3e0684f8d1a9ced906edc27c0f3c8b',
             datetimeStart: '2026-09-11T03:04:05.000Z',
             datetimeEnd: '2026-09-12T03:04:05.000Z',
             scriptName: 'nexerp'
@@ -208,6 +239,13 @@ describe('administrator infrastructure usage API', () => {
         expect(graphqlBody.query).toContain('requests');
         expect(graphqlBody.query).toContain('errors');
         expect(graphqlBody.query).toContain('subrequests');
+        expect(graphqlBody.query).toContain('quantiles { cpuTimeP50 cpuTimeP99 }');
+        expect(graphqlBody.query).toContain('limit: 1000');
+        expect(graphqlBody.query).toContain('orderBy: [datetime_ASC]');
+        expect(graphqlBody.query).not.toContain('datetimeHour');
+
+        const settingsCall = fetchImpl.mock.calls.find(([url]) => url.endsWith('/workers/scripts/nexerp/settings'));
+        expect(settingsCall[1].headers).toEqual({ Authorization: 'Bearer cloudflare-token-sentinel', Accept: 'application/json' });
 
         const serialized = JSON.stringify(body);
         for (const forbidden of ['abcdefghijklmnopqrst', 'must-not-leak', 'sentinel', 'organization_id', 'accountTag', 'scriptName', 'https://']) {
@@ -275,7 +313,18 @@ describe('administrator infrastructure usage API', () => {
         const body = await response.json();
 
         expect(body.providers.supabase).toEqual({ state: 'unconfigured', issues: ['missing_configuration', 'metric_unavailable'], project: null, services: [], usage: null, disk: null });
-        expect(body.providers.cloudflare).toEqual({ state: 'unconfigured', issues: ['missing_configuration', 'metric_unavailable'], requests: null, errors: null, subrequests: null, series: [] });
+        expect(body.providers.cloudflare).toEqual({
+            state: 'unconfigured',
+            issues: ['missing_configuration', 'metric_unavailable'],
+            requests: null,
+            errors: null,
+            errorRate: null,
+            subrequests: null,
+            cpuTimeMs: { p50: null, p99: null },
+            byStatus: null,
+            settings: null,
+            series: []
+        });
         expect(fetchImpl).not.toHaveBeenCalled();
     });
 
@@ -297,6 +346,175 @@ describe('administrator infrastructure usage API', () => {
         expect(body.providers.supabase.disk.usedBytes).toBe(600);
     });
 
+    it.each(['UNKNOWN', 'INIT_FAILED', 'REMOVED', 'RESTORING', 'UPGRADING', 'PAUSING', 'RESTORE_FAILED', 'RESTARTING', 'PAUSE_FAILED', 'RESIZING'])('accepts the official Supabase project state %s', async (status) => {
+        const projectUrl = `https://api.supabase.com/v1/projects/${projectRef}`;
+        const fetchImpl = createProviderFetch({
+            overrides: { [projectUrl]: () => json({ ...managementResponses().project, status }) }
+        });
+        const { app } = createApp({ fetchImpl });
+        const body = await (await app.fetch(request(), baseEnv)).json();
+
+        expect(body.providers.supabase.project.status).toBe(status);
+    });
+
+    it('sanitizes a future Supabase project state and accepts disks without optional throughput', async () => {
+        const projectUrl = `https://api.supabase.com/v1/projects/${projectRef}`;
+        const diskUrl = `https://api.supabase.com/v1/projects/${projectRef}/config/disk`;
+        const disk = managementResponses().diskConfig;
+        delete disk.attributes.throughput_mibps;
+        const fetchImpl = createProviderFetch({
+            overrides: {
+                [projectUrl]: () => json({ ...managementResponses().project, status: 'FUTURE_PLATFORM_STATE' }),
+                [diskUrl]: () => json(disk)
+            }
+        });
+        const { app } = createApp({ fetchImpl });
+        const body = await (await app.fetch(request(), baseEnv)).json();
+
+        expect(body.providers.supabase.project.status).toBe('UNKNOWN');
+        expect(body.providers.supabase.disk.throughputMibps).toBeNull();
+        expect(body.providers.supabase.issues).not.toContain('provider_invalid_response');
+        expect(JSON.stringify(body)).not.toContain('FUTURE_PLATFORM_STATE');
+    });
+
+    it('normalizes every documented Cloudflare invocation status and rejects invented values', async () => {
+        const graphqlUrl = 'https://api.cloudflare.com/client/v4/graphql';
+        const statuses = ['success', 'clientDisconnected', 'scriptThrewException', 'exceededResources', 'internalError'];
+        const series = statuses.map((status, index) => ({
+            dimensions: { datetime: `2026-09-12T0${index}:15:00Z`, status },
+            sum: { requests: index + 1, errors: index === 0 ? 0 : 1, subrequests: index }
+        }));
+        const fetchImpl = createProviderFetch({ overrides: { [graphqlUrl]: () => json(cloudflareResponse({ series })) } });
+        const { app } = createApp({ fetchImpl });
+        const valid = await (await app.fetch(request(), baseEnv)).json();
+
+        expect(valid.providers.cloudflare.state).toBe('ok');
+        expect(valid.providers.cloudflare.byStatus.map(({ status }) => status)).toEqual(statuses);
+        expect(valid.providers.cloudflare.series.map(({ status }) => status)).toEqual(statuses);
+
+        const invalidFetch = createProviderFetch({
+            overrides: {
+                [graphqlUrl]: () =>
+                    json(
+                        cloudflareResponse({
+                            series: [{ dimensions: { datetime: '2026-09-12T01:00:00Z', status: 'exceededCpu' }, sum: { requests: 1, errors: 1, subrequests: 0 } }]
+                        })
+                    )
+            }
+        });
+        const invalid = await (await createApp({ fetchImpl: invalidFetch }).app.fetch(request(), baseEnv)).json();
+        expect(invalid.providers.cloudflare.state).toBe('partial');
+        expect(invalid.providers.cloudflare.issues).toEqual(['provider_invalid_response', 'metric_unavailable']);
+    });
+
+    it('coalesces more than 100 sorted analytics rows into deterministic hourly operational buckets', async () => {
+        const graphqlUrl = 'https://api.cloudflare.com/client/v4/graphql';
+        const start = Date.parse('2026-09-05T04:00:00.000Z');
+        const series = Array.from({ length: 168 }, (_, index) => ({
+            dimensions: { datetime: new Date(start + index * 60 * 60 * 1000 + 30 * 60 * 1000).toISOString(), status: 'success' },
+            sum: { requests: 1, errors: 0, subrequests: 2 }
+        }));
+        const fetchImpl = createProviderFetch({ overrides: { [graphqlUrl]: () => json(cloudflareResponse({ series })) } });
+        const { app } = createApp({ fetchImpl });
+        const body = await (await app.fetch(request('range=7d'), baseEnv)).json();
+        const graphqlBody = JSON.parse(fetchImpl.mock.calls.find(([url]) => url === graphqlUrl)[1].body);
+
+        expect(body.providers.cloudflare.series).toHaveLength(168);
+        expect(body.providers.cloudflare.series[0].datetime).toBe('2026-09-05T04:00:00.000Z');
+        expect(body.providers.cloudflare.series.at(-1).datetime).toBe('2026-09-12T03:00:00.000Z');
+        expect(graphqlBody.query).toContain('limit: 1000');
+        expect(graphqlBody.query).toContain('orderBy: [datetime_ASC]');
+    });
+
+    it('marks analytics partial when the bounded series may be truncated', async () => {
+        const graphqlUrl = 'https://api.cloudflare.com/client/v4/graphql';
+        const series = Array.from({ length: 1000 }, (_, index) => ({
+            dimensions: { datetime: new Date(Date.parse('2026-09-12T01:00:00.000Z') + index * 1000).toISOString(), status: 'success' },
+            sum: { requests: 1, errors: 0, subrequests: 0 }
+        }));
+        const fetchImpl = createProviderFetch({ overrides: { [graphqlUrl]: () => json(cloudflareResponse({ series })) } });
+        const { app } = createApp({ fetchImpl });
+        const body = await (await app.fetch(request(), baseEnv)).json();
+
+        expect(body.providers.cloudflare.state).toBe('partial');
+        expect(body.providers.cloudflare.issues).toEqual(['metric_unavailable']);
+        expect(body.providers.cloudflare.requests).toBe(160);
+        expect(body.providers.cloudflare.series).toHaveLength(1);
+    });
+
+    it('keeps analytics available when allowlisted script settings are malformed', async () => {
+        const settingsUrl = `https://api.cloudflare.com/client/v4/accounts/${baseEnv.CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${baseEnv.CLOUDFLARE_WORKER_NAME}/settings`;
+        const fetchImpl = createProviderFetch({
+            overrides: { [settingsUrl]: () => json(cloudflareSettingsResponse({ usage_model: 'raw-settings-sentinel' })) }
+        });
+        const { app } = createApp({ fetchImpl });
+        const body = await (await app.fetch(request(), baseEnv)).json();
+
+        expect(body.providers.cloudflare.state).toBe('partial');
+        expect(body.providers.cloudflare.issues).toEqual(['provider_invalid_response', 'metric_unavailable']);
+        expect(body.providers.cloudflare.requests).toBe(160);
+        expect(body.providers.cloudflare.settings).toBeNull();
+        expect(JSON.stringify(body)).not.toContain('raw-settings-sentinel');
+    });
+
+    it('authorizes every request before returning a cached normalized response', async () => {
+        const infrastructureCache = { values: new Map(), inFlight: new Map() };
+        const fetchImpl = createProviderFetch();
+        const { app } = createApp({ fetchImpl, infrastructureCache });
+        expect((await app.fetch(request(), baseEnv)).status).toBe(200);
+        const providerCalls = fetchImpl.mock.calls.length;
+
+        const guardedEnv = new Proxy(baseEnv, {
+            get() {
+                throw new Error('configuration must not be read');
+            }
+        });
+        const denied = await app.fetch(request('range=24h', null), guardedEnv);
+
+        expect(denied.status).toBe(401);
+        expect(fetchImpl).toHaveBeenCalledTimes(providerCalls);
+    });
+
+    it('caches normalized results for 60 seconds with range-separated keys and expiry', async () => {
+        let currentTime = Date.parse('2026-09-12T03:04:05.000Z');
+        const fetchImpl = createProviderFetch();
+        const infrastructureCache = { values: new Map(), inFlight: new Map() };
+        const { app } = createApp({ fetchImpl, now: () => new Date(currentTime), infrastructureCache });
+
+        const first = await (await app.fetch(request(), baseEnv)).json();
+        currentTime += 59_999;
+        const cached = await (await app.fetch(request(), baseEnv)).json();
+        expect(cached).toEqual(first);
+        expect(fetchImpl.mock.calls.filter(([url]) => url === 'https://api.cloudflare.com/client/v4/graphql')).toHaveLength(1);
+        expect(JSON.stringify([...infrastructureCache.values.entries()])).not.toMatch(/sentinel|must-not-leak|bindings|annotations/);
+
+        await app.fetch(request('range=7d'), baseEnv);
+        expect(fetchImpl.mock.calls.filter(([url]) => url === 'https://api.cloudflare.com/client/v4/graphql')).toHaveLength(2);
+
+        currentTime += 2;
+        const refreshed = await (await app.fetch(request(), baseEnv)).json();
+        expect(refreshed.generatedAt).not.toBe(first.generatedAt);
+        expect(fetchImpl.mock.calls.filter(([url]) => url === 'https://api.cloudflare.com/client/v4/graphql')).toHaveLength(3);
+    });
+
+    it('deduplicates concurrent provider collection for the same authorized range', async () => {
+        const graphqlUrl = 'https://api.cloudflare.com/client/v4/graphql';
+        const resolvers = [];
+        const fetchImpl = createProviderFetch({
+            overrides: { [graphqlUrl]: () => new Promise((resolve) => resolvers.push(resolve)) }
+        });
+        const { app } = createApp({ fetchImpl });
+
+        const first = app.fetch(request(), baseEnv);
+        const second = app.fetch(request(), baseEnv);
+        await vi.waitFor(() => expect(resolvers.length).toBeGreaterThan(0));
+        resolvers.forEach((resolve) => resolve(json(cloudflareResponse())));
+        await Promise.all([first, second]);
+
+        expect(resolvers).toHaveLength(1);
+        expect(fetchImpl.mock.calls.filter(([url]) => url.endsWith('/workers/scripts/nexerp/settings'))).toHaveLength(1);
+    });
+
     it.each([
         [401, 'provider_auth_failed'],
         [403, 'provider_forbidden'],
@@ -311,7 +529,18 @@ describe('administrator infrastructure usage API', () => {
 
         expect(response.status).toBe(200);
         expect(body.providers.supabase.usage.totalRequests).toBe(77);
-        expect(body.providers.cloudflare).toEqual({ state: 'unavailable', issues: [issue, 'metric_unavailable'], requests: null, errors: null, subrequests: null, series: [] });
+        expect(body.providers.cloudflare).toEqual({
+            state: 'partial',
+            issues: [issue, 'metric_unavailable'],
+            requests: null,
+            errors: null,
+            errorRate: null,
+            subrequests: null,
+            cpuTimeMs: { p50: null, p99: null },
+            byStatus: null,
+            settings: { usageModel: 'standard', cpuMs: 50, subrequests: 1000 },
+            series: []
+        });
         expect(JSON.stringify(body)).not.toContain('raw-cloudflare-sentinel');
     });
 
@@ -344,7 +573,10 @@ describe('administrator infrastructure usage API', () => {
             const response = await app.fetch(request(), baseEnv);
             const body = await response.json();
 
-            expect(body.providers.cloudflare).toEqual({ state: 'unavailable', issues: ['provider_invalid_response', 'metric_unavailable'], requests: null, errors: null, subrequests: null, series: [] });
+            expect(body.providers.cloudflare.state).toBe('partial');
+            expect(body.providers.cloudflare.issues).toEqual(['provider_invalid_response', 'metric_unavailable']);
+            expect(body.providers.cloudflare.requests).toBeNull();
+            expect(body.providers.cloudflare.settings).toEqual({ usageModel: 'standard', cpuMs: 50, subrequests: 1000 });
             expect(JSON.stringify(body)).not.toContain('raw-graphql-sentinel');
         }
     });
@@ -361,7 +593,10 @@ describe('administrator infrastructure usage API', () => {
         const body = await response.json();
 
         expect(response.status).toBe(200);
-        expect(body.providers.cloudflare).toEqual({ state: 'unavailable', issues: ['provider_unavailable', 'metric_unavailable'], requests: null, errors: null, subrequests: null, series: [] });
+        expect(body.providers.cloudflare.state).toBe('partial');
+        expect(body.providers.cloudflare.issues).toEqual(['provider_unavailable', 'metric_unavailable']);
+        expect(body.providers.cloudflare.requests).toBeNull();
+        expect(body.providers.cloudflare.settings).toEqual({ usageModel: 'standard', cpuMs: 50, subrequests: 1000 });
         expect(JSON.stringify(body)).not.toContain('raw-timeout-sentinel');
     });
 });

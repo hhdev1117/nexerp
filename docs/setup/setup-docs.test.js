@@ -5,16 +5,7 @@ import { describe, expect, it } from 'vitest';
 const documentationPaths = ['README.md', 'docs/setup/cloudflare-supabase.md', 'docs/setup/fresh-machine.md'];
 const operationsPath = 'docs/setup/cloudflare-supabase.md';
 const deploymentGuidePaths = [operationsPath, 'docs/setup/fresh-machine.md'];
-const requiredCommands = [
-    'npm ci',
-    'npm test -- --run',
-    'npm run dev',
-    'npm run dev:cloudflare',
-    'npx supabase db push',
-    'npx wrangler secret put',
-    'npm run deploy',
-    'git pull --ff-only origin main'
-];
+const requiredCommands = ['npm ci', 'npm test -- --run', 'npm run dev', 'npm run dev:cloudflare', 'npx supabase db push', 'npx wrangler secret put', 'npm run deploy', 'git pull --ff-only origin main'];
 
 const readDocument = (path) => {
     const absolutePath = resolve(process.cwd(), path);
@@ -50,6 +41,8 @@ describe('setup documentation', () => {
 
         expect(docs).toContain('SUPABASE_MANAGEMENT_TOKEN');
         expect(docs).toContain('CLOUDFLARE_API_TOKEN');
+        expect(docs).toContain('Workers Scripts Read');
+        expect(docs).toContain('청구 사용량');
         expect(localExample).toContain('SUPABASE_MANAGEMENT_TOKEN=');
         expect(localExample).toContain('CLOUDFLARE_API_TOKEN=');
         expect(localExample).not.toMatch(/SUPABASE_MANAGEMENT_TOKEN=(?:sbp_|eyJ|[A-Za-z0-9_-]{20,})/);
