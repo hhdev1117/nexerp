@@ -26,3 +26,18 @@ export function createUserSupabaseClient(env, token, createClientDependency = cr
         throw new WorkerConfigurationError();
     }
 }
+
+export function createAdminSupabaseClient(env, createClientDependency = createClient) {
+    const url = normalizeValue(env?.SUPABASE_URL);
+    const secretKey = normalizeValue(env?.SUPABASE_SECRET_KEY);
+
+    if (!url || !secretKey) throw new WorkerConfigurationError();
+
+    try {
+        return createClientDependency(url, secretKey, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+        });
+    } catch {
+        throw new WorkerConfigurationError();
+    }
+}

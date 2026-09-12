@@ -1,6 +1,7 @@
 import { jsonResponse } from './http';
 import { getBearerToken } from './auth';
-import { createUserSupabaseClient } from './supabase';
+import { handleAdminAccountRequest } from './admin';
+import { createAdminSupabaseClient, createUserSupabaseClient } from './supabase';
 
 const apiError = (status, code, message) => jsonResponse({ error: { code, message } }, { status });
 const upstreamAuthErrorNames = new Set(['AuthRetryableFetchError', 'AuthUnknownError']);
@@ -68,13 +69,22 @@ async function getCurrentUser(request, env, createSupabaseClient) {
     });
 }
 
-export function createWorkerApp({ createSupabaseClient = createUserSupabaseClient } = {}) {
+export function createWorkerApp({ createSupabaseClient = createUserSupabaseClient, createAdminClient = createAdminSupabaseClient } = {}) {
     return {
         async fetch(request, env) {
             const { pathname } = new URL(request.url);
 
             if (pathname === '/api/me' && request.method === 'GET') {
                 return getCurrentUser(request, env, createSupabaseClient);
+            }
+
+            const accountMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)$/);
+            if ((pathname === '/api/admin/accounts' && (request.method === 'GET' || request.method === 'POST')) || (accountMatch && request.method === 'PATCH')) {
+                return handleAdminAccountRequest(request, env, {
+                    accountId: accountMatch?.[1] ?? null,
+                    createSupabaseClient,
+                    createAdminClient
+                });
             }
 
             if (pathname === '/api/health' && request.method === 'GET') {

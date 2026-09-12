@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { getBearerToken } from './auth';
 import { createUserSupabaseClient } from './supabase';
+import * as supabaseClients from './supabase';
 
 describe('getBearerToken', () => {
     it('returns the token without the Bearer scheme', () => {
@@ -53,5 +54,41 @@ describe('createUserSupabaseClient', () => {
         expect(() => createUserSupabaseClient({ SUPABASE_URL: 'https://project.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'key' }, 'token', createClient)).toThrowError(
             expect.objectContaining({ name: 'WorkerConfigurationError', message: 'Supabase Worker configuration is invalid.' })
         );
+    });
+});
+
+describe('createAdminSupabaseClient', () => {
+    it('creates a server-only client with the secret key and no browser session behavior', () => {
+        const client = {};
+        const createClient = vi.fn(() => client);
+
+        expect(typeof supabaseClients.createAdminSupabaseClient).toBe('function');
+        expect(
+            supabaseClients.createAdminSupabaseClient(
+                {
+                    SUPABASE_URL: ' https://project.supabase.co ',
+                    SUPABASE_PUBLISHABLE_KEY: 'must-not-be-used',
+                    SUPABASE_SECRET_KEY: ' sb_secret_server_only '
+                },
+                createClient
+            )
+        ).toBe(client);
+        expect(createClient).toHaveBeenCalledWith('https://project.supabase.co', 'sb_secret_server_only', {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+        });
+    });
+
+    it.each([
+        [{}],
+        [{ SUPABASE_URL: 'https://project.supabase.co' }],
+        [{ SUPABASE_SECRET_KEY: 'sb_secret_server_only' }],
+        [{ SUPABASE_URL: '   ', SUPABASE_SECRET_KEY: 'sb_secret_server_only' }],
+        [{ SUPABASE_URL: 'https://project.supabase.co', SUPABASE_SECRET_KEY: '   ' }]
+    ])('rejects missing server configuration without constructing a client %#', (env) => {
+        const createClient = vi.fn();
+
+        expect(typeof supabaseClients.createAdminSupabaseClient).toBe('function');
+        expect(() => supabaseClients.createAdminSupabaseClient(env, createClient)).toThrowError(expect.objectContaining({ code: 'worker_configuration_error' }));
+        expect(createClient).not.toHaveBeenCalled();
     });
 });
