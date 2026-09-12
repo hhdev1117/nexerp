@@ -56,6 +56,11 @@ const makeStore = ({ configured = true, user = null, profile = null, initialize 
     hasRole: vi.fn((roles) => Boolean(profile?.is_active) && roles.includes(profile.role))
 });
 
+const makeAccessStore = ({ allowed = true, loadError } = {}) => ({
+    ensureLoaded: loadError ? vi.fn().mockRejectedValue(loadError) : vi.fn().mockResolvedValue(undefined),
+    canAccess: vi.fn(() => allowed)
+});
+
 const route = (overrides = {}) => ({
     name: 'dashboard',
     fullPath: '/',
@@ -138,18 +143,53 @@ describe('authentication route guard', () => {
         await expect(guard(route({ name: 'approvals', fullPath: '/approvals', meta: { roles: ['admin', 'approver'] } }))).resolves.toBe(true);
     });
 
-    it('denies an ordinary user access to access settings', async () => {
-        const store = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true } });
-        const guard = createAuthGuard(store);
+    it('denies direct navigation when the loaded role does not allow the route menu key', async () => {
+        const authStore = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true } });
+        const accessStore = makeAccessStore({ allowed: false });
+        const guard = createAuthGuard(authStore, accessStore);
 
-        await expect(guard(route({ name: 'settings-access', fullPath: '/settings/access', meta: { roles: ['admin'] } }))).resolves.toEqual({ name: 'access-denied' });
+        await expect(guard(route({ name: 'sales-orders', fullPath: '/sales/orders', meta: { menuKey: 'sales.orders' } }))).resolves.toEqual({ name: 'access-denied' });
+        expect(accessStore.ensureLoaded).toHaveBeenCalledWith('user');
+        expect(accessStore.canAccess).toHaveBeenCalledWith('sales.orders', 'user');
     });
 
-    it('allows an administrator to visit access settings', async () => {
-        const store = makeStore({ user: { id: 'admin-1' }, profile: { role: 'admin', is_active: true } });
-        const guard = createAuthGuard(store);
+    it('allows direct navigation when the same menu key is allowed by the access store', async () => {
+        const authStore = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true } });
+        const accessStore = makeAccessStore();
+        const guard = createAuthGuard(authStore, accessStore);
 
-        await expect(guard(route({ name: 'settings-access', fullPath: '/settings/access', meta: { roles: ['admin'] } }))).resolves.toBe(true);
+        await expect(guard(route({ name: 'sales-orders', fullPath: '/sales/orders', meta: { menuKey: 'sales.orders' } }))).resolves.toBe(true);
+    });
+
+    it('fails closed without leaking details when dynamic access loading rejects', async () => {
+        const authStore = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true } });
+        const accessStore = makeAccessStore({ loadError: new Error('sentinel-secret-access-detail') });
+        const guard = createAuthGuard(authStore, accessStore);
+
+        const result = await guard(route({ name: 'sales-orders', fullPath: '/sales/orders', meta: { menuKey: 'sales.orders' } }));
+
+        expect(result).toEqual({ name: 'access-denied' });
+        expect(JSON.stringify(result)).not.toContain('sentinel-secret-access-detail');
+        expect(accessStore.canAccess).not.toHaveBeenCalled();
+    });
+
+    it('denies an ordinary user access to fixed administrator settings', async () => {
+        const store = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true } });
+        const accessStore = makeAccessStore();
+        const guard = createAuthGuard(store, accessStore);
+
+        await expect(guard(route({ name: 'settings-accounts', fullPath: '/settings/accounts', meta: { roles: ['admin'], menuKey: 'settings.accounts', fixedAccess: true } }))).resolves.toEqual({ name: 'access-denied' });
+        expect(accessStore.ensureLoaded).not.toHaveBeenCalled();
+    });
+
+    it('allows an administrator to visit fixed settings without consulting dynamic permissions', async () => {
+        const store = makeStore({ user: { id: 'admin-1' }, profile: { role: 'admin', is_active: true } });
+        const accessStore = makeAccessStore({ allowed: false });
+        const guard = createAuthGuard(store, accessStore);
+
+        await expect(guard(route({ name: 'settings-accounts', fullPath: '/settings/accounts', meta: { roles: ['admin'], menuKey: 'settings.accounts', fixedAccess: true } }))).resolves.toBe(true);
+        expect(accessStore.ensureLoaded).not.toHaveBeenCalled();
+        expect(accessStore.canAccess).not.toHaveBeenCalled();
     });
 
     it('allows authenticated users to visit access denied without a role loop', async () => {

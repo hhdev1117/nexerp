@@ -1,5 +1,6 @@
 import { erpMenu, flattenMenuRoutes } from '@/data/erp';
 import AppLayout from '@/layout/AppLayout.vue';
+import { useAccessStore } from '@/stores/access';
 import { useAuthStore } from '@/stores/auth';
 import { createRouter, createWebHistory } from 'vue-router';
 import { createAuthGuard } from './authGuard';
@@ -22,8 +23,9 @@ const erpRoutes = flattenMenuRoutes(erpMenu).map((item) => ({
         title: item.label,
         description: item.description,
         icon: item.icon,
+        menuKey: item.menuKey,
         ...(item.to === '/approvals' ? { roles: ['admin', 'approver'] } : {}),
-        ...(item.to === '/settings/access' ? { roles: ['admin'] } : {})
+        ...(['/settings/accounts', '/settings/menu-permissions'].includes(item.to) ? { roles: ['admin'], fixedAccess: true } : {})
     }
 }));
 
@@ -62,7 +64,7 @@ const router = createRouter({
     ]
 });
 
-router.beforeEach(createAuthGuard(useAuthStore()));
+router.beforeEach(createAuthGuard(useAuthStore(), useAccessStore()));
 
 router.afterEach((to) => {
     document.title = to.meta.title ? `${to.meta.title} | Sakai ERP` : 'Sakai ERP';

@@ -1,4 +1,4 @@
-export const createAuthGuard = (authStore) => async (to) => {
+export const createAuthGuard = (authStore, accessStore) => async (to) => {
     try {
         await authStore.initialize();
         if (typeof authStore.waitForIdentity === 'function') await authStore.waitForIdentity();
@@ -21,6 +21,17 @@ export const createAuthGuard = (authStore) => async (to) => {
         return authStore.profileLoadFailed?.value ? { name: 'access-denied', query: { redirect: to.fullPath } } : { name: 'access-denied' };
     }
     if (to.meta.roles && !authStore.hasRole(to.meta.roles)) return { name: 'access-denied' };
+    if (to.meta.menuKey && !to.meta.fixedAccess) {
+        if (!accessStore) return { name: 'access-denied' };
+
+        try {
+            await accessStore.ensureLoaded(authStore.profile.value.role);
+        } catch {
+            return { name: 'access-denied' };
+        }
+
+        if (!accessStore.canAccess(to.meta.menuKey, authStore.profile.value.role)) return { name: 'access-denied' };
+    }
 
     return true;
 };

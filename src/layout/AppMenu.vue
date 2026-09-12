@@ -1,8 +1,13 @@
 <script setup>
-import { erpMenu } from '@/data/erp';
+import { erpMenu, filterMenuByAccess } from '@/data/erp';
+import { useAccessStore } from '@/stores/access';
+import { useAuthStore } from '@/stores/auth';
+import { computed } from 'vue';
 import AppMenuItem from './AppMenuItem.vue';
 
-const model = erpMenu;
+const authStore = useAuthStore();
+const accessStore = useAccessStore();
+const model = computed(() => filterMenuByAccess(erpMenu, (menuKey) => accessStore.canAccess(menuKey, authStore.profile.value?.role)));
 </script>
 
 <template>

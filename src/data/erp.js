@@ -1,22 +1,22 @@
-const makeItem = (label, icon, to, description) => ({ label, icon, to, description });
+const makeItem = (menuKey, label, icon, to, description) => ({ menuKey, label, icon, to, description });
 
 export const erpMenu = [
     {
         label: '개요',
-        items: [makeItem('통합 대시보드', 'pi pi-fw pi-home', '/', '전사 핵심 현황을 확인합니다.')]
+        items: [makeItem('dashboard', '통합 대시보드', 'pi pi-fw pi-home', '/', '전사 핵심 현황을 확인합니다.')]
     },
     {
         label: '업무',
         items: [
-            makeItem('결재함', 'pi pi-fw pi-check-square', '/approvals', '승인 요청과 처리 이력을 관리합니다.'),
+            makeItem('approvals', '결재함', 'pi pi-fw pi-check-square', '/approvals', '승인 요청과 처리 이력을 관리합니다.'),
             {
                 label: '영업관리',
                 icon: 'pi pi-fw pi-chart-line',
                 path: '/sales',
                 items: [
-                    makeItem('견적 관리', 'pi pi-fw pi-file-edit', '/sales/quotes', '고객 견적과 유효기간을 관리합니다.'),
-                    makeItem('수주 관리', 'pi pi-fw pi-shopping-cart', '/sales/orders', '수주부터 출하 요청까지 관리합니다.'),
-                    makeItem('거래처 관리', 'pi pi-fw pi-building', '/sales/customers', '고객사와 거래 조건을 관리합니다.')
+                    makeItem('sales.quotes', '견적 관리', 'pi pi-fw pi-file-edit', '/sales/quotes', '고객 견적과 유효기간을 관리합니다.'),
+                    makeItem('sales.orders', '수주 관리', 'pi pi-fw pi-shopping-cart', '/sales/orders', '수주부터 출하 요청까지 관리합니다.'),
+                    makeItem('sales.customers', '거래처 관리', 'pi pi-fw pi-building', '/sales/customers', '고객사와 거래 조건을 관리합니다.')
                 ]
             },
             {
@@ -24,9 +24,9 @@ export const erpMenu = [
                 icon: 'pi pi-fw pi-shopping-bag',
                 path: '/purchasing',
                 items: [
-                    makeItem('발주 관리', 'pi pi-fw pi-file-export', '/purchasing/orders', '구매 발주와 납기를 관리합니다.'),
-                    makeItem('입고 관리', 'pi pi-fw pi-sign-in', '/purchasing/receipts', '검수 및 입고 처리를 관리합니다.'),
-                    makeItem('공급업체 관리', 'pi pi-fw pi-truck', '/purchasing/vendors', '공급업체와 구매 조건을 관리합니다.')
+                    makeItem('purchasing.orders', '발주 관리', 'pi pi-fw pi-file-export', '/purchasing/orders', '구매 발주와 납기를 관리합니다.'),
+                    makeItem('purchasing.receipts', '입고 관리', 'pi pi-fw pi-sign-in', '/purchasing/receipts', '검수 및 입고 처리를 관리합니다.'),
+                    makeItem('purchasing.vendors', '공급업체 관리', 'pi pi-fw pi-truck', '/purchasing/vendors', '공급업체와 구매 조건을 관리합니다.')
                 ]
             },
             {
@@ -34,12 +34,12 @@ export const erpMenu = [
                 icon: 'pi pi-fw pi-box',
                 path: '/inventory',
                 items: [
-                    makeItem('재고 현황', 'pi pi-fw pi-chart-bar', '/inventory/stock', '사업장과 창고별 재고를 조회합니다.'),
-                    makeItem('입출고 이력', 'pi pi-fw pi-arrow-right-arrow-left', '/inventory/movements', '모든 재고 이동 이력을 추적합니다.'),
-                    makeItem('품목 관리', 'pi pi-fw pi-tags', '/inventory/items', '품목과 단위, 안전재고를 관리합니다.'),
-                    makeItem('창고 관리', 'pi pi-fw pi-warehouse', '/inventory/warehouses', '창고 및 로케이션을 관리합니다.'),
-                    makeItem('출하 관리', 'pi pi-fw pi-send', '/logistics/shipments', '피킹, 패킹 및 출하를 관리합니다.'),
-                    makeItem('반품 관리', 'pi pi-fw pi-replay', '/logistics/returns', '고객 반품과 판정을 관리합니다.')
+                    makeItem('inventory.stock', '재고 현황', 'pi pi-fw pi-chart-bar', '/inventory/stock', '사업장과 창고별 재고를 조회합니다.'),
+                    makeItem('inventory.movements', '입출고 이력', 'pi pi-fw pi-arrow-right-arrow-left', '/inventory/movements', '모든 재고 이동 이력을 추적합니다.'),
+                    makeItem('inventory.items', '품목 관리', 'pi pi-fw pi-tags', '/inventory/items', '품목과 단위, 안전재고를 관리합니다.'),
+                    makeItem('inventory.warehouses', '창고 관리', 'pi pi-fw pi-warehouse', '/inventory/warehouses', '창고 및 로케이션을 관리합니다.'),
+                    makeItem('logistics.shipments', '출하 관리', 'pi pi-fw pi-send', '/logistics/shipments', '피킹, 패킹 및 출하를 관리합니다.'),
+                    makeItem('logistics.returns', '반품 관리', 'pi pi-fw pi-replay', '/logistics/returns', '고객 반품과 판정을 관리합니다.')
                 ]
             },
             {
@@ -47,10 +47,10 @@ export const erpMenu = [
                 icon: 'pi pi-fw pi-cog',
                 path: '/production',
                 items: [
-                    makeItem('작업지시', 'pi pi-fw pi-list-check', '/production/work-orders', '생산 작업지시와 실적을 관리합니다.'),
-                    makeItem('BOM 관리', 'pi pi-fw pi-sitemap', '/production/bom', '제품별 자재 명세를 관리합니다.'),
-                    makeItem('생산계획', 'pi pi-fw pi-calendar-clock', '/production/schedule', '생산 능력과 일정을 계획합니다.'),
-                    makeItem('품질관리', 'pi pi-fw pi-verified', '/production/quality', '검사 결과와 부적합을 관리합니다.')
+                    makeItem('production.work-orders', '작업지시', 'pi pi-fw pi-list-check', '/production/work-orders', '생산 작업지시와 실적을 관리합니다.'),
+                    makeItem('production.bom', 'BOM 관리', 'pi pi-fw pi-sitemap', '/production/bom', '제품별 자재 명세를 관리합니다.'),
+                    makeItem('production.schedule', '생산계획', 'pi pi-fw pi-calendar-clock', '/production/schedule', '생산 능력과 일정을 계획합니다.'),
+                    makeItem('production.quality', '품질관리', 'pi pi-fw pi-verified', '/production/quality', '검사 결과와 부적합을 관리합니다.')
                 ]
             },
             {
@@ -58,11 +58,11 @@ export const erpMenu = [
                 icon: 'pi pi-fw pi-wallet',
                 path: '/finance',
                 items: [
-                    makeItem('재무 현황', 'pi pi-fw pi-chart-pie', '/finance/summary', '자금과 손익 현황을 확인합니다.'),
-                    makeItem('매출채권', 'pi pi-fw pi-arrow-down-left', '/finance/ar', '청구 및 수금 현황을 관리합니다.'),
-                    makeItem('매입채무', 'pi pi-fw pi-arrow-up-right', '/finance/ap', '지급 예정과 매입채무를 관리합니다.'),
-                    makeItem('전표 관리', 'pi pi-fw pi-book', '/finance/journals', '회계 전표를 등록하고 승인합니다.'),
-                    makeItem('재무제표', 'pi pi-fw pi-file', '/finance/statements', '재무제표와 마감 자료를 조회합니다.')
+                    makeItem('finance.summary', '재무 현황', 'pi pi-fw pi-chart-pie', '/finance/summary', '자금과 손익 현황을 확인합니다.'),
+                    makeItem('finance.ar', '매출채권', 'pi pi-fw pi-arrow-down-left', '/finance/ar', '청구 및 수금 현황을 관리합니다.'),
+                    makeItem('finance.ap', '매입채무', 'pi pi-fw pi-arrow-up-right', '/finance/ap', '지급 예정과 매입채무를 관리합니다.'),
+                    makeItem('finance.journals', '전표 관리', 'pi pi-fw pi-book', '/finance/journals', '회계 전표를 등록하고 승인합니다.'),
+                    makeItem('finance.statements', '재무제표', 'pi pi-fw pi-file', '/finance/statements', '재무제표와 마감 자료를 조회합니다.')
                 ]
             }
         ]
@@ -75,10 +75,10 @@ export const erpMenu = [
                 icon: 'pi pi-fw pi-chart-bar',
                 path: '/reports',
                 items: [
-                    makeItem('영업 분석', 'pi pi-fw pi-chart-line', '/reports/sales', '매출과 수주 성과를 분석합니다.'),
-                    makeItem('구매 분석', 'pi pi-fw pi-chart-line', '/reports/purchasing', '구매 단가와 납기 성과를 분석합니다.'),
-                    makeItem('재고 분석', 'pi pi-fw pi-chart-line', '/reports/inventory', '재고 회전과 장기 재고를 분석합니다.'),
-                    makeItem('재무 분석', 'pi pi-fw pi-chart-line', '/reports/finance', '손익과 현금 흐름을 분석합니다.')
+                    makeItem('reports.sales', '영업 분석', 'pi pi-fw pi-chart-line', '/reports/sales', '매출과 수주 성과를 분석합니다.'),
+                    makeItem('reports.purchasing', '구매 분석', 'pi pi-fw pi-chart-line', '/reports/purchasing', '구매 단가와 납기 성과를 분석합니다.'),
+                    makeItem('reports.inventory', '재고 분석', 'pi pi-fw pi-chart-line', '/reports/inventory', '재고 회전과 장기 재고를 분석합니다.'),
+                    makeItem('reports.finance', '재무 분석', 'pi pi-fw pi-chart-line', '/reports/finance', '손익과 현금 흐름을 분석합니다.')
                 ]
             },
             {
@@ -86,9 +86,9 @@ export const erpMenu = [
                 icon: 'pi pi-fw pi-database',
                 path: '/master',
                 items: [
-                    makeItem('품목 기준정보', 'pi pi-fw pi-box', '/master/items', '전사 품목 기준정보를 관리합니다.'),
-                    makeItem('거래처 기준정보', 'pi pi-fw pi-building', '/master/partners', '고객과 공급처 기준정보를 관리합니다.'),
-                    makeItem('계정과목', 'pi pi-fw pi-list', '/master/accounts', '회계 계정 체계를 관리합니다.')
+                    makeItem('master.items', '품목 기준정보', 'pi pi-fw pi-box', '/master/items', '전사 품목 기준정보를 관리합니다.'),
+                    makeItem('master.partners', '거래처 기준정보', 'pi pi-fw pi-building', '/master/partners', '고객과 공급처 기준정보를 관리합니다.'),
+                    makeItem('master.accounts', '계정과목', 'pi pi-fw pi-list', '/master/accounts', '회계 계정 체계를 관리합니다.')
                 ]
             },
             {
@@ -96,9 +96,10 @@ export const erpMenu = [
                 icon: 'pi pi-fw pi-cog',
                 path: '/settings',
                 items: [
-                    makeItem('회사 · 사업장', 'pi pi-fw pi-building-columns', '/settings/company', '회사와 사업장 정보를 관리합니다.'),
-                    makeItem('사용자 · 권한', 'pi pi-fw pi-shield', '/settings/access', '사용자와 역할별 권한을 관리합니다.'),
-                    makeItem('감사 로그', 'pi pi-fw pi-history', '/settings/audit', '주요 변경과 접근 이력을 조회합니다.')
+                    makeItem('settings.company', '회사 · 사업장', 'pi pi-fw pi-building-columns', '/settings/company', '회사와 사업장 정보를 관리합니다.'),
+                    makeItem('settings.accounts', '계정 관리', 'pi pi-fw pi-users', '/settings/accounts', 'ERP 사용자 계정을 관리합니다.'),
+                    makeItem('settings.menu-permissions', '메뉴 권한 관리', 'pi pi-fw pi-shield', '/settings/menu-permissions', '역할별 메뉴 접근 권한을 관리합니다.'),
+                    makeItem('settings.audit', '감사 로그', 'pi pi-fw pi-history', '/settings/audit', '주요 변경과 접근 이력을 조회합니다.')
                 ]
             }
         ]
@@ -109,6 +110,15 @@ export function flattenMenuRoutes(items) {
     return items.flatMap((item) => {
         const current = item.to ? [item] : [];
         return item.items ? current.concat(flattenMenuRoutes(item.items)) : current;
+    });
+}
+
+export function filterMenuByAccess(items, canAccess) {
+    return items.flatMap((item) => {
+        if (!item.items) return item.menuKey && canAccess(item.menuKey) ? [item] : [];
+
+        const visibleItems = filterMenuByAccess(item.items, canAccess);
+        return visibleItems.length ? [{ ...item, items: visibleItems }] : [];
     });
 }
 

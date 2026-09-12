@@ -7,6 +7,7 @@ import PrimeVue from 'primevue/config';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import AppMenu from './AppMenu.vue';
 import AppTopbar from './AppTopbar.vue';
 
 const toastAdd = vi.hoisted(() => vi.fn());
@@ -16,8 +17,12 @@ const authStore = {
     hasRole: vi.fn((roles) => roles.includes(authStore.profile.value?.role)),
     signOut: vi.fn()
 };
+const accessStore = {
+    canAccess: vi.fn()
+};
 
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => authStore }));
+vi.mock('@/stores/access', () => ({ useAccessStore: () => accessStore }));
 vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: toastAdd }) }));
 
 const readSource = (...segments) => readFileSync(resolve(process.cwd(), ...segments), 'utf8');
@@ -65,6 +70,7 @@ beforeEach(() => {
     authStore.profile.value = { display_name: '박지민', department: '재무팀', role: 'user', is_active: true };
     authStore.hasRole.mockClear();
     authStore.signOut.mockReset().mockResolvedValue(undefined);
+    accessStore.canAccess.mockReset().mockReturnValue(false);
     toastAdd.mockReset();
 });
 
@@ -77,9 +83,30 @@ describe('ERP application shell', () => {
     it('renders the shared ERP navigation model through the animated Sakai menu item', () => {
         const source = readLayoutSource('AppMenu.vue');
 
-        expect(source).toContain("import { erpMenu } from '@/data/erp'");
-        expect(source).toContain('const model = erpMenu');
+        expect(source).toContain("import { erpMenu, filterMenuByAccess } from '@/data/erp'");
+        expect(source).toContain('const model = computed');
         expect(source).toContain('<app-menu-item');
+    });
+
+    it('hides forbidden leaves and their empty parent groups using the current role permission', () => {
+        const allowed = new Set(['dashboard', 'sales.orders']);
+        accessStore.canAccess.mockImplementation((menuKey, role) => role === 'user' && allowed.has(menuKey));
+        const wrapper = mount(AppMenu, {
+            global: {
+                stubs: {
+                    RouterLink: { props: ['to'], template: '<a :data-to="to"><slot /></a>' }
+                }
+            }
+        });
+        wrappers.push(wrapper);
+
+        expect(wrapper.text()).toContain('통합 대시보드');
+        expect(wrapper.text()).toContain('영업관리');
+        expect(wrapper.text()).toContain('수주 관리');
+        expect(wrapper.text()).not.toContain('견적 관리');
+        expect(wrapper.text()).not.toContain('구매관리');
+        expect(wrapper.text()).not.toContain('분석 및 관리');
+        expect(accessStore.canAccess).toHaveBeenCalledWith('sales.orders', 'user');
     });
 
     it('keeps expandable menu groups operable and announced from the keyboard', () => {

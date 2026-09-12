@@ -24,7 +24,14 @@ describe('ERP router', () => {
         expect(router.resolve('/auth/setup')).toMatchObject({ name: 'setup-required', meta: { public: true } });
         expect(router.resolve('/auth/access-denied')).toMatchObject({ name: 'access-denied' });
         expect(router.resolve('/approvals').meta.roles).toEqual(['admin', 'approver']);
-        expect(router.resolve('/settings/access').meta.roles).toEqual(['admin']);
+        expect(router.resolve('/settings/accounts').meta).toMatchObject({ roles: ['admin'], menuKey: 'settings.accounts', fixedAccess: true });
+        expect(router.resolve('/settings/menu-permissions').meta).toMatchObject({ roles: ['admin'], menuKey: 'settings.menu-permissions', fixedAccess: true });
         expect(router.resolve('/sales/orders').meta.public).not.toBe(true);
+    });
+
+    it('uses each menu leaf key as the direct-route permission boundary', () => {
+        for (const item of flattenMenuRoutes(erpMenu)) {
+            expect(router.resolve(item.to).meta.menuKey, item.to).toBe(item.menuKey);
+        }
     });
 });

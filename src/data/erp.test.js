@@ -1,5 +1,42 @@
 import { describe, expect, it } from 'vitest';
-import { erpMenu, flattenMenuRoutes, formatWon, getDashboardSnapshot, getMenuParentPath, getModuleDefinition, nextOrderNumber, orderRows, statusSeverity, validateOrderDraft } from './erp';
+import { erpMenu, filterMenuByAccess, flattenMenuRoutes, formatWon, getDashboardSnapshot, getMenuParentPath, getModuleDefinition, nextOrderNumber, orderRows, statusSeverity, validateOrderDraft } from './erp';
+
+const expectedMenuKeys = [
+    'approvals',
+    'dashboard',
+    'finance.ap',
+    'finance.ar',
+    'finance.journals',
+    'finance.statements',
+    'finance.summary',
+    'inventory.items',
+    'inventory.movements',
+    'inventory.stock',
+    'inventory.warehouses',
+    'logistics.returns',
+    'logistics.shipments',
+    'master.accounts',
+    'master.items',
+    'master.partners',
+    'production.bom',
+    'production.quality',
+    'production.schedule',
+    'production.work-orders',
+    'purchasing.orders',
+    'purchasing.receipts',
+    'purchasing.vendors',
+    'reports.finance',
+    'reports.inventory',
+    'reports.purchasing',
+    'reports.sales',
+    'sales.customers',
+    'sales.orders',
+    'sales.quotes',
+    'settings.accounts',
+    'settings.audit',
+    'settings.company',
+    'settings.menu-permissions'
+];
 
 describe('ERP template contract', () => {
     it('contains the complete non-HR ERP navigation with unique routes', () => {
@@ -12,6 +49,50 @@ describe('ERP template contract', () => {
         expect(labels).toContain('작업지시');
         expect(labels).not.toMatch(/인사|급여/);
         expect(new Set(routes.map((item) => item.to)).size).toBe(routes.length);
+    });
+
+    it('assigns every navigation leaf the unique key contract seeded by the access migration', () => {
+        const keys = flattenMenuRoutes(erpMenu).map((item) => item.menuKey);
+
+        expect(keys.every(Boolean)).toBe(true);
+        expect(new Set(keys).size).toBe(keys.length);
+        expect([...keys].sort()).toEqual(expectedMenuKeys);
+    });
+
+    it('recursively removes denied leaves and parents left without visible children', () => {
+        const source = [
+            {
+                label: '업무',
+                items: [
+                    {
+                        label: '영업관리',
+                        items: [
+                            { label: '수주 관리', to: '/sales/orders', menuKey: 'sales.orders' },
+                            { label: '견적 관리', to: '/sales/quotes', menuKey: 'sales.quotes' }
+                        ]
+                    },
+                    {
+                        label: '구매관리',
+                        items: [{ label: '발주 관리', to: '/purchasing/orders', menuKey: 'purchasing.orders' }]
+                    }
+                ]
+            }
+        ];
+
+        const filtered = filterMenuByAccess(source, (menuKey) => menuKey === 'sales.orders');
+
+        expect(filtered).toEqual([
+            {
+                label: '업무',
+                items: [
+                    {
+                        label: '영업관리',
+                        items: [{ label: '수주 관리', to: '/sales/orders', menuKey: 'sales.orders' }]
+                    }
+                ]
+            }
+        ]);
+        expect(source[0].items).toHaveLength(2);
     });
 
     it('changes dashboard totals when a site filter is applied', () => {
