@@ -4,7 +4,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(10);
+select plan(11);
 
 insert into auth.users (id, email, raw_user_meta_data)
 values
@@ -62,6 +62,13 @@ select throws_ok(
     '42501',
     'permission denied for table profiles',
     'an ordinary user cannot escalate their role'
+);
+
+select throws_ok(
+    $$update public.profiles set is_active = false where id = '10000000-0000-0000-0000-000000000001'::uuid$$,
+    '42501',
+    'permission denied for table profiles',
+    'an ordinary user cannot deactivate their profile directly'
 );
 
 reset role;
