@@ -13,6 +13,7 @@ describe('infrastructure database size migration contract', () => {
         expect(migration).toMatch(/set\s+search_path\s*=\s*''/i);
         expect(migration).toMatch(/sum\s*\(\s*pg_catalog\.pg_database_size\s*\(\s*database\.datname\s*\)\s*\)/i);
         expect(migration).toMatch(/from\s+pg_catalog\.pg_database\s+as\s+database/i);
+        expect(migration).toMatch(/alter\s+function\s+public\.infrastructure_database_size\s*\(\s*\)\s+owner\s+to\s+postgres/i);
     });
 
     it('allows execution only by the service role', () => {

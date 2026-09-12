@@ -11,6 +11,7 @@ as $$
     from pg_catalog.pg_database as database;
 $$;
 
+alter function public.infrastructure_database_size() owner to postgres;
 revoke all on function public.infrastructure_database_size() from public, anon, authenticated;
 grant execute on function public.infrastructure_database_size() to service_role;
 
