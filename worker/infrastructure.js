@@ -20,6 +20,7 @@ const WORKER_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 const CLOUDFLARE_GRAPHQL_URL = 'https://api.cloudflare.com/client/v4/graphql';
 const CLOUDFLARE_SERIES_LIMIT = 1000;
 const CACHE_TTL_MS = 60_000;
+const FREE_DATABASE_LIMIT_BYTES = 500 * 1024 * 1024;
 const defaultInfrastructureCache = { values: new Map(), inFlight: new Map() };
 const CLOUDFLARE_QUERY = `query GetWorkersAnalytics($accountTag: string, $datetimeStart: string, $datetimeEnd: string, $scriptName: string) {
   viewer {
@@ -158,10 +159,36 @@ function normalizeDisk(utilization, configuration) {
     };
 }
 
-const unavailableSupabase = (issues) => ({ state: 'unavailable', issues: uniqueIssues([...issues, 'metric_unavailable']), project: null, services: [], usage: null, disk: null });
-const unconfiguredSupabase = () => ({ state: 'unconfigured', issues: ['missing_configuration', 'metric_unavailable'], project: null, services: [], usage: null, disk: null });
+const unavailableDatabase = () => ({ state: 'unavailable', sizeBytes: null, limitBytes: FREE_DATABASE_LIMIT_BYTES, usagePercent: null });
+const unavailableSupabase = (issues) => ({ state: 'unavailable', issues: uniqueIssues([...issues, 'metric_unavailable']), project: null, services: [], usage: null, disk: null, database: unavailableDatabase() });
+const unconfiguredSupabase = () => ({ state: 'unconfigured', issues: ['missing_configuration', 'metric_unavailable'], project: null, services: [], usage: null, disk: null, database: unavailableDatabase() });
+
+async function collectDatabaseSize(env, project, fetchImpl, timeoutMs) {
+    if (!isConfiguredText(env.SUPABASE_SECRET_KEY)) throw new ProviderFailure('missing_configuration');
+    const sizeBytes = await fetchJson(fetchImpl, `${project.origin}/rest/v1/rpc/infrastructure_database_size`, {
+        method: 'POST',
+        headers: { apikey: env.SUPABASE_SECRET_KEY.trim(), Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: '{}',
+        timeoutMs
+    });
+    if (!isSafeCount(sizeBytes)) throw new ProviderFailure('provider_invalid_response');
+    return { state: 'ok', sizeBytes, limitBytes: FREE_DATABASE_LIMIT_BYTES, usagePercent: Math.round((sizeBytes / FREE_DATABASE_LIMIT_BYTES) * 10000) / 100 };
+}
 
 async function collectSupabase(env, range, fetchImpl, timeoutMs) {
+    const project = projectOrigin(env.SUPABASE_URL);
+    if (!project) return unconfiguredSupabase();
+    const [managementResult, databaseResult] = await Promise.allSettled([collectSupabaseManagement(env, range, fetchImpl, timeoutMs), collectDatabaseSize(env, project, fetchImpl, timeoutMs)]);
+    const management = managementResult.status === 'fulfilled' ? managementResult.value : unavailableSupabase(['provider_unavailable']);
+    const database = databaseResult.status === 'fulfilled' ? databaseResult.value : unavailableDatabase();
+    const issues = [...management.issues];
+    if (databaseResult.status === 'rejected') issues.push(databaseResult.reason?.issue || 'provider_unavailable', 'metric_unavailable');
+    const hasManagement = ['ok', 'partial'].includes(management.state);
+    const state = database.state === 'ok' ? (management.state === 'ok' ? 'ok' : 'partial') : hasManagement ? 'partial' : management.state;
+    return { ...management, state, issues: uniqueIssues(issues), database };
+}
+
+async function collectSupabaseManagement(env, range, fetchImpl, timeoutMs) {
     const project = projectOrigin(env.SUPABASE_URL);
     if (!project) return unconfiguredSupabase();
 

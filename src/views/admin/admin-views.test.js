@@ -120,7 +120,7 @@ describe('administrator account screen', () => {
         expect(accountsSource).toContain(':disabled="isCurrentAccount(slotProps.data)');
         expect(accountsSource).toContain('await adminApi.resetAccountPassword(passwordResetAccount.value.id, passwordResetDraft.value.temporaryPassword)');
         expect(accountsSource).toContain("header: locking ? 'ERP 계정 잠금' : '계정 활성화'");
-        expect(accountsSource).toContain('adminApi.updateAccount(account.id, accountUpdatePayload({ ...account, isActive: !account.isActive }))');
+        expect(accountsSource).toContain('adminApi.updateAccountStatus(account.id, !account.isActive)');
         expect(accountsSource).toContain('account.id === updated.id ? updated : account');
         expect(accountsSource).toContain("passwordResetDraft.value = { temporaryPassword: '', confirmation: '' }");
         expect(accountsSource).toContain(':title="passwordResetActionLabel(slotProps.data)"');

@@ -350,6 +350,52 @@ describe('administrator account API', () => {
         expect(createAdminClient).not.toHaveBeenCalled();
     });
 
+    it('updates only activation through the status-specific protected RPC', async () => {
+        const userFixture = createUserClientFixture({
+            rpcData: { ...accountRow, display_name: '최신 이름', department: '재무팀', role: 'admin', is_active: false }
+        });
+        const { app, createAdminClient } = createApp({ userFixture });
+        const response = await app.fetch(request(`/api/admin/accounts/${accountId}`, { method: 'PATCH', body: { isActive: false } }), {});
+
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({
+            account: { ...publicAccount, displayName: '최신 이름', department: '재무팀', role: 'admin', isActive: false }
+        });
+        expect(userFixture.rpc).toHaveBeenCalledWith('admin_update_profile_status', {
+            target_id: accountId,
+            new_is_active: false
+        });
+        expect(createAdminClient).not.toHaveBeenCalled();
+    });
+
+    it('keeps self-deactivation forbidden for status-only updates', async () => {
+        const userFixture = createUserClientFixture({
+            rpcData: null,
+            rpcError: { code: '22023', message: 'self_deactivation_forbidden', details: 'raw self deactivation detail' }
+        });
+        const { app } = createApp({ userFixture });
+        const response = await app.fetch(request(`/api/admin/accounts/${callerId}`, { method: 'PATCH', body: { isActive: false } }), {});
+        const body = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(body).toEqual({ error: { code: 'self_deactivation_forbidden', message: '현재 관리자 계정은 비활성화할 수 없습니다.' } });
+        expect(userFixture.rpc).toHaveBeenCalledWith('admin_update_profile_status', {
+            target_id: callerId,
+            new_is_active: false
+        });
+        expect(JSON.stringify(body)).not.toContain('raw self deactivation detail');
+    });
+
+    it('keeps administrator authorization mandatory for status-only updates', async () => {
+        const userFixture = createUserClientFixture({ profile: { id: callerId, role: 'user', is_active: true } });
+        const { app } = createApp({ userFixture });
+        const response = await app.fetch(request(`/api/admin/accounts/${accountId}`, { method: 'PATCH', body: { isActive: false } }), {});
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({ error: { code: 'admin_required', message: '관리자 권한이 필요합니다.' } });
+        expect(userFixture.rpc).not.toHaveBeenCalled();
+    });
+
     it.each([
         ['invalid account id', '/api/admin/accounts/not-a-uuid/password', validPasswordBody, 'invalid_account_id', '올바른 계정 ID가 아닙니다.'],
         ['malformed JSON', `/api/admin/accounts/${accountId}/password`, '{', 'invalid_request', '요청 내용을 확인해 주세요.'],

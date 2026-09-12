@@ -39,6 +39,47 @@ describe('InfrastructureUsage', () => {
         getInfrastructureUsage.mockReset();
     });
 
+    it('shows actual database size, free quota, and percent as the primary Supabase metrics', async () => {
+        getInfrastructureUsage.mockResolvedValue(
+            usage(
+                provider('ok', {
+                    database: { state: 'ok', sizeBytes: 131072000, limitBytes: 524288000, usagePercent: 25 },
+                    disk: { usedBytes: 805306368 }
+                }),
+                provider('unconfigured')
+            )
+        );
+        const wrapper = mountView();
+        await flushPromises();
+
+        const metrics = wrapper.findAll('[aria-labelledby="supabase-heading"] .metric-tile');
+        expect(metrics[0].text()).toContain('데이터베이스 크기');
+        expect(metrics[0].text()).toContain('125 MB / 500 MB');
+        expect(metrics[0].text()).toContain('무료 한도');
+        expect(metrics[1].text()).toContain('사용률');
+        expect(metrics[1].text()).toContain('25%');
+        const diskDetail = wrapper.findAll('dl > div').find((entry) => entry.text().includes('전체 디스크(데이터베이스+WAL+시스템)'));
+        expect(diskDetail?.text()).toContain('768 MB');
+    });
+
+    it('keeps database metrics unavailable when RPC fails even if disk usage is available', async () => {
+        getInfrastructureUsage.mockResolvedValue(
+            usage(
+                provider('partial', {
+                    database: { state: 'unavailable', sizeBytes: null, limitBytes: 524288000, usagePercent: null },
+                    disk: { usedBytes: 805306368 }
+                }),
+                provider('unconfigured')
+            )
+        );
+        const wrapper = mountView();
+        await flushPromises();
+        const metrics = wrapper.findAll('[aria-labelledby="supabase-heading"] .metric-tile');
+        expect(metrics[0].text()).toContain('확인 불가 / 500 MB');
+        expect(metrics[1].text()).toContain('확인 불가');
+        expect(metrics[0].text()).not.toContain('768 MB');
+    });
+
     it('renders partial and unconfigured providers with null metrics as unavailable', async () => {
         getInfrastructureUsage.mockResolvedValue(
             usage(

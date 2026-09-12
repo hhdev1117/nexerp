@@ -138,6 +138,12 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                 </div>
 
                 <div class="metric-grid">
+                    <div class="metric-tile database-metric">
+                        <span>데이터베이스 크기 / 무료 한도</span><strong>{{ formatBytes(supabase?.database?.sizeBytes) }} / {{ formatBytes(supabase?.database?.limitBytes) }}</strong>
+                    </div>
+                    <div class="metric-tile">
+                        <span>사용률</span><strong>{{ formatMetric(supabase?.database?.usagePercent, '%') }}</strong>
+                    </div>
                     <div class="metric-tile">
                         <span>전체 API 요청</span><strong>{{ formatMetric(supabase?.usage?.totalRequests) }}</strong>
                     </div>
@@ -152,9 +158,6 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                     </div>
                     <div class="metric-tile">
                         <span>Storage 요청</span><strong>{{ formatMetric(supabase?.usage?.storageRequests) }}</strong>
-                    </div>
-                    <div class="metric-tile">
-                        <span>디스크 사용량</span><strong>{{ formatBytes(supabase?.disk?.usedBytes) }}</strong>
                     </div>
                 </div>
 
@@ -173,6 +176,10 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                             <div>
                                 <dt>할당 디스크</dt>
                                 <dd>{{ formatMetric(supabase?.disk?.provisionedSizeGb, ' GB') }}</dd>
+                            </div>
+                            <div>
+                                <dt>전체 디스크(데이터베이스+WAL+시스템)</dt>
+                                <dd>{{ formatBytes(supabase?.disk?.usedBytes) }}</dd>
                             </div>
                             <div>
                                 <dt>가용 공간</dt>
@@ -465,6 +472,10 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
     font-weight: 700;
 }
 
+.database-metric {
+    grid-column: 1 / -1;
+}
+
 .details-grid {
     display: grid;
     grid-template-columns: minmax(15rem, 0.8fr) minmax(20rem, 1.2fr);
@@ -491,6 +502,7 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
 
 .detail-block dt {
     color: var(--text-color-secondary);
+    overflow-wrap: anywhere;
 }
 
 .detail-block dd {

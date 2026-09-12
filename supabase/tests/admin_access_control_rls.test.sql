@@ -4,7 +4,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(24);
 
 insert into auth.users (id, email, raw_user_meta_data)
 values
@@ -70,6 +70,13 @@ select throws_ok(
     '42501',
     'admin_required',
     'an ordinary user cannot invoke the administrator profile RPC'
+);
+
+select throws_ok(
+    $$select * from public.admin_update_profile_status('20000000-0000-0000-0000-000000000003'::uuid, true)$$,
+    '42501',
+    'admin_required',
+    'an ordinary user cannot invoke the administrator profile status RPC'
 );
 
 reset role;
@@ -138,10 +145,23 @@ select throws_ok(
     'an administrator cannot deactivate their own account'
 );
 
+select throws_ok(
+    $$select * from public.admin_update_profile_status('20000000-0000-0000-0000-000000000002'::uuid, false)$$,
+    '22023',
+    'self_deactivation_forbidden',
+    'an administrator cannot deactivate their own account through the status RPC'
+);
+
 select results_eq(
     $$select id, display_name, department, role, is_active from public.admin_update_profile('20000000-0000-0000-0000-000000000001'::uuid, 'Member One', 'Sales', 'approver'::public.app_role, false)$$,
     $$values ('20000000-0000-0000-0000-000000000001'::uuid, 'Member One'::text, 'Sales'::text, 'approver'::public.app_role, false)$$,
     'an administrator can update another account through the protected RPC'
+);
+
+select results_eq(
+    $$select display_name, department, role, is_active from public.admin_update_profile_status('20000000-0000-0000-0000-000000000001'::uuid, true)$$,
+    $$values ('Member One'::text, 'Sales'::text, 'approver'::public.app_role, true)$$,
+    'a status update preserves the latest profile fields'
 );
 
 reset role;

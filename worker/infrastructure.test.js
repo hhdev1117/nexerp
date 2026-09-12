@@ -5,6 +5,7 @@ const projectRef = 'abcdefghijklmnopqrst';
 const baseEnv = Object.freeze({
     SUPABASE_URL: `https://${projectRef}.supabase.co`,
     SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_sentinel',
+    SUPABASE_SECRET_KEY: 'sb_secret_database_sentinel',
     SUPABASE_MANAGEMENT_TOKEN: 'supabase-management-sentinel',
     CLOUDFLARE_API_TOKEN: 'cloudflare-token-sentinel',
     CLOUDFLARE_ACCOUNT_ID: 'fb3e0684f8d1a9ced906edc27c0f3c8b',
@@ -12,6 +13,7 @@ const baseEnv = Object.freeze({
 });
 
 const json = (body, status = 200) => Response.json(body, { status });
+const databaseRpcUrl = `${baseEnv.SUPABASE_URL}/rest/v1/rpc/infrastructure_database_size`;
 
 function createUserClientFixture({ events = [], user = { id: 'admin-id' }, profile = { id: 'admin-id', role: 'admin', is_active: true }, authError = null } = {}) {
     const getUser = vi.fn(async () => {
@@ -100,6 +102,7 @@ function createProviderFetch({ events = [], overrides = {} } = {}) {
     return vi.fn(async (url, options = {}) => {
         events.push(`provider:${url}`);
         if (overrides[url]) return overrides[url](url, options);
+        if (url === databaseRpcUrl) return json(131072000);
         if (url === `https://api.supabase.com/v1/projects/${projectRef}`) return json(responses.project);
         if (url.startsWith(`https://api.supabase.com/v1/projects/${projectRef}/health?`)) return json(responses.health);
         if (url.startsWith(`https://api.supabase.com/v1/projects/${projectRef}/analytics/endpoints/usage.api-counts?`)) return json(responses.usage);
@@ -135,6 +138,75 @@ const request = (query = 'range=24h', token = 'session-sentinel') =>
     });
 
 describe('administrator infrastructure usage API', () => {
+    it('collects actual database bytes and the free quota through the service-role RPC', async () => {
+        const { app, fetchImpl } = createApp();
+        const body = await (await app.fetch(request(), baseEnv)).json();
+
+        expect(body.providers.supabase.database).toEqual({ state: 'ok', sizeBytes: 131072000, limitBytes: 524288000, usagePercent: 25 });
+        expect(body.providers.supabase.disk.usedBytes).toBe(600);
+        expect(fetchImpl).toHaveBeenCalledWith(databaseRpcUrl, {
+            method: 'POST',
+            headers: { apikey: 'sb_secret_database_sentinel', Accept: 'application/json', 'Content-Type': 'application/json' },
+            body: '{}',
+            signal: expect.any(AbortSignal)
+        });
+        expect(JSON.stringify(body)).not.toContain('sentinel');
+    });
+
+    it.each([undefined, ''])('collects database quota without a management token (%s)', async (managementToken) => {
+        const { app } = createApp();
+        const body = await (await app.fetch(request(), { ...baseEnv, SUPABASE_MANAGEMENT_TOKEN: managementToken })).json();
+
+        expect(body.providers.supabase.database).toEqual({ state: 'ok', sizeBytes: 131072000, limitBytes: 524288000, usagePercent: 25 });
+        expect(body.providers.supabase.state).toBe('partial');
+    });
+
+    it('collects database quota with only the secret key configured for providers', async () => {
+        const { app } = createApp();
+        const body = await (await app.fetch(request(), { SUPABASE_URL: baseEnv.SUPABASE_URL, SUPABASE_SECRET_KEY: baseEnv.SUPABASE_SECRET_KEY })).json();
+        expect(body.providers.supabase.database?.sizeBytes).toBe(131072000);
+        expect(body.providers.supabase.state).toBe('partial');
+    });
+
+    it.each([
+        [0, 0],
+        [655360000, 125],
+        [26131253, 4.98]
+    ])('rounds database usage to two decimals without clamping (%s bytes)', async (sizeBytes, usagePercent) => {
+        const fetchImpl = createProviderFetch({ overrides: { [databaseRpcUrl]: () => json(sizeBytes) } });
+        const { app } = createApp({ fetchImpl });
+        const body = await (await app.fetch(request(), baseEnv)).json();
+        expect(body.providers.supabase.database).toEqual({ state: 'ok', sizeBytes, limitBytes: 524288000, usagePercent });
+    });
+
+    it.each([null, '131072000', -1, 1.5, {}, [], 9007199254740992])('marks malformed database size unavailable (case %#)', async (value) => {
+        const fetchImpl = createProviderFetch({ overrides: { [databaseRpcUrl]: () => json(value) } });
+        const { app } = createApp({ fetchImpl });
+        const body = await (await app.fetch(request(), baseEnv)).json();
+        expect(body.providers.supabase.database).toEqual({ state: 'unavailable', sizeBytes: null, limitBytes: 524288000, usagePercent: null });
+        expect(body.providers.supabase.issues).toContain('provider_invalid_response');
+        expect(body.providers.supabase.disk.usedBytes).toBe(600);
+    });
+
+    it('marks database quota unavailable when its secret key is missing', async () => {
+        const { app, fetchImpl } = createApp();
+        const body = await (await app.fetch(request(), { ...baseEnv, SUPABASE_SECRET_KEY: undefined })).json();
+        expect(body.providers.supabase.database).toEqual({ state: 'unavailable', sizeBytes: null, limitBytes: 524288000, usagePercent: null });
+        expect(body.providers.supabase.issues).toContain('missing_configuration');
+        expect(fetchImpl.mock.calls.some(([url]) => url === databaseRpcUrl)).toBe(false);
+    });
+
+    it.each([401, 403, 404, 503])('marks failed database RPC unavailable without exposing its response (%s)', async (status) => {
+        const fetchImpl = createProviderFetch({ overrides: { [databaseRpcUrl]: () => json({ message: 'private-database-sentinel' }, status) } });
+        const { app } = createApp({ fetchImpl });
+        const response = await app.fetch(request(), baseEnv);
+        const body = await response.json();
+        expect(response.status).toBe(200);
+        expect(body.providers.supabase.database).toEqual({ state: 'unavailable', sizeBytes: null, limitBytes: 524288000, usagePercent: null });
+        expect(body.providers.supabase.issues).toContain('metric_unavailable');
+        expect(JSON.stringify(body)).not.toContain('sentinel');
+    });
+
     it('authenticates an active administrator before range validation or provider access', async () => {
         const events = [];
         const { app, fetchImpl } = createApp({ events });
@@ -194,6 +266,7 @@ describe('administrator infrastructure usage API', () => {
                         { name: 'storage', healthy: false, status: 'COMING_UP' }
                     ],
                     usage: { totalRequests: 77, authRequests: 13, realtimeRequests: 16, restRequests: 22, storageRequests: 26 },
+                    database: { state: 'ok', sizeBytes: 131072000, limitBytes: 524288000, usagePercent: 25 },
                     disk: { sizeBytes: 1000, availableBytes: 400, usedBytes: 600, provisionedSizeGb: 8, iops: 3000, throughputMibps: 125, type: 'gp3' }
                 },
                 cloudflare: {
@@ -265,7 +338,7 @@ describe('administrator infrastructure usage API', () => {
         expect(fetchImpl.mock.calls.find(([url]) => url.includes('usage.api-counts'))[0]).toContain('interval=1day');
     });
 
-    it('uses public Auth health only when the Supabase management token is absent', async () => {
+    it('uses public Auth health and database RPC when the Supabase management token is absent', async () => {
         const env = { ...baseEnv, SUPABASE_MANAGEMENT_TOKEN: undefined };
         const { app, fetchImpl } = createApp();
         const response = await app.fetch(request(), env);
@@ -277,6 +350,7 @@ describe('administrator infrastructure usage API', () => {
             issues: ['missing_configuration', 'metric_unavailable'],
             project: null,
             services: [{ name: 'auth', healthy: true, status: 'reachable' }],
+            database: { state: 'ok', sizeBytes: 131072000, limitBytes: 524288000, usagePercent: 25 },
             usage: null,
             disk: null
         });
@@ -301,6 +375,7 @@ describe('administrator infrastructure usage API', () => {
             issues: ['missing_configuration', 'provider_unavailable', 'metric_unavailable'],
             project: null,
             services: [{ name: 'auth', healthy: false, status: 'unreachable' }],
+            database: { state: 'ok', sizeBytes: 131072000, limitBytes: 524288000, usagePercent: 25 },
             usage: null,
             disk: null
         });
@@ -315,7 +390,15 @@ describe('administrator infrastructure usage API', () => {
         });
         const body = await response.json();
 
-        expect(body.providers.supabase).toEqual({ state: 'unconfigured', issues: ['missing_configuration', 'metric_unavailable'], project: null, services: [], usage: null, disk: null });
+        expect(body.providers.supabase).toEqual({
+            state: 'unconfigured',
+            issues: ['missing_configuration', 'metric_unavailable'],
+            project: null,
+            services: [],
+            usage: null,
+            disk: null,
+            database: { state: 'unavailable', sizeBytes: null, limitBytes: 524288000, usagePercent: null }
+        });
         expect(body.providers.cloudflare).toEqual({
             state: 'unconfigured',
             issues: ['missing_configuration', 'metric_unavailable'],

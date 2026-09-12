@@ -98,6 +98,19 @@ describe('administrator API service', () => {
         });
     });
 
+    it('sends only isActive when toggling status so stale profile fields cannot be overwritten', async () => {
+        fetchImpl.mockResolvedValue(response({ account: { ...account, displayName: '최신 이름', department: '재무팀', role: 'approver', isActive: false } }));
+        const api = createAdminApi({ fetchImpl, getAccessToken });
+
+        await expect(api.updateAccountStatus(account.id, false)).resolves.toMatchObject({ displayName: '최신 이름', department: '재무팀', role: 'approver', isActive: false });
+
+        expect(fetchImpl).toHaveBeenCalledWith(`/api/admin/accounts/${account.id}`, {
+            method: 'PATCH',
+            headers: { Authorization: 'Bearer current-session-token', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ isActive: false })
+        });
+    });
+
     it('sends a password reset to the selected account and accepts an empty 204 response', async () => {
         fetchImpl.mockResolvedValue(new Response(null, { status: 204 }));
         const api = createAdminApi({ fetchImpl, getAccessToken });

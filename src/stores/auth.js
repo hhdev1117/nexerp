@@ -11,6 +11,24 @@ const INVALID_SESSION_CODES = new Set(['session_not_found', 'bad_jwt', 'invalid_
 
 const isInvalidSessionError = (source) => INVALID_SESSION_NAMES.has(source?.name) || INVALID_SESSION_CODES.has(source?.code) || source?.status === 401 || source?.status === 403;
 
+const authSessionKey = (authSession) => {
+    const token = authSession?.access_token;
+    if (typeof token !== 'string' || !token.trim()) return null;
+    try {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+            const claims = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+            // The unverified claim is only a rejection key; getUser still verifies stored credentials.
+            if (typeof claims?.session_id === 'string' && claims.session_id.trim()) return `session:${claims.session_id}`;
+        }
+    } catch {
+        // Opaque or malformed credentials remain rejectable without exposing their contents.
+    }
+    // Without a session ID, conservatively group token rotations by user until explicit sign-in.
+    const userId = authSession?.user?.id;
+    return typeof userId === 'string' && userId ? `user:${userId}` : `token:${token}`;
+};
+
 const normalizedError = (source, fallback = '인증 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.') => {
     const message = typeof source?.message === 'string' ? source.message.toLowerCase() : '';
     const status = Number(source?.status);
@@ -52,6 +70,12 @@ export function createAuthStore({ client, configured }) {
     let bufferedSignedOut = false;
     let hydratingStoredSession = false;
     let bufferedInitialAuth = null;
+    const rejectedAuthSessions = new Set();
+    const isRejectedSession = (nextSession) => {
+        if (!nextSession) return false;
+        const key = authSessionKey(nextSession);
+        return !key || rejectedAuthSessions.has(key);
+    };
 
     const beginOperation = () => {
         pendingOperations += 1;
@@ -114,6 +138,7 @@ export function createAuthStore({ client, configured }) {
     };
 
     const trackIdentity = (nextSession) => {
+        if (isRejectedSession(nextSession)) return latestAuthUpdate;
         latestAuthUpdate = (async () => {
             beginOperation();
             try {
@@ -137,11 +162,19 @@ export function createAuthStore({ client, configured }) {
 
     const waitForIdentity = () => awaitIdentitySettled();
 
+    const isSameAuthSession = (left, right) => {
+        const sameUser = left?.user?.id && left.user.id === right?.user?.id;
+        const leftKey = authSessionKey(left);
+        const rightKey = authSessionKey(right);
+        return Boolean(sameUser && (!leftKey || !rightKey || leftKey === rightKey));
+    };
+
     const subscribe = () => {
         if (subscription || !isConfigured) return;
 
         const result = client.auth.onAuthStateChange((event, nextSession) => {
             if (event === 'INITIAL_SESSION') return;
+            if (isRejectedSession(nextSession)) return;
             if (hydratingStoredSession) {
                 bufferedInitialAuth = { session: nextSession };
                 return;
@@ -200,43 +233,63 @@ export function createAuthStore({ client, configured }) {
                 const storedSession = data?.session || null;
                 const initialAuth = bufferedInitialAuth;
                 bufferedInitialAuth = null;
-                hydratingStoredSession = false;
                 const bufferedSession = initialAuth?.session || null;
-                const sameUser = bufferedSession?.user?.id && bufferedSession.user.id === storedSession?.user?.id;
-                const sameToken = !bufferedSession?.access_token || !storedSession?.access_token || bufferedSession.access_token === storedSession.access_token;
-                if (initialAuth && !(sameUser && sameToken)) {
+                if (initialAuth && !isSameAuthSession(bufferedSession, storedSession)) {
+                    hydratingStoredSession = false;
                     trackIdentity(bufferedSession);
                     return;
                 }
 
                 const nextSession = initialAuth ? bufferedSession : storedSession;
                 if (nextSession) {
+                    if (isRejectedSession(nextSession)) {
+                        error.value = '로그인 시간이 만료되었습니다. 다시 로그인해 주세요.';
+                        return;
+                    }
                     let verified;
                     try {
                         verified = await client.auth.getUser(nextSession.access_token);
                     } catch (cause) {
+                        const latestAuth = bufferedInitialAuth;
+                        bufferedInitialAuth = null;
+                        hydratingStoredSession = false;
+                        if (latestAuth && !isSameAuthSession(latestAuth.session, nextSession)) {
+                            trackIdentity(latestAuth.session || null);
+                            return;
+                        }
                         error.value = normalizedError(cause, '로그인 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
                         return;
                     }
-                    if (identityVersion !== startingVersion) return;
-
                     const verifiedUser = verified?.data?.user;
-                    if (verified?.error && !isInvalidSessionError(verified.error)) {
+                    const verificationFailedTransiently = verified?.error && !isInvalidSessionError(verified.error);
+                    const invalidStoredSession =
+                        !verificationFailedTransiently && (verified?.error || !verifiedUser || verifiedUser.id !== nextSession.user?.id);
+                    const rejectedKey = invalidStoredSession && authSessionKey(nextSession);
+                    const explicitlyReauthenticated = identityVersion !== startingVersion && authSessionKey(session.value) === rejectedKey;
+                    if (rejectedKey && !explicitlyReauthenticated) rejectedAuthSessions.add(rejectedKey);
+                    if (identityVersion !== startingVersion) return;
+                    const latestAuth = bufferedInitialAuth;
+                    bufferedInitialAuth = null;
+                    if (latestAuth && !isSameAuthSession(latestAuth.session, nextSession)) {
+                        hydratingStoredSession = false;
+                        trackIdentity(latestAuth.session || null);
+                        return;
+                    }
+                    if (verificationFailedTransiently) {
+                        hydratingStoredSession = false;
                         error.value = normalizedError(verified.error, '로그인 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
                         return;
                     }
-                    if (verified?.error || !verifiedUser || verifiedUser.id !== nextSession.user?.id) {
-                        try {
-                            await client.auth.signOut({ scope: 'local' });
-                        } catch {
-                            // Local identity is still cleared below when provider cleanup fails.
-                        }
+                    if (invalidStoredSession) {
+                        hydratingStoredSession = false;
                         clearIdentity();
                         error.value = '로그인 시간이 만료되었습니다. 다시 로그인해 주세요.';
                         return;
                     }
+                    hydratingStoredSession = false;
                     trackIdentity({ ...nextSession, user: verifiedUser });
                 } else {
+                    hydratingStoredSession = false;
                     trackIdentity(null);
                 }
             } finally {
@@ -276,7 +329,16 @@ export function createAuthStore({ client, configured }) {
                 throw rejection(message);
             }
 
-            if (identityVersion === startingVersion) trackIdentity(data?.session || null);
+            const signedInSession = data?.session || null;
+            if (!authSessionKey(signedInSession)) {
+                const message = '로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+                error.value = message;
+                throw rejection(message);
+            }
+            if (identityVersion === startingVersion) {
+                rejectedAuthSessions.delete(authSessionKey(signedInSession));
+                trackIdentity(signedInSession);
+            }
             await awaitIdentitySettled();
 
             return { session: session.value, user: user.value };

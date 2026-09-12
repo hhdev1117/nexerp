@@ -164,7 +164,7 @@ async function persistAccountStatus(account) {
     if (actionAccountId.value || (account.isActive && isCurrentAccount(account))) return;
     actionAccountId.value = account.id;
     try {
-        const updated = await adminApi.updateAccount(account.id, accountUpdatePayload({ ...account, isActive: !account.isActive }));
+        const updated = await adminApi.updateAccountStatus(account.id, !account.isActive);
         accounts.value = accounts.value.map((account) => (account.id === updated.id ? updated : account));
         toast.add({
             severity: 'success',

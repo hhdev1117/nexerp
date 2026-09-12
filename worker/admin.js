@@ -130,6 +130,11 @@ function validateCreatePayload(body) {
 function validateUpdatePayload(accountId, body) {
     if (!uuidPattern.test(accountId)) return { response: apiError(400, 'invalid_account_id', '올바른 계정 ID가 아닙니다.') };
 
+    if (Object.keys(body).length === 1 && Object.hasOwn(body, 'isActive')) {
+        if (typeof body.isActive !== 'boolean') return { response: apiError(400, 'invalid_activation', '계정 활성화 상태를 확인해 주세요.') };
+        return { data: { isActive: body.isActive }, statusOnly: true };
+    }
+
     const displayName = requiredText(body.displayName, 100);
     if (!displayName) return { response: apiError(400, 'invalid_display_name', '이름을 입력해 주세요.') };
 
@@ -252,13 +257,18 @@ async function updateAccount(request, client, accountId) {
     const input = validated.data;
     let result;
     try {
-        result = await client.rpc('admin_update_profile', {
-            target_id: accountId,
-            new_display_name: input.displayName,
-            new_department: input.department,
-            new_role: input.role,
-            new_is_active: input.isActive
-        });
+        result = validated.statusOnly
+            ? await client.rpc('admin_update_profile_status', {
+                  target_id: accountId,
+                  new_is_active: input.isActive
+              })
+            : await client.rpc('admin_update_profile', {
+                  target_id: accountId,
+                  new_display_name: input.displayName,
+                  new_department: input.department,
+                  new_role: input.role,
+                  new_is_active: input.isActive
+              });
     } catch {
         return upstreamError();
     }
