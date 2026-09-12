@@ -24,7 +24,6 @@ const erpRoutes = flattenMenuRoutes(erpMenu).map((item) => ({
         description: item.description,
         icon: item.icon,
         menuKey: item.menuKey,
-        ...(item.to === '/approvals' ? { roles: ['admin', 'approver'] } : {}),
         ...(['/settings/accounts', '/settings/menu-permissions'].includes(item.to) ? { roles: ['admin'], fixedAccess: true } : {})
     }
 }));

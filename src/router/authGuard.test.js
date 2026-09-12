@@ -129,18 +129,21 @@ describe('authentication route guard', () => {
         await expect(guard(route({ name: 'access-denied', fullPath: '/auth/access-denied' }))).resolves.toBe(true);
     });
 
-    it('denies an ordinary user access to approvals', async () => {
+    it('denies an ordinary user access to approvals when the dynamic menu key is absent', async () => {
         const store = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true } });
-        const guard = createAuthGuard(store);
+        const accessStore = makeAccessStore({ allowed: false });
+        const guard = createAuthGuard(store, accessStore);
 
-        await expect(guard(route({ name: 'approvals', fullPath: '/approvals', meta: { roles: ['admin', 'approver'] } }))).resolves.toEqual({ name: 'access-denied' });
+        await expect(guard(route({ name: 'approvals', fullPath: '/approvals', meta: { menuKey: 'approvals' } }))).resolves.toEqual({ name: 'access-denied' });
     });
 
-    it('allows an approver to visit approvals', async () => {
-        const store = makeStore({ user: { id: 'user-1' }, profile: { role: 'approver', is_active: true } });
-        const guard = createAuthGuard(store);
+    it('allows an ordinary user to visit approvals when the dynamic menu key is granted', async () => {
+        const store = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true } });
+        const accessStore = makeAccessStore({ allowed: true });
+        const guard = createAuthGuard(store, accessStore);
 
-        await expect(guard(route({ name: 'approvals', fullPath: '/approvals', meta: { roles: ['admin', 'approver'] } }))).resolves.toBe(true);
+        await expect(guard(route({ name: 'approvals', fullPath: '/approvals', meta: { menuKey: 'approvals' } }))).resolves.toBe(true);
+        expect(accessStore.canAccess).toHaveBeenCalledWith('approvals', 'user');
     });
 
     it('denies direct navigation when the loaded role does not allow the route menu key', async () => {
