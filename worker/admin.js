@@ -6,6 +6,7 @@ const accountColumns = 'id, email, display_name, department, role, is_active, cr
 const allowedCreateRoles = new Set(['approver', 'user']);
 const allowedUpdateRoles = new Set(['admin', 'approver', 'user']);
 const duplicateEmailCodes = new Set(['email_exists', 'user_already_exists']);
+const missingUserCodes = new Set(['user_not_found']);
 const upstreamAuthErrorNames = new Set(['AuthRetryableFetchError', 'AuthUnknownError']);
 const upstreamAuthErrorCodes = new Set(['unexpected_failure', 'request_timeout', 'hook_timeout', 'hook_timeout_after_retry', 'over_request_rate_limit']);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -97,14 +98,19 @@ function requiredText(value, maxLength) {
     return normalized && normalized.length <= maxLength ? normalized : null;
 }
 
+function temporaryPassword(value) {
+    if (typeof value !== 'string') return null;
+    return value.length >= 8 && value.length <= 128 && value.trim().length >= 8 ? value : null;
+}
+
 function validateCreatePayload(body) {
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     if (!email || email.length > 320 || !emailPattern.test(email)) {
         return { response: apiError(400, 'invalid_email', '올바른 이메일 주소를 입력해 주세요.') };
     }
 
-    const temporaryPassword = typeof body.temporaryPassword === 'string' ? body.temporaryPassword : '';
-    if (temporaryPassword.length < 8 || temporaryPassword.length > 128 || temporaryPassword.trim().length < 8) {
+    const password = temporaryPassword(body.temporaryPassword);
+    if (!password) {
         return { response: apiError(400, 'invalid_temporary_password', '임시 비밀번호는 8자 이상이어야 합니다.') };
     }
 
@@ -118,7 +124,7 @@ function validateCreatePayload(body) {
         return { response: apiError(400, 'invalid_role', '생성할 계정의 권한을 확인해 주세요.') };
     }
 
-    return { data: { email, temporaryPassword, displayName, department, role: body.role } };
+    return { data: { email, temporaryPassword: password, displayName, department, role: body.role } };
 }
 
 function validateUpdatePayload(accountId, body) {
@@ -134,6 +140,15 @@ function validateUpdatePayload(accountId, body) {
     if (typeof body.isActive !== 'boolean') return { response: apiError(400, 'invalid_activation', '계정 활성화 상태를 확인해 주세요.') };
 
     return { data: { displayName, department, role: body.role, isActive: body.isActive } };
+}
+
+function validatePasswordResetPayload(accountId, body) {
+    if (!uuidPattern.test(accountId)) return { response: apiError(400, 'invalid_account_id', '올바른 계정 ID가 아닙니다.') };
+
+    const password = temporaryPassword(body.temporaryPassword);
+    if (!password) return { response: apiError(400, 'invalid_temporary_password', '임시 비밀번호는 8자 이상이어야 합니다.') };
+
+    return { temporaryPassword: password };
 }
 
 function mapProfileRpcError(error) {
@@ -253,13 +268,46 @@ async function updateAccount(request, client, accountId) {
     return account ? jsonResponse({ account: publicAccount(account) }) : upstreamError();
 }
 
-export async function handleAdminAccountRequest(request, env, { accountId = null, createSupabaseClient = createUserSupabaseClient, createAdminClient = createAdminSupabaseClient } = {}) {
+async function resetAccountPassword(request, env, accountId, createAdminClient) {
+    const parsed = await parseBody(request);
+    if (parsed.response) return parsed.response;
+
+    const validated = validatePasswordResetPayload(accountId, parsed.body);
+    if (validated.response) return validated.response;
+
+    let adminClient;
+    try {
+        adminClient = createAdminClient(env);
+    } catch (error) {
+        return error?.code === 'worker_configuration_error' ? serviceUnavailable() : upstreamError();
+    }
+
+    let result;
+    try {
+        result = await adminClient.auth.admin.updateUserById(accountId, { password: validated.temporaryPassword });
+    } catch {
+        return upstreamError();
+    }
+
+    if (result?.error) {
+        return missingUserCodes.has(result.error.code) || result.error.status === 404 ? apiError(404, 'account_not_found', '계정을 찾을 수 없습니다.') : upstreamError();
+    }
+
+    return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
+}
+
+export async function handleAdminAccountRequest(
+    request,
+    env,
+    { accountId = null, passwordReset = false, createSupabaseClient = createUserSupabaseClient, createAdminClient = createAdminSupabaseClient } = {}
+) {
     const authorization = await authorizeAdministrator(request, env, createSupabaseClient);
     if (authorization.response) return authorization.response;
 
     if (request.method === 'GET' && accountId === null) return listAccounts(authorization.client);
     if (request.method === 'POST' && accountId === null) return createAccount(request, env, authorization.client, createAdminClient);
     if (request.method === 'PATCH' && accountId !== null) return updateAccount(request, authorization.client, accountId);
+    if (request.method === 'POST' && accountId !== null && passwordReset) return resetAccountPassword(request, env, accountId, createAdminClient);
 
     return apiError(400, 'invalid_request', '요청 내용을 확인해 주세요.');
 }

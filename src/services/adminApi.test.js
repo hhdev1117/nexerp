@@ -72,6 +72,32 @@ describe('administrator API service', () => {
         });
     });
 
+    it('sends a password reset to the selected account and accepts an empty 204 response', async () => {
+        fetchImpl.mockResolvedValue(new Response(null, { status: 204 }));
+        const api = createAdminApi({ fetchImpl, getAccessToken });
+        const temporaryPassword = 'Replacement-Password-2!';
+
+        await expect(api.resetAccountPassword(account.id, temporaryPassword)).resolves.toBeUndefined();
+
+        expect(fetchImpl).toHaveBeenCalledWith(`/api/admin/accounts/${account.id}/password`, {
+            method: 'POST',
+            headers: { Authorization: 'Bearer current-session-token', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ temporaryPassword })
+        });
+    });
+
+    it('normalizes password reset API failures without exposing provider text', async () => {
+        fetchImpl.mockResolvedValue(response({ error: { code: 'account_not_found', message: 'sentinel-provider-detail' } }, 404));
+        const api = createAdminApi({ fetchImpl, getAccessToken });
+
+        const failure = await api.resetAccountPassword(account.id, 'Replacement-Password-2!').catch((error) => error);
+
+        expect(failure).toBeInstanceOf(AdminApiError);
+        expect(failure).toMatchObject({ code: 'account_not_found', message: '계정을 찾을 수 없습니다.', status: 404 });
+        expect(JSON.stringify(failure)).not.toContain('sentinel-provider-detail');
+        expect(JSON.stringify(failure)).not.toContain('Replacement-Password-2!');
+    });
+
     it('fails locally with a stable Korean error when there is no session', async () => {
         getAccessToken.mockResolvedValue(null);
         const api = createAdminApi({ fetchImpl, getAccessToken });

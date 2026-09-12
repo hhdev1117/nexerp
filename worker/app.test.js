@@ -67,7 +67,8 @@ describe('Cloudflare Worker app', () => {
     it.each([
         ['GET', '/api/admin/accounts'],
         ['POST', '/api/admin/accounts'],
-        ['PATCH', '/api/admin/accounts/11111111-1111-4111-8111-111111111111']
+        ['PATCH', '/api/admin/accounts/11111111-1111-4111-8111-111111111111'],
+        ['POST', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/password']
     ])('routes %s %s through administrator authorization', async (method, path) => {
         const app = createWorkerApp();
         const response = await app.fetch(new Request(`https://erp.test${path}`, { method }), {});
@@ -75,6 +76,21 @@ describe('Cloudflare Worker app', () => {
         expect(response.status).toBe(401);
         expect(await response.json()).toEqual({
             error: { code: 'missing_authorization', message: '인증 정보가 필요합니다.' }
+        });
+    });
+
+    it.each([
+        ['GET', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/password'],
+        ['PATCH', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/password'],
+        ['PUT', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/password'],
+        ['POST', '/api/admin/accounts/11111111-1111-4111-8111-111111111111']
+    ])('does not dispatch the wrong administrator account method: %s %s', async (method, path) => {
+        const app = createWorkerApp();
+        const response = await app.fetch(new Request(`https://erp.test${path}`, { method }), {});
+
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({
+            error: { code: 'not_found', message: '요청한 API를 찾을 수 없습니다.' }
         });
     });
 

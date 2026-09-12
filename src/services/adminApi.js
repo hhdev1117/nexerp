@@ -87,6 +87,12 @@ export function createAdminApi({ fetchImpl = fetch, getAccessToken = defaultAcce
             const payload = await request(`/api/admin/accounts/${encodeURIComponent(accountId)}`, { method: 'PATCH', body: input });
             if (!payload?.account) throw new AdminApiError('invalid_response', DEFAULT_FAILURE_MESSAGE);
             return payload.account;
+        },
+        async resetAccountPassword(accountId, temporaryPassword) {
+            await request(`/api/admin/accounts/${encodeURIComponent(accountId)}/password`, {
+                method: 'POST',
+                body: { temporaryPassword }
+            });
         }
     };
 }
