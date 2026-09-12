@@ -7,8 +7,8 @@ These steps reproduce NEXERP on another computer without transferring secret fil
 Install Git and a current Node.js LTS release, then clone the canonical repository:
 
 ```bash
-git clone https://github.com/hhdev1117/nxe-erd.git
-cd nxe-erd
+git clone https://github.com/hhdev1117/nexerp.git
+cd nexerp
 git pull --ff-only origin main
 npm ci
 ```
@@ -24,7 +24,7 @@ Copy-Item .env.example .env.local
 Copy-Item .dev.vars.example .dev.vars
 ```
 
-Obtain the project URL and publishable key through an approved credential channel. Put browser values in `.env.local` and Worker-local values in `.dev.vars`. Never commit either file. The browser and Worker use the publishable key only; this phase does not use a service-role key, secret key, database password, or copied session token.
+Obtain the project URL, publishable key, and Worker-only secret key through an approved credential channel. Put only the browser URL and publishable key in `.env.local`; put Worker values in `.dev.vars`. Never commit either file. `SUPABASE_SECRET_KEY` must never use a `VITE_*` name or enter browser code.
 
 To run the UI without any credentials, leave `.env.local` absent and start Vite. The application will route to its setup-required screen:
 
@@ -44,11 +44,12 @@ Only an operator authorized for the target Supabase and Cloudflare projects shou
 
 ```bash
 npx supabase db push
-npx wrangler secret put SUPABASE_URL
-npx wrangler secret put SUPABASE_PUBLISHABLE_KEY
+npx wrangler secret put SUPABASE_URL --name nexerp
+npx wrangler secret put SUPABASE_PUBLISHABLE_KEY --name nexerp
+npx wrangler secret put SUPABASE_SECRET_KEY --name nexerp
 ```
 
-Values are entered only at the interactive prompts. Promote the first administrator only after verifying the exact account email and using the narrowly scoped SQL in the operations guide.
+Values are entered only at the interactive prompts. Promote the first administrator only after verifying the exact account email and using the narrowly scoped SQL in the operations guide. After bootstrap, administrators manage accounts and role-based menu access from the NEXERP system-management screens.
 
 ## Verify and Deploy
 
@@ -69,7 +70,7 @@ An authorized operator can deploy after all checks pass:
 npm run deploy
 ```
 
-Confirm the deployed `/api/health` response, login redirect behavior, role restrictions, profile display, and logout. Do not treat demo ERP records as durable data, and do not report R2 backup as enabled.
+Confirm the deployed `/api/health` response, login redirect behavior, role restrictions, administrator account and menu-permission screens, profile display, and logout. Do not treat demo ERP records as durable data, and do not report R2 backup as enabled.
 
 ## Continue Work on Another Computer
 

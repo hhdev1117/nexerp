@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Move the Sakai Vue ERP into its canonical repository and add a deployable Cloudflare Worker plus Supabase authentication, roles, RLS, and future persistence boundaries.
+**Goal:** Move NEXERP, based on the MIT-licensed Sakai Vue template, into its canonical repository and add a deployable Cloudflare Worker plus Supabase authentication, roles, RLS, and future persistence boundaries.
 
 **Architecture:** One Cloudflare Worker deploys the Vite SPA through Workers Static Assets and handles `/api/*` before assets. The Vue client uses a Supabase publishable key for sessions, while authenticated Worker requests validate the bearer token and execute with user context so Postgres RLS remains authoritative. Existing ERP demo records stay in memory behind a repository contract until individual modules receive database schemas.
 
@@ -18,9 +18,9 @@
 - The browser receives only `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
 - Secret or service-role credentials never enter Vite variables, committed files, logs, or client responses.
 - Every exposed Supabase table has explicit grants and Row Level Security.
-- Preserve the existing Sakai Vue and PrimeVue UI, ERP routes, demo behavior, accessibility, and tests.
+- Preserve the existing NEXERP and PrimeVue UI, ERP routes, demo behavior, accessibility, and tests.
 - R2 export, retention, purge, restore, and encryption policy remain outside this implementation.
-- `https://github.com/hhdev1117/nxe-erd.git` is canonical; every completed task is pushed to `origin/main` after verification.
+- `https://github.com/hhdev1117/nexerp.git` is canonical; every completed task is pushed to `origin/main` after verification.
 
 ---
 
@@ -34,7 +34,7 @@
 
 **Interfaces:**
 - Consumes: source working tree at `D:\Users\vmfort\Documents\Codex\2026-09-11\clone-ui-d-users-vmfort-codex`
-- Produces: verified Sakai ERP baseline in `D:\Users\vmfort\Desktop\ERP` with the destination `.git` history intact
+- Produces: verified NEXERP baseline in `D:\Users\vmfort\Desktop\ERP` with the destination `.git` history intact
 
 - [ ] **Step 1: Copy the project content without generated or repository metadata**
 
@@ -72,7 +72,7 @@ Expected: 12 test files and 32 tests pass; the Vite build succeeds; ESLint repor
 
 ```powershell
 git add .
-git commit -m "feat: migrate Sakai ERP baseline"
+git commit -m "feat: migrate NEXERP baseline"
 git push origin main
 ```
 
@@ -165,7 +165,7 @@ export function createWorkerApp(dependencies = {}) {
 ```jsonc
 {
     "$schema": "./node_modules/wrangler/config-schema.json",
-    "name": "nxe-erp",
+    "name": "nexerp",
     "main": "./worker/index.js",
     "compatibility_date": "2026-09-11",
     "assets": {
@@ -319,7 +319,7 @@ Expected: FAIL because the auth store does not exist.
 
 Mount `LoginView` with a memory router and mocked store. Assert required email/password errors, disabled loading state, sign-in invocation, displayed server error, and redirect to a validated local `redirect` query path.
 
-- [ ] **Step 5: Replace the Sakai demo login with NEXERP auth views**
+- [ ] **Step 5: Replace the template demo login with NEXERP auth views**
 
 Build a PrimeVue login page using the existing NEXERP mark, Korean labels, password reveal, submit validation, an `aria-live` error summary, and no signup link. `SetupRequiredView` lists the two required browser variable names without values. `AccessDeniedView` explains the missing permission and provides a dashboard command.
 

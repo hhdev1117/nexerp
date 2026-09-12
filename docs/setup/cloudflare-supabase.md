@@ -6,7 +6,7 @@ This guide configures the NEXERP frontend, Worker, database migration, and deplo
 
 The browser uses only `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. A Supabase publishable key is designed to be browser-visible; Row Level Security remains the data authorization boundary. Never put a secret key, service-role key, direct database password, or access token in a `VITE_` variable.
 
-The Worker uses only `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` in this phase. It forwards the signed-in user's bearer token so Supabase evaluates requests under that user and applies RLS. No service-role key is required or used.
+The Worker uses `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for user-scoped requests. It forwards the signed-in user's bearer token so Supabase evaluates those requests under that user and applies RLS. Account creation additionally uses `SUPABASE_SECRET_KEY` only after the Worker validates the caller and verifies an active `admin` profile. The secret key is server-only and must never enter browser code, a `VITE_*` variable, a response, or a log.
 
 For local development, create ignored files from the committed examples:
 
@@ -27,7 +27,7 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase db push
 ```
 
-The migration creates `profiles`, the `admin`/`approver`/`user` role type, the signup trigger, explicit grants, and RLS policies. New accounts always begin with the `user` role.
+The migrations create `profiles`, the `admin`/`approver`/`user` role type, account and menu-permission RPCs, signup triggers, explicit grants, and RLS policies. New accounts always begin with the `user` role until an authorized administrator assigns another role.
 
 After the intended first administrator has created an account, replace the placeholder below with that account's exact, already-known email. Run this read-only preflight in an authorized Supabase SQL Editor and confirm that it returns exactly one active profile with the expected identity:
 
@@ -63,6 +63,8 @@ commit;
 
 Re-run the read-only preflight and confirm that the one intended profile now has role `admin`. If the guarded transaction raises an exception, investigate the account identity or active state; do not loosen the email or active-account conditions.
 
+After the bootstrap administrator is verified, create and maintain subsequent accounts from NEXERP's `계정 관리` screen. Configure role-based navigation from `메뉴 권한 관리`; do not use dashboard-side profile edits as the routine account-management workflow.
+
 ## Local Development
 
 Run the Vite frontend for normal UI development:
@@ -93,6 +95,8 @@ With no `.env.local`, navigation to `/` deliberately redirects to `/auth/setup`,
 
 Unknown `/api/*` paths return `404`. Client responses omit raw Supabase errors, credentials, and token values.
 
+Active administrators can use `GET /api/admin/accounts`, `POST /api/admin/accounts`, and `PATCH /api/admin/accounts/:id`. These endpoints validate the caller before account operations, return only whitelisted profile fields, and normalize provider failures without exposing credentials. Account creation requires the Worker-only secret key; listing and profile updates retain the signed-in user's authorization boundary.
+
 ## Cloudflare Deployment
 
 Authenticate Wrangler in the intended Cloudflare account:
@@ -104,8 +108,9 @@ npx wrangler login
 Enter Worker values interactively so they do not appear in committed configuration. Run each command separately and provide the matching value only at Wrangler's prompt:
 
 ```bash
-npx wrangler secret put SUPABASE_URL
-npx wrangler secret put SUPABASE_PUBLISHABLE_KEY
+npx wrangler secret put SUPABASE_URL --name nexerp
+npx wrangler secret put SUPABASE_PUBLISHABLE_KEY --name nexerp
+npx wrangler secret put SUPABASE_SECRET_KEY --name nexerp
 ```
 
 Validate the Worker bundle without deploying, then build and deploy:
@@ -141,6 +146,6 @@ The Vite large-chunk advisory is informational. Any failing command, production 
 
 ## Rotation and Incidents
 
-When rotating the Supabase publishable key, update `.env.local`, local `.dev.vars`, and both deployed Worker secrets; rebuild and redeploy the frontend so browser and Worker configuration change together. Revoke the old key in Supabase only after the new deployment is verified.
+When rotating the Supabase publishable key, update `.env.local`, local `.dev.vars`, and the corresponding deployed Worker value; rebuild and redeploy the frontend so browser and Worker configuration change together. Rotate `SUPABASE_SECRET_KEY` separately in local `.dev.vars` and the Cloudflare Worker secret store without placing it in browser configuration. Revoke an old key in Supabase only after the replacement deployment is verified.
 
-For suspected exposure, do not print the suspected value while investigating. Revoke or rotate it at its provider, invalidate affected user sessions when tokens may be exposed, replace local and deployed values, redeploy, and review provider audit logs plus repository history. A service-role or database credential appearing anywhere in this project is an incident because neither is used by this phase.
+For suspected exposure, do not print the suspected value while investigating. Revoke or rotate it at its provider, invalidate affected user sessions when tokens may be exposed, replace local and deployed values, redeploy, and review provider audit logs plus repository history. A server secret outside ignored local Worker configuration or the Cloudflare secret store is an incident.

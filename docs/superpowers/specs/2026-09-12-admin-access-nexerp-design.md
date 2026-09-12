@@ -61,7 +61,7 @@ Menu-permission management uses a role selector, grouped menu rows, ToggleSwitch
 
 ## Naming
 
-The canonical slug is exactly `nexerp`; the visible brand remains `NEXERP`. The new Worker is deployed as `nexerp` at `https://nexerp.merciful-chips.workers.dev`. After verification, the former `nxe-erp` Worker is retired. The GitHub repository is renamed to `hhdev1117/nexerp`, and `origin` follows the renamed URL. Supabase keeps its immutable project reference but its dashboard display name becomes `nexerp`.
+The canonical slug is exactly `nexerp`; the visible brand remains `NEXERP`. The new Worker is deployed as `nexerp` at `https://nexerp.merciful-chips.workers.dev`. After verification, the previous Worker is retired. The GitHub repository is renamed to `hhdev1117/nexerp`, and `origin` follows the renamed URL. Supabase keeps its immutable project reference but its dashboard display name becomes `nexerp`.
 
 ## Verification
 

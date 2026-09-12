@@ -1,14 +1,15 @@
 <template>
     <div class="card">
-        <div class="font-semibold text-2xl mb-4">Documentation</div>
+        <div class="font-semibold text-2xl mb-4">NEXERP Documentation</div>
         <div class="font-semibold text-xl mb-4">Get Started</div>
         <p class="text-lg mb-4">
-            Sakai is an application template for Vue based on the <a href="https://github.com/vuejs/create-vue" class="font-medium text-primary hover:underline">create-vue</a>, the recommended way to start a <strong>Vite-powered</strong> Vue
-            projects. To get started, clone the <a href="https://github.com/primefaces/sakai-vue" class="font-medium text-primary hover:underline">repository</a> from GitHub and install the dependencies with npm or yarn.
+            NEXERP is a single-company ERP application built with Vue, Vite, and PrimeVue. To get started, clone the <a href="https://github.com/hhdev1117/nexerp" class="font-medium text-primary hover:underline">canonical repository</a> from GitHub
+            and install the locked dependencies with npm.
         </p>
         <pre class="app-code">
-<code>git clone https://github.com/primefaces/sakai-vue
-npm install
+<code>git clone https://github.com/hhdev1117/nexerp.git
+cd nexerp
+npm ci
 npm run dev</code></pre>
 
         <p class="text-lg mb-4">Navigate to <i class="bg-highlight px-2 py-1 rounded-border not-italic text-base">http://localhost:5173/</i> to view the application in your local environment.</p>
@@ -46,10 +47,10 @@ npm run dev</code></pre>
             according to your requirements.
         </p>
 
-        <div class="font-semibold text-xl mb-4">Add Sakai-Vue to a Nuxt Project</div>
+        <div class="font-semibold text-xl mb-4">Use NEXERP with a Nuxt Project</div>
         <p class="text-lg mb-4">To get started, create a Nuxt project.</p>
         <pre class="app-code">
-<code>npx nuxi@latest init sakai-nuxt</code></pre>
+<code>npx nuxi@latest init nexerp-nuxt</code></pre>
 
         <p class="text-lg mb-4">Add Prime related libraries to the project.</p>
         <pre class="app-code">

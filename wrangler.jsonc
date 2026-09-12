@@ -1,6 +1,6 @@
 {
     "$schema": "./node_modules/wrangler/config-schema.json",
-    "name": "nxe-erp",
+    "name": "nexerp",
     "account_id": "fb3e0684f8d1a9ced906edc27c0f3c8b",
     "main": "./worker/index.js",
     "compatibility_date": "2026-09-11",

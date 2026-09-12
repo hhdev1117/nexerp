@@ -4,7 +4,7 @@
     <div class="layout-footer">
         <span><strong>NEXERP</strong> 업무관리 시스템</span>
         <span class="erp-footer-divider" aria-hidden="true"></span>
-        <span>SAKAI ERP · PrimeVue</span>
+        <span>Vue 3 · PrimeVue</span>
     </div>
 </template>
 

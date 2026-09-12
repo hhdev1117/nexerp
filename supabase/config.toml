@@ -1,4 +1,4 @@
-project_id = "nxe-erp"
+project_id = "nexerp"
 
 [api]
 enabled = true

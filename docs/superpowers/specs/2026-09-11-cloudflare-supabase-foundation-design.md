@@ -2,13 +2,13 @@
 
 ## Goal
 
-Move the existing Sakai Vue ERP demo into `D:\Users\vmfort\Desktop\ERP` and add a production-oriented Cloudflare and Supabase foundation for one company. This phase establishes deployment, authentication, authorization, database migrations, and API boundaries. It does not replace every mock ERP dataset or implement R2 backup retention.
+Move NEXERP, derived from the MIT-licensed Sakai Vue template, into `D:\Users\vmfort\Desktop\ERP` and add a production-oriented Cloudflare and Supabase foundation for one company. This phase establishes deployment, authentication, authorization, database migrations, and API boundaries. It does not replace every mock ERP dataset or implement R2 backup retention.
 
 ## Scope
 
 ### Included
 
-- Preserve the existing Sakai Vue and PrimeVue ERP UI and its current tests.
+- Preserve the existing NEXERP and PrimeVue ERP UI and its current tests.
 - Deploy the Vue SPA and API Worker together with Cloudflare Workers Static Assets.
 - Configure SPA fallback routing while sending `/api/*` requests through the Worker.
 - Connect the browser to Supabase with a publishable key.
@@ -96,7 +96,7 @@ Development commands will cover the normal Vite UI loop and a Wrangler-integrate
 
 ## Source Control and Handoff
 
-`https://github.com/hhdev1117/nxe-erd.git` is the canonical remote repository. The default branch is `main`. Each completed implementation stage is committed and pushed after its tests pass so another computer can continue from a clean pull. Secrets, local environment files, build output, dependency directories, and temporary clone artifacts are never committed.
+`https://github.com/hhdev1117/nexerp.git` is the canonical remote repository. The default branch is `main`. Each completed implementation stage is committed and pushed after its tests pass so another computer can continue from a clean pull. Secrets, local environment files, build output, dependency directories, and temporary clone artifacts are never committed.
 
 The README documents fresh-machine setup, required tool versions, environment-file creation, Supabase migration commands, local Worker development, verification, and deployment. Work is considered synchronized only after the corresponding commit exists on `origin/main`; uncommitted local state is not treated as a handoff point.
 

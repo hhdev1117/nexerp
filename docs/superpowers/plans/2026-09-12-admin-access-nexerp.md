@@ -126,7 +126,7 @@
 - Consumes: all earlier tasks.
 - Produces: canonical `nexerp` package, Worker, Supabase display name, and GitHub repository plus a deployed administrator account.
 
-- [ ] Add naming/documentation assertions that fail while legacy `nxe-erp`, `nxe-erd`, or `sakai-vue` deployment identifiers remain.
+- [ ] Add naming and documentation assertions that fail while legacy deployment identifiers remain.
 - [ ] Rename source-controlled identifiers to `nexerp` and update operational documentation.
 - [ ] Run `npm test -- --run` and `npm run build`; confirm all tests and the production build pass.
 - [ ] Apply the migration in Supabase SQL Editor and verify table, RLS, RPC, policies, and seed rows.
