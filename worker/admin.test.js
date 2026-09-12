@@ -83,7 +83,8 @@ function createAdminClientFixture({
     deleteError = null,
     deleteThrows = null,
     updateError = null,
-    updateThrows = null
+    updateThrows = null,
+    updateResultFactory = null
 } = {}) {
     const createUser = vi.fn(async () => {
         events.push('create-user');
@@ -98,6 +99,7 @@ function createAdminClientFixture({
     const updateUserById = vi.fn(async () => {
         events.push('reset-password');
         if (updateThrows) throw updateThrows;
+        if (updateResultFactory) return updateResultFactory();
         return { data: { user: { id: accountId, email: accountRow.email } }, error: updateError };
     });
 
@@ -378,6 +380,17 @@ describe('administrator account API', () => {
         expect(adminFixture.updateUserById).toHaveBeenCalledWith(accountId, { password: validPasswordBody.temporaryPassword });
     });
 
+    it('accepts an eight-character password containing mixed whitespace and one non-whitespace character', async () => {
+        const temporaryPassword = ' \t\n\r x  ';
+        const adminFixture = createAdminClientFixture();
+        const { app } = createApp({ adminFixture });
+        const response = await app.fetch(request(`/api/admin/accounts/${accountId}/password`, { method: 'POST', body: { temporaryPassword } }), {});
+
+        expect(response.status).toBe(204);
+        expect(await response.text()).toBe('');
+        expect(adminFixture.updateUserById).toHaveBeenCalledWith(accountId, { password: temporaryPassword });
+    });
+
     it('returns a stable service error when password reset secret configuration is missing', async () => {
         const userFixture = createUserClientFixture();
         const createSupabaseClient = vi.fn(() => userFixture.client);
@@ -407,6 +420,23 @@ describe('administrator account API', () => {
         expect(body).toEqual({ error: { code: 'account_not_found', message: '계정을 찾을 수 없습니다.' } });
         expect(JSON.stringify(body)).not.toContain('raw missing user detail');
         expect(JSON.stringify(body)).not.toContain(validPasswordBody.temporaryPassword);
+    });
+
+    it.each([
+        ['undefined provider result', () => undefined],
+        ['null provider result', () => null],
+        ['mismatched returned user', () => ({ data: { user: { id: '22222222-2222-4222-8222-222222222222', private_note: 'raw mismatched user detail' } }, error: null })]
+    ])('rejects and redacts a malformed password reset success: %s', async (_label, updateResultFactory) => {
+        const adminFixture = createAdminClientFixture({ updateResultFactory });
+        const { app } = createApp({ adminFixture });
+        const response = await app.fetch(request(`/api/admin/accounts/${accountId}/password`, { method: 'POST', body: validPasswordBody }), {});
+
+        expect(response.status).toBe(502);
+        const body = await response.json();
+        expect(body).toEqual({ error: { code: 'upstream_error', message: '계정 관리 서비스를 사용할 수 없습니다.' } });
+        expect(JSON.stringify(body)).not.toContain('raw mismatched user detail');
+        expect(JSON.stringify(body)).not.toContain(validPasswordBody.temporaryPassword);
+        expect(JSON.stringify(body)).not.toContain('session-token');
     });
 
     it.each([

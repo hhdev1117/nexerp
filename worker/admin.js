@@ -100,7 +100,7 @@ function requiredText(value, maxLength) {
 
 function temporaryPassword(value) {
     if (typeof value !== 'string') return null;
-    return value.length >= 8 && value.length <= 128 && value.trim().length >= 8 ? value : null;
+    return value.length >= 8 && value.length <= 128 && /\S/.test(value) ? value : null;
 }
 
 function validateCreatePayload(body) {
@@ -292,6 +292,7 @@ async function resetAccountPassword(request, env, accountId, createAdminClient) 
     if (result?.error) {
         return missingUserCodes.has(result.error.code) || result.error.status === 404 ? apiError(404, 'account_not_found', '계정을 찾을 수 없습니다.') : upstreamError();
     }
+    if (typeof result?.data?.user?.id !== 'string' || result.data.user.id.toLowerCase() !== accountId.toLowerCase()) return upstreamError();
 
     return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 }
