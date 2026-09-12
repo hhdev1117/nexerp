@@ -308,7 +308,12 @@ export async function handleAdminAccountRequest(
     if (request.method === 'GET' && accountId === null) return listAccounts(authorization.client);
     if (request.method === 'POST' && accountId === null) return createAccount(request, env, authorization.client, createAdminClient);
     if (request.method === 'PATCH' && accountId !== null) return updateAccount(request, authorization.client, accountId);
-    if (request.method === 'POST' && accountId !== null && passwordReset) return resetAccountPassword(request, env, accountId, createAdminClient);
+    if (request.method === 'POST' && accountId !== null && passwordReset) {
+        if (typeof authorization.user.id === 'string' && accountId.toLowerCase() === authorization.user.id.toLowerCase()) {
+            return apiError(403, 'self_password_reset_forbidden', '현재 관리자 계정의 비밀번호는 이 방식으로 변경할 수 없습니다.');
+        }
+        return resetAccountPassword(request, env, accountId, createAdminClient);
+    }
 
     return apiError(400, 'invalid_request', '요청 내용을 확인해 주세요.');
 }

@@ -391,6 +391,26 @@ describe('administrator account API', () => {
         expect(adminFixture.updateUserById).toHaveBeenCalledWith(accountId, { password: temporaryPassword });
     });
 
+    it.each([[callerId], [callerId.toUpperCase()]])('forbids resetting the current administrator password through account management: %s', async (targetId) => {
+        const events = [];
+        const userFixture = createUserClientFixture({ events });
+        const adminFixture = createAdminClientFixture({
+            events,
+            updateResultFactory: () => ({ data: { user: { id: callerId, email: 'admin@example.com' } }, error: null })
+        });
+        const { app, createAdminClient } = createApp({ userFixture, adminFixture, events });
+        const response = await app.fetch(request(`/api/admin/accounts/${targetId}/password`, { method: 'POST', body: validPasswordBody }), {});
+
+        expect(response.status).toBe(403);
+        const body = await response.json();
+        expect(body).toEqual({ error: { code: 'self_password_reset_forbidden', message: '현재 관리자 계정의 비밀번호는 이 방식으로 변경할 수 없습니다.' } });
+        expect(events).toEqual(['get-user', 'get-profile']);
+        expect(createAdminClient).not.toHaveBeenCalled();
+        expect(adminFixture.updateUserById).not.toHaveBeenCalled();
+        expect(JSON.stringify(body)).not.toContain(validPasswordBody.temporaryPassword);
+        expect(JSON.stringify(body)).not.toContain('session-token');
+    });
+
     it('returns a stable service error when password reset secret configuration is missing', async () => {
         const userFixture = createUserClientFixture();
         const createSupabaseClient = vi.fn(() => userFixture.client);
