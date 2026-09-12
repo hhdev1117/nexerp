@@ -17,6 +17,7 @@ const createActualStoreFixture = ({ session, profileResults }) => {
     const client = {
         auth: {
             getSession: vi.fn().mockResolvedValue({ data: { session }, error: null }),
+            getUser: vi.fn().mockResolvedValue({ data: { user: session?.user || null }, error: null }),
             onAuthStateChange: vi.fn((listener) => {
                 authListener = listener;
                 return { data: { subscription: { unsubscribe: vi.fn() } } };

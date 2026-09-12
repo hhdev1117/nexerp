@@ -19,13 +19,19 @@ const deferred = () => {
     return { promise, resolve };
 };
 
-const createClient = ({ session = null, profiles = {}, signInResult, signOutError = null, updateUserResult } = {}) => {
+const createClient = ({ session = null, profiles = {}, signInResult, signOutError = null, updateUserResult, getUserResult } = {}) => {
     let authListener;
     const unsubscribe = vi.fn();
     const profileRequests = [];
     const client = {
         auth: {
             getSession: vi.fn().mockResolvedValue({ data: { session }, error: null }),
+            getUser: vi.fn().mockResolvedValue(
+                getUserResult || {
+                    data: { user: session?.user || null },
+                    error: null
+                }
+            ),
             onAuthStateChange: vi.fn((listener) => {
                 authListener = listener;
                 return { data: { subscription: { unsubscribe } } };
@@ -105,6 +111,80 @@ describe('Supabase auth store', () => {
         expect(store.initialized.value).toBe(true);
         expect(store.configured.value).toBe(false);
         expect(store.error.value).toBe('Supabase 연결 정보가 설정되지 않았습니다.');
+    });
+
+    it('removes a locally cached session that Supabase reports as revoked', async () => {
+        const session = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const revoked = Object.assign(new Error('session_not_found private detail'), {
+            name: 'AuthSessionMissingError',
+            status: 400
+        });
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            getUserResult: { data: { user: null }, error: revoked }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+
+        await store.initialize();
+
+        expect(fixture.client.auth.getUser).toHaveBeenCalledWith(session.access_token);
+        expect(fixture.client.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+        expect(fixture.profileRequests).toHaveLength(0);
+        expect(store.session.value).toBeNull();
+        expect(store.user.value).toBeNull();
+        expect(store.profile.value).toBeNull();
+        expect(store.error.value).toBe('로그인 시간이 만료되었습니다. 다시 로그인해 주세요.');
+    });
+
+    it('validates a duplicate SIGNED_IN event emitted while the stored session is loading', async () => {
+        const sessionLookup = deferred();
+        const session = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const revoked = Object.assign(new Error('session_not_found private detail'), {
+            name: 'AuthSessionMissingError',
+            status: 400
+        });
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            getUserResult: { data: { user: null }, error: revoked }
+        });
+        fixture.client.auth.getSession.mockReturnValueOnce(sessionLookup.promise);
+        const store = createAuthStore({ client: fixture.client, configured: true });
+
+        const initialization = store.initialize();
+        await fixture.emit('SIGNED_IN', session);
+        sessionLookup.resolve({ data: { session }, error: null });
+        await initialization;
+
+        expect(fixture.client.auth.getUser).toHaveBeenCalledWith(session.access_token);
+        expect(fixture.client.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+        expect(store.session.value).toBeNull();
+        expect(store.user.value).toBeNull();
+        expect(store.profile.value).toBeNull();
+        expect(store.error.value).toBe('로그인 시간이 만료되었습니다. 다시 로그인해 주세요.');
+    });
+
+    it('does not revoke local credentials when stored-session verification fails transiently', async () => {
+        const session = { access_token: 'current-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const temporaryFailure = Object.assign(new Error('Failed to fetch private auth endpoint'), {
+            name: 'AuthRetryableFetchError',
+            status: 503
+        });
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            getUserResult: { data: { user: null }, error: temporaryFailure }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+
+        await store.initialize();
+
+        expect(fixture.client.auth.signOut).not.toHaveBeenCalled();
+        expect(fixture.profileRequests).toHaveLength(0);
+        expect(store.session.value).toBeNull();
+        expect(store.user.value).toBeNull();
+        expect(store.error.value).toBe('네트워크 연결을 확인한 후 다시 시도해 주세요.');
     });
 
     it('normalizes invalid credentials without exposing the raw auth error', async () => {

@@ -6,6 +6,10 @@ const PROFILE_FIELDS = 'id, email, display_name, department, role, is_active';
 const NOT_CONFIGURED_MESSAGE = 'Supabase 연결 정보가 설정되지 않았습니다.';
 const INACTIVE_PROFILE_MESSAGE = '비활성화된 계정입니다. 관리자에게 문의해 주세요.';
 const MISSING_PROFILE_MESSAGE = '계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.';
+const INVALID_SESSION_NAMES = new Set(['AuthSessionMissingError', 'AuthInvalidJwtError', 'AuthInvalidTokenResponseError']);
+const INVALID_SESSION_CODES = new Set(['session_not_found', 'bad_jwt', 'invalid_jwt']);
+
+const isInvalidSessionError = (source) => INVALID_SESSION_NAMES.has(source?.name) || INVALID_SESSION_CODES.has(source?.code) || source?.status === 401 || source?.status === 403;
 
 const normalizedError = (source, fallback = '인증 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.') => {
     const message = typeof source?.message === 'string' ? source.message.toLowerCase() : '';
@@ -46,6 +50,8 @@ export function createAuthStore({ client, configured }) {
     let nextSignOutOperationId = 0;
     const activeSignOutOperations = new Set();
     let bufferedSignedOut = false;
+    let hydratingStoredSession = false;
+    let bufferedInitialAuth = null;
 
     const beginOperation = () => {
         pendingOperations += 1;
@@ -134,7 +140,12 @@ export function createAuthStore({ client, configured }) {
     const subscribe = () => {
         if (subscription || !isConfigured) return;
 
-        const result = client.auth.onAuthStateChange((_event, nextSession) => {
+        const result = client.auth.onAuthStateChange((event, nextSession) => {
+            if (event === 'INITIAL_SESSION') return;
+            if (hydratingStoredSession) {
+                bufferedInitialAuth = { session: nextSession };
+                return;
+            }
             if (activeSignOutOperations.size > 0 && !nextSession) {
                 bufferedSignedOut = true;
                 return;
@@ -166,6 +177,7 @@ export function createAuthStore({ client, configured }) {
                 if (!isConfigured) return;
 
                 const startingVersion = identityVersion;
+                hydratingStoredSession = true;
                 subscribe();
                 let response;
                 try {
@@ -183,8 +195,53 @@ export function createAuthStore({ client, configured }) {
                     }
                     return;
                 }
-                if (identityVersion === startingVersion) trackIdentity(data?.session || null);
+                if (identityVersion !== startingVersion) return;
+
+                const storedSession = data?.session || null;
+                const initialAuth = bufferedInitialAuth;
+                bufferedInitialAuth = null;
+                hydratingStoredSession = false;
+                const bufferedSession = initialAuth?.session || null;
+                const sameUser = bufferedSession?.user?.id && bufferedSession.user.id === storedSession?.user?.id;
+                const sameToken = !bufferedSession?.access_token || !storedSession?.access_token || bufferedSession.access_token === storedSession.access_token;
+                if (initialAuth && !(sameUser && sameToken)) {
+                    trackIdentity(bufferedSession);
+                    return;
+                }
+
+                const nextSession = initialAuth ? bufferedSession : storedSession;
+                if (nextSession) {
+                    let verified;
+                    try {
+                        verified = await client.auth.getUser(nextSession.access_token);
+                    } catch (cause) {
+                        error.value = normalizedError(cause, '로그인 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                        return;
+                    }
+                    if (identityVersion !== startingVersion) return;
+
+                    const verifiedUser = verified?.data?.user;
+                    if (verified?.error && !isInvalidSessionError(verified.error)) {
+                        error.value = normalizedError(verified.error, '로그인 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                        return;
+                    }
+                    if (verified?.error || !verifiedUser || verifiedUser.id !== nextSession.user?.id) {
+                        try {
+                            await client.auth.signOut({ scope: 'local' });
+                        } catch {
+                            // Local identity is still cleared below when provider cleanup fails.
+                        }
+                        clearIdentity();
+                        error.value = '로그인 시간이 만료되었습니다. 다시 로그인해 주세요.';
+                        return;
+                    }
+                    trackIdentity({ ...nextSession, user: verifiedUser });
+                } else {
+                    trackIdentity(null);
+                }
             } finally {
+                hydratingStoredSession = false;
+                bufferedInitialAuth = null;
                 await awaitIdentitySettled();
                 initialized.value = true;
                 endOperation();
