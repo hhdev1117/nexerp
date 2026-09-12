@@ -1,6 +1,7 @@
 import { jsonResponse } from './http';
 import { getBearerToken } from './auth';
 import { handleAdminAccountRequest } from './admin';
+import { handleInfrastructureUsageRequest } from './infrastructure';
 import { createAdminSupabaseClient, createUserSupabaseClient } from './supabase';
 
 const apiError = (status, code, message) => jsonResponse({ error: { code, message } }, { status });
@@ -69,7 +70,7 @@ async function getCurrentUser(request, env, createSupabaseClient) {
     });
 }
 
-export function createWorkerApp({ createSupabaseClient = createUserSupabaseClient, createAdminClient = createAdminSupabaseClient } = {}) {
+export function createWorkerApp({ createSupabaseClient = createUserSupabaseClient, createAdminClient = createAdminSupabaseClient, fetchImpl = fetch, now = () => new Date(), providerTimeoutMs = 8000 } = {}) {
     return {
         async fetch(request, env) {
             const { pathname } = new URL(request.url);
@@ -87,6 +88,10 @@ export function createWorkerApp({ createSupabaseClient = createUserSupabaseClien
                     createSupabaseClient,
                     createAdminClient
                 });
+            }
+
+            if (pathname === '/api/admin/infrastructure/usage' && request.method === 'GET') {
+                return handleInfrastructureUsageRequest(request, env, { createSupabaseClient, fetchImpl, now, timeoutMs: providerTimeoutMs });
             }
 
             if (pathname === '/api/health' && request.method === 'GET') {

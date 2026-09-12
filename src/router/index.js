@@ -12,7 +12,8 @@ const dedicatedViews = {
     '/inventory/stock': () => import('@/views/erp/InventoryStock.vue'),
     '/finance/summary': () => import('@/views/erp/FinanceSummary.vue'),
     '/settings/accounts': () => import('@/views/admin/AccountManagement.vue'),
-    '/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue')
+    '/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue'),
+    '/settings/infrastructure-usage': () => import('@/views/admin/InfrastructureUsage.vue')
 };
 
 const routeName = (path) => (path === '/' ? 'dashboard' : path.slice(1).replaceAll('/', '-'));
@@ -26,7 +27,7 @@ const erpRoutes = flattenMenuRoutes(erpMenu).map((item) => ({
         description: item.description,
         icon: item.icon,
         menuKey: item.menuKey,
-        ...(['/settings/accounts', '/settings/menu-permissions'].includes(item.to) ? { roles: ['admin'], fixedAccess: true } : {})
+        ...(['/settings/accounts', '/settings/menu-permissions', '/settings/infrastructure-usage'].includes(item.to) ? { roles: ['admin'], fixedAccess: true } : {})
     }
 }));
 

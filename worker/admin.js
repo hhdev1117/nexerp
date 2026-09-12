@@ -38,7 +38,7 @@ function singleRow(data) {
     return Array.isArray(data) ? data[0] : data;
 }
 
-async function authorizeAdministrator(request, env, createSupabaseClient) {
+export async function authorizeAdministrator(request, env, createSupabaseClient) {
     const token = getBearerToken(request);
     if (!token) return { response: apiError(401, 'missing_authorization', '인증 정보가 필요합니다.') };
 

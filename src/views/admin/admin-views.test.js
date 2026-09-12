@@ -1,12 +1,16 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { erpMenu, flattenMenuRoutes } from '@/data/erp';
 import { accountCreatePayload, accountUpdatePayload, buildPermissionGroups, createAccountDraft, createEditAccountDraft, permissionKeysEqual, validateAccountDraft, validatePasswordResetDraft } from './adminModels';
 
-const source = (file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
+const source = (file) => {
+    const path = fileURLToPath(new URL(file, import.meta.url));
+    return existsSync(path) ? readFileSync(path, 'utf8') : '';
+};
 const accountsSource = source('./AccountManagement.vue');
 const permissionsSource = source('./MenuPermissionManagement.vue');
+const infrastructureSource = source('./InfrastructureUsage.vue');
 
 const existingAccount = {
     id: 'admin-1',
@@ -134,6 +138,7 @@ describe('administrator menu-permission screen', () => {
         expect(rows.map((row) => row.menuKey)).toEqual(menuLeaves.map((row) => row.menuKey));
         expect(rows.find((row) => row.menuKey === 'settings.accounts')).toMatchObject({ fixed: true, label: '계정 관리' });
         expect(rows.find((row) => row.menuKey === 'settings.menu-permissions')).toMatchObject({ fixed: true, label: '메뉴 권한 관리' });
+        expect(rows.find((row) => row.menuKey === 'settings.infrastructure-usage')).toMatchObject({ fixed: true, label: '인프라 사용량' });
         expect(rows.some((row) => /인사|급여/.test(row.label))).toBe(false);
     });
 
@@ -169,5 +174,36 @@ describe('administrator menu-permission screen', () => {
         expect(permissionsSource).toContain('저장되지 않은 변경 사항이 있습니다.');
         expect(permissionsSource).toContain('overflow-x: auto');
         expect(permissionsSource).toContain('min-width: 0');
+    });
+});
+
+describe('administrator infrastructure usage screen', () => {
+    it('loads both supported ranges and offers an icon refresh action', () => {
+        expect(infrastructureSource).toContain("{ label: '24시간', value: '24h' }");
+        expect(infrastructureSource).toContain("{ label: '7일', value: '7d' }");
+        expect(infrastructureSource).toContain('await adminApi.getInfrastructureUsage(selectedRange.value)');
+        expect(infrastructureSource).toContain('icon="pi pi-refresh"');
+        expect(infrastructureSource).toContain('aria-label="인프라 사용량 새로고침"');
+    });
+
+    it('renders partial, unconfigured, unavailable, null metric, empty, and retry states without raw errors', () => {
+        expect(infrastructureSource).toContain("partial: { label: '일부 확인', severity: 'warn' }");
+        expect(infrastructureSource).toContain("unconfigured: { label: '설정 필요', severity: 'secondary' }");
+        expect(infrastructureSource).toContain("unavailable: { label: '연결 실패', severity: 'danger' }");
+        expect(infrastructureSource).toContain("return value === null || value === undefined ? '확인 불가'");
+        expect(infrastructureSource).toContain('조회된 호출 내역이 없습니다.');
+        expect(infrastructureSource).toContain('인프라 사용량 다시 불러오기');
+        expect(infrastructureSource).toContain('generatedAt');
+        expect(infrastructureSource).not.toContain('error.message');
+        expect(infrastructureSource).not.toContain('SUPABASE_URL');
+        expect(infrastructureSource).not.toContain('CLOUDFLARE_ACCOUNT_ID');
+    });
+
+    it('uses full-width provider sections and responsive metric grids without nested cards', () => {
+        expect(infrastructureSource).toContain('class="provider-section"');
+        expect(infrastructureSource).toContain('class="metric-grid"');
+        expect(infrastructureSource).toContain('grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr))');
+        expect(infrastructureSource).toContain('min-width: 0');
+        expect(infrastructureSource).not.toContain('class="card');
     });
 });

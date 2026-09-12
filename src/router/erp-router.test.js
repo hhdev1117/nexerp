@@ -26,8 +26,10 @@ describe('ERP router', () => {
     it('uses dedicated administrator screens instead of the generic module', () => {
         expect(routerSource).toContain("'/settings/accounts': () => import('@/views/admin/AccountManagement.vue')");
         expect(routerSource).toContain("'/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue')");
+        expect(routerSource).toContain("'/settings/infrastructure-usage': () => import('@/views/admin/InfrastructureUsage.vue')");
         expect(router.resolve('/settings/accounts').name).toBe('settings-accounts');
         expect(router.resolve('/settings/menu-permissions').name).toBe('settings-menu-permissions');
+        expect(router.resolve('/settings/infrastructure-usage').name).toBe('settings-infrastructure-usage');
     });
 
     it('registers public auth routes and protected role policies', () => {
@@ -38,6 +40,7 @@ describe('ERP router', () => {
         expect(router.resolve('/approvals').meta.roles).toBeUndefined();
         expect(router.resolve('/settings/accounts').meta).toMatchObject({ roles: ['admin'], menuKey: 'settings.accounts', fixedAccess: true });
         expect(router.resolve('/settings/menu-permissions').meta).toMatchObject({ roles: ['admin'], menuKey: 'settings.menu-permissions', fixedAccess: true });
+        expect(router.resolve('/settings/infrastructure-usage').meta).toMatchObject({ roles: ['admin'], menuKey: 'settings.infrastructure-usage', fixedAccess: true });
         expect(router.resolve('/sales/orders').meta.public).not.toBe(true);
     });
 

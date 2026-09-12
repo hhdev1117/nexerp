@@ -43,4 +43,16 @@ describe('setup documentation', () => {
     it.each(deploymentGuidePaths)('builds static assets immediately before the Wrangler dry-run in %s', (path) => {
         expect(readDocument(path)).toMatch(/npm run build\r?\nnpx wrangler deploy --dry-run/);
     });
+
+    it('documents infrastructure usage provider secrets without example token values', () => {
+        const docs = readDocumentationSet();
+        const localExample = readDocument('.dev.vars.example');
+
+        expect(docs).toContain('SUPABASE_MANAGEMENT_TOKEN');
+        expect(docs).toContain('CLOUDFLARE_API_TOKEN');
+        expect(localExample).toContain('SUPABASE_MANAGEMENT_TOKEN=');
+        expect(localExample).toContain('CLOUDFLARE_API_TOKEN=');
+        expect(localExample).not.toMatch(/SUPABASE_MANAGEMENT_TOKEN=(?:sbp_|eyJ|[A-Za-z0-9_-]{20,})/);
+        expect(localExample).not.toMatch(/CLOUDFLARE_API_TOKEN=[A-Za-z0-9_-]{20,}/);
+    });
 });

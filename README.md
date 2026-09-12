@@ -11,6 +11,8 @@ npm run dev
 
 Copy `.env.example` to `.env.local` before enabling Supabase authentication. Never commit `.env.local`, `.dev.vars`, credentials, or tokens.
 
+The administrator infrastructure screen additionally requires the Worker-only `SUPABASE_MANAGEMENT_TOKEN` and `CLOUDFLARE_API_TOKEN`. Keep both only in local `.dev.vars` or Cloudflare's encrypted secret store; never expose them through a `VITE_` variable.
+
 Detailed instructions:
 
 - [Cloudflare and Supabase operations](docs/setup/cloudflare-supabase.md)

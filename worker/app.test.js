@@ -94,6 +94,14 @@ describe('Cloudflare Worker app', () => {
         });
     });
 
+    it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('does not dispatch the wrong infrastructure usage method: %s', async (method) => {
+        const app = createWorkerApp();
+        const response = await app.fetch(new Request('https://erp.test/api/admin/infrastructure/usage?range=24h', { method }), {});
+
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({ error: { code: 'not_found', message: '요청한 API를 찾을 수 없습니다.' } });
+    });
+
     it('reports missing Worker configuration without exposing configuration values', async () => {
         const request = new Request('https://erp.test/api/me', { headers: { Authorization: 'Bearer session-token' } });
         const app = createWorkerApp();

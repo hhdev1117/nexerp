@@ -39,6 +39,32 @@ describe('administrator API service', () => {
         });
     });
 
+    it('loads normalized infrastructure usage for the selected range', async () => {
+        const usage = {
+            generatedAt: '2026-09-12T03:04:05.000Z',
+            range: { key: '7d', start: '2026-09-05T03:04:05.000Z', end: '2026-09-12T03:04:05.000Z' },
+            providers: { supabase: { state: 'partial' }, cloudflare: { state: 'ok' } }
+        };
+        fetchImpl.mockResolvedValue(response(usage));
+        const api = createAdminApi({ fetchImpl, getAccessToken });
+
+        await expect(api.getInfrastructureUsage('7d')).resolves.toEqual(usage);
+        expect(fetchImpl).toHaveBeenCalledWith('/api/admin/infrastructure/usage?range=7d', {
+            method: 'GET',
+            headers: { Authorization: 'Bearer current-session-token' }
+        });
+    });
+
+    it('rejects malformed infrastructure usage without retaining raw fields', async () => {
+        fetchImpl.mockResolvedValue(response({ generatedAt: 'raw-sentinel', providers: { supabase: { state: 'ok' } } }));
+        const api = createAdminApi({ fetchImpl, getAccessToken });
+
+        const failure = await api.getInfrastructureUsage('24h').catch((error) => error);
+
+        expect(failure).toMatchObject({ name: 'AdminApiError', code: 'invalid_response' });
+        expect(failure.message).not.toContain('raw-sentinel');
+    });
+
     it('sends the temporary password only in the account creation request', async () => {
         fetchImpl.mockResolvedValue(response({ account }, 201));
         const api = createAdminApi({ fetchImpl, getAccessToken });

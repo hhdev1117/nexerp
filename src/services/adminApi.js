@@ -14,6 +14,7 @@ const ERROR_MESSAGES = Object.freeze({
     invalid_role: '계정 권한을 확인해 주세요.',
     invalid_activation: '계정 활성화 상태를 확인해 주세요.',
     invalid_account_id: '올바른 계정 ID가 아닙니다.',
+    invalid_range: '조회 기간을 확인해 주세요.',
     email_exists: '이미 사용 중인 이메일입니다.',
     self_demotion_forbidden: '현재 관리자 계정의 권한은 변경할 수 없습니다.',
     self_deactivation_forbidden: '현재 관리자 계정은 비활성화할 수 없습니다.',
@@ -77,6 +78,22 @@ export function createAdminApi({ fetchImpl = fetch, getAccessToken = defaultAcce
             const payload = await request('/api/admin/accounts');
             if (!Array.isArray(payload?.accounts)) throw new AdminApiError('invalid_response', DEFAULT_FAILURE_MESSAGE);
             return payload.accounts;
+        },
+        async getInfrastructureUsage(range) {
+            const payload = await request(`/api/admin/infrastructure/usage?range=${encodeURIComponent(range)}`);
+            if (
+                !payload ||
+                typeof payload.generatedAt !== 'string' ||
+                !payload.range ||
+                payload.range.key !== range ||
+                typeof payload.range.start !== 'string' ||
+                typeof payload.range.end !== 'string' ||
+                !payload.providers?.supabase ||
+                !payload.providers?.cloudflare
+            ) {
+                throw new AdminApiError('invalid_response', DEFAULT_FAILURE_MESSAGE);
+            }
+            return payload;
         },
         async createAccount(input) {
             const payload = await request('/api/admin/accounts', { method: 'POST', body: input });

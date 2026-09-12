@@ -1,5 +1,5 @@
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const FIXED_ADMIN_KEYS = new Set(['settings.accounts', 'settings.menu-permissions']);
+const FIXED_ADMIN_KEYS = new Set(['settings.accounts', 'settings.menu-permissions', 'settings.infrastructure-usage']);
 const TEMPORARY_PASSWORD_ERROR = '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.';
 
 const isValidTemporaryPassword = (password) => typeof password === 'string' && password.length >= 8 && password.length <= 128 && Boolean(password.trim());
