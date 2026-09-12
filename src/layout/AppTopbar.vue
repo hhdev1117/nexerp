@@ -19,6 +19,10 @@ const quickMenuOpen = ref(false);
 const notificationMenuOpen = ref(false);
 const profileMenuOpen = ref(false);
 const signingOut = ref(false);
+const passwordDialog = ref(false);
+const changingPassword = ref(false);
+const passwordSubmitted = ref(false);
+const passwordDraft = ref({ currentPassword: '', newPassword: '', confirmation: '' });
 const configRegion = ref();
 const configButton = ref();
 const topbarActions = ref();
@@ -38,6 +42,16 @@ const department = computed(() => authStore.profile.value?.department?.trim() ||
 const avatar = computed(() => [...displayName.value][0]?.toUpperCase() || '계');
 const profileMenuLabel = computed(() => `${displayName.value} · ${department.value} 계정 메뉴${signingOut.value ? ' 로그아웃 처리 중' : ''}`);
 const profileMenuButtonLabel = computed(() => `${profileMenuLabel.value} ${profileMenuOpen.value ? '닫기' : '열기'}`);
+const passwordErrors = computed(() => {
+    const errors = {};
+    const currentPassword = passwordDraft.value.currentPassword;
+    const newPassword = passwordDraft.value.newPassword;
+    if (!currentPassword.trim()) errors.currentPassword = '현재 비밀번호를 입력해 주세요.';
+    if (newPassword.length < 8 || newPassword.length > 128 || !newPassword.trim()) errors.newPassword = '새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.';
+    else if (currentPassword === newPassword) errors.newPassword = '새 비밀번호는 현재 비밀번호와 다르게 입력해 주세요.';
+    if (passwordDraft.value.confirmation !== newPassword) errors.confirmation = '새 비밀번호가 일치하지 않습니다.';
+    return errors;
+});
 
 const updateViewportState = () => {
     isMobileViewport.value = !isDesktop();
@@ -102,6 +116,65 @@ const navigate = (to) => {
     router.push(to);
 };
 const showMessage = (summary, detail) => toast.add({ severity: 'info', summary, detail, life: 2600 });
+const passwordFailureDetail = (error) => {
+    const allowedMessages = new Set([
+        'Supabase 연결 정보가 설정되지 않았습니다.',
+        '로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.',
+        '계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.',
+        '비활성화된 계정입니다. 관리자에게 문의해 주세요.',
+        '현재 비밀번호를 입력해 주세요.',
+        '새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.',
+        '새 비밀번호는 현재 비밀번호와 다르게 입력해 주세요.',
+        '현재 비밀번호가 올바르지 않습니다.',
+        '로그인 상태가 변경되었습니다. 다시 로그인해 주세요.',
+        '네트워크 연결을 확인한 후 다시 시도해 주세요.',
+        '비밀번호를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+    ]);
+    return allowedMessages.has(error?.message) ? error.message : '비밀번호를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+};
+const clearPasswordFields = () => {
+    passwordDraft.value = { currentPassword: '', newPassword: '', confirmation: '' };
+    passwordSubmitted.value = false;
+};
+const focusPasswordField = async (field = 'currentPassword') => {
+    const ids = {
+        currentPassword: 'profile-current-password',
+        newPassword: 'profile-new-password',
+        confirmation: 'profile-confirm-password'
+    };
+    await nextTick();
+    document.getElementById(ids[field])?.focus();
+};
+const openPasswordDialog = () => {
+    clearPasswordFields();
+    passwordDialog.value = true;
+};
+const closePasswordDialog = () => {
+    if (changingPassword.value) return;
+    clearPasswordFields();
+    passwordDialog.value = false;
+};
+const submitPasswordChange = async () => {
+    if (changingPassword.value) return;
+    passwordSubmitted.value = true;
+    const firstError = ['currentPassword', 'newPassword', 'confirmation'].find((field) => passwordErrors.value[field]);
+    if (firstError) {
+        await focusPasswordField(firstError);
+        return;
+    }
+
+    changingPassword.value = true;
+    try {
+        await authStore.changePassword(passwordDraft.value.currentPassword, passwordDraft.value.newPassword);
+        toast.add({ severity: 'success', summary: '비밀번호 변경 완료', detail: '비밀번호가 안전하게 변경되었습니다.', life: 3000 });
+        passwordDialog.value = false;
+    } catch (error) {
+        toast.add({ severity: 'error', summary: '비밀번호 변경 실패', detail: passwordFailureDetail(error), life: 3600 });
+    } finally {
+        clearPasswordFields();
+        changingPassword.value = false;
+    }
+};
 const signOut = async () => {
     if (signingOut.value) return;
 
@@ -156,6 +229,7 @@ const profileItems = computed(() => [
         label: `${displayName.value} · ${department.value}`,
         items: [
             { label: '내 프로필', icon: 'pi pi-user', command: () => showMessage('내 프로필', '프로필 기능은 준비 중입니다.') },
+            ...(authStore.profile.value?.is_active ? [{ label: '비밀번호 변경', icon: 'pi pi-key', command: openPasswordDialog }] : []),
             { label: '회사 · 사업장 설정', icon: 'pi pi-building', command: () => navigate('/settings/company') },
             ...(authStore.hasRole(['admin'])
                 ? [
@@ -281,6 +355,75 @@ const profileItems = computed(() => [
                 </div>
             </Transition>
         </div>
+
+        <Dialog
+            v-model:visible="passwordDialog"
+            modal
+            header="비밀번호 변경"
+            :style="{ width: '32rem' }"
+            :breakpoints="{ '640px': 'calc(100vw - 2rem)' }"
+            :closable="!changingPassword"
+            :closeOnEscape="!changingPassword"
+            @show="focusPasswordField()"
+            @hide="clearPasswordFields"
+        >
+            <form id="profile-password-form" class="password-form" novalidate @submit.prevent="submitPasswordChange">
+                <div class="password-field">
+                    <label for="profile-current-password">현재 비밀번호</label>
+                    <Password
+                        inputId="profile-current-password"
+                        v-model="passwordDraft.currentPassword"
+                        autocomplete="current-password"
+                        :feedback="false"
+                        toggleMask
+                        fluid
+                        required
+                        :disabled="changingPassword"
+                        :invalid="passwordSubmitted && Boolean(passwordErrors.currentPassword)"
+                        :inputProps="{ autocomplete: 'current-password', 'aria-describedby': 'profile-current-password-error' }"
+                    />
+                    <small v-if="passwordSubmitted && passwordErrors.currentPassword" id="profile-current-password-error" class="password-error" role="alert">{{ passwordErrors.currentPassword }}</small>
+                </div>
+                <div class="password-field">
+                    <label for="profile-new-password">새 비밀번호</label>
+                    <Password
+                        inputId="profile-new-password"
+                        v-model="passwordDraft.newPassword"
+                        autocomplete="new-password"
+                        :feedback="false"
+                        toggleMask
+                        fluid
+                        required
+                        :disabled="changingPassword"
+                        :invalid="passwordSubmitted && Boolean(passwordErrors.newPassword)"
+                        :inputProps="{ autocomplete: 'new-password', minlength: 8, maxlength: 128, 'aria-describedby': 'profile-new-password-help profile-new-password-error' }"
+                    />
+                    <small id="profile-new-password-help" class="text-muted-color">8자 이상 128자 이하로 입력해 주세요.</small>
+                    <small v-if="passwordSubmitted && passwordErrors.newPassword" id="profile-new-password-error" class="password-error" role="alert">{{ passwordErrors.newPassword }}</small>
+                </div>
+                <div class="password-field">
+                    <label for="profile-confirm-password">새 비밀번호 확인</label>
+                    <Password
+                        inputId="profile-confirm-password"
+                        v-model="passwordDraft.confirmation"
+                        autocomplete="new-password"
+                        :feedback="false"
+                        toggleMask
+                        fluid
+                        required
+                        :disabled="changingPassword"
+                        :invalid="passwordSubmitted && Boolean(passwordErrors.confirmation)"
+                        :inputProps="{ autocomplete: 'new-password', maxlength: 128, 'aria-describedby': 'profile-confirm-password-error' }"
+                    />
+                    <small v-if="passwordSubmitted && passwordErrors.confirmation" id="profile-confirm-password-error" class="password-error" role="alert">{{ passwordErrors.confirmation }}</small>
+                </div>
+            </form>
+
+            <template #footer>
+                <Button label="취소" icon="pi pi-times" severity="secondary" text :disabled="changingPassword" @click="closePasswordDialog" />
+                <Button label="변경" icon="pi pi-check" type="submit" form="profile-password-form" :loading="changingPassword" :disabled="changingPassword || Boolean(Object.keys(passwordErrors).length)" />
+            </template>
+        </Dialog>
     </div>
 </template>
 
@@ -400,6 +543,31 @@ const profileItems = computed(() => [
 .erp-user-chevron {
     font-size: 0.72rem !important;
     color: var(--text-color-secondary);
+}
+
+.password-form,
+.password-field {
+    min-width: 0;
+}
+
+.password-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.password-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.password-field label {
+    font-weight: 600;
+}
+
+.password-error {
+    color: var(--p-red-600);
 }
 
 @media (max-width: 991px) {

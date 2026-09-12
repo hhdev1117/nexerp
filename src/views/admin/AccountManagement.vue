@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import { computed, nextTick, onMounted, ref } from 'vue';
-import { accountCreatePayload, accountRoleOptions, accountUpdatePayload, createAccountDraft, createEditAccountDraft, validateAccountDraft } from './adminModels';
+import { accountCreatePayload, accountRoleOptions, accountUpdatePayload, createAccountDraft, createEditAccountDraft, validateAccountDraft, validatePasswordResetDraft } from './adminModels';
 
 const adminApi = useAdminApi();
 const authStore = useAuthStore();
@@ -23,6 +23,12 @@ const dialogMode = ref('create');
 const editingAccount = ref(null);
 const submitted = ref(false);
 const draft = ref(createAccountDraft());
+const passwordResetDialog = ref(false);
+const passwordResetAccount = ref(null);
+const passwordResetDraft = ref({ temporaryPassword: '', confirmation: '' });
+const passwordResetSubmitted = ref(false);
+const resettingPassword = ref(false);
+const actionAccountId = ref(null);
 
 const roleLabels = Object.freeze({ admin: '관리자', approver: '결재자', user: '사용자' });
 const roleSeverities = Object.freeze({ admin: 'danger', approver: 'warn', user: 'secondary' });
@@ -34,6 +40,7 @@ const statusOptions = [
 ];
 
 const formErrors = computed(() => validateAccountDraft(draft.value, dialogMode.value));
+const passwordResetErrors = computed(() => validatePasswordResetDraft(passwordResetDraft.value));
 const isEditingCurrentAccount = computed(() => dialogMode.value === 'edit' && isCurrentAccount(editingAccount.value));
 const dialogTitle = computed(() => (dialogMode.value === 'create' ? '새 계정 등록' : '계정 정보 수정'));
 const filteredAccounts = computed(() => {
@@ -58,6 +65,8 @@ const failureDetail = (error, fallback) => {
 };
 
 const isCurrentAccount = (account) => account.id === authStore.user.value?.id;
+const passwordResetActionLabel = (account) => `${account.displayName} 임시 비밀번호 재설정`;
+const statusActionLabel = (account) => `${account.displayName} ${account.isActive ? 'ERP 계정 잠금' : '계정 활성화'}`;
 
 async function loadAccounts() {
     loading.value = true;
@@ -98,6 +107,89 @@ function closeDialog() {
     editingAccount.value = null;
     submitted.value = false;
     draft.value = createAccountDraft();
+}
+
+function clearPasswordResetDraft() {
+    passwordResetDraft.value = { temporaryPassword: '', confirmation: '' };
+    passwordResetSubmitted.value = false;
+}
+
+function openPasswordResetDialog(account) {
+    if (isCurrentAccount(account)) return;
+    passwordResetAccount.value = account;
+    clearPasswordResetDraft();
+    passwordResetDialog.value = true;
+}
+
+function closePasswordResetDialog() {
+    if (resettingPassword.value) return;
+    clearPasswordResetDraft();
+    passwordResetDialog.value = false;
+    passwordResetAccount.value = null;
+}
+
+async function focusFirstPasswordResetError() {
+    await nextTick();
+    const firstError = ['temporaryPassword', 'confirmation'].find((field) => passwordResetErrors.value[field]);
+    document.getElementById(`reset-${firstError}`)?.focus();
+}
+
+async function focusPasswordResetField() {
+    await nextTick();
+    document.getElementById('reset-temporaryPassword')?.focus();
+}
+
+async function resetAccountPassword() {
+    if (resettingPassword.value || !passwordResetAccount.value || isCurrentAccount(passwordResetAccount.value)) return;
+    passwordResetSubmitted.value = true;
+    if (Object.keys(passwordResetErrors.value).length) {
+        await focusFirstPasswordResetError();
+        return;
+    }
+
+    resettingPassword.value = true;
+    try {
+        await adminApi.resetAccountPassword(passwordResetAccount.value.id, passwordResetDraft.value.temporaryPassword);
+        toast.add({ severity: 'success', summary: '비밀번호 재설정 완료', detail: `${passwordResetAccount.value.displayName} 계정의 임시 비밀번호가 변경되었습니다.`, life: 3000 });
+        passwordResetDialog.value = false;
+    } catch (error) {
+        toast.add({ severity: 'error', summary: '비밀번호 재설정 실패', detail: failureDetail(error, '임시 비밀번호를 재설정하지 못했습니다. 잠시 후 다시 시도해 주세요.'), life: 3600 });
+    } finally {
+        clearPasswordResetDraft();
+        resettingPassword.value = false;
+    }
+}
+
+async function persistAccountStatus(account) {
+    if (actionAccountId.value || (account.isActive && isCurrentAccount(account))) return;
+    actionAccountId.value = account.id;
+    try {
+        const updated = await adminApi.updateAccount(account.id, accountUpdatePayload({ ...account, isActive: !account.isActive }));
+        accounts.value = accounts.value.map((account) => (account.id === updated.id ? updated : account));
+        toast.add({
+            severity: 'success',
+            summary: updated.isActive ? '계정 활성화 완료' : 'ERP 계정 잠금 완료',
+            detail: `${updated.displayName} 계정이 ${updated.isActive ? '활성화' : '잠금 처리'}되었습니다.`,
+            life: 3000
+        });
+    } catch (error) {
+        toast.add({ severity: 'error', summary: account.isActive ? 'ERP 계정 잠금 실패' : '계정 활성화 실패', detail: failureDetail(error, '계정 상태를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.'), life: 3600 });
+    } finally {
+        actionAccountId.value = null;
+    }
+}
+
+function toggleAccountStatus(account) {
+    if (account.isActive && isCurrentAccount(account)) return;
+    const locking = account.isActive;
+    confirm.require({
+        header: locking ? 'ERP 계정 잠금' : '계정 활성화',
+        message: `${account.displayName} 계정을 ${locking ? '잠금' : '활성화'}하시겠습니까?`,
+        icon: locking ? 'pi pi-lock' : 'pi pi-lock-open',
+        rejectProps: { label: '취소', severity: 'secondary', outlined: true },
+        acceptProps: { label: locking ? '잠금' : '활성화', severity: locking ? 'danger' : 'success' },
+        accept: () => persistAccountStatus(account)
+    });
 }
 
 async function focusFirstError() {
@@ -227,9 +319,31 @@ onMounted(loadAccounts);
                         <Tag :value="slotProps.data.isActive ? '활성' : '비활성'" :severity="slotProps.data.isActive ? 'success' : 'secondary'" />
                     </template>
                 </Column>
-                <Column header="작업" frozen alignFrozen="right" style="width: 5rem">
+                <Column header="작업" frozen alignFrozen="right" style="width: 11rem">
                     <template #body="slotProps">
-                        <Button icon="pi pi-pencil" text rounded :aria-label="`${slotProps.data.displayName} 계정 수정`" :title="`${slotProps.data.displayName} 계정 수정`" @click="openEditDialog(slotProps.data)" />
+                        <div class="account-actions">
+                            <Button icon="pi pi-pencil" text rounded :aria-label="`${slotProps.data.displayName} 계정 수정`" :title="`${slotProps.data.displayName} 계정 수정`" @click="openEditDialog(slotProps.data)" />
+                            <Button
+                                icon="pi pi-key"
+                                text
+                                rounded
+                                severity="secondary"
+                                :aria-label="passwordResetActionLabel(slotProps.data)"
+                                :title="passwordResetActionLabel(slotProps.data)"
+                                :disabled="isCurrentAccount(slotProps.data) || resettingPassword"
+                                @click="openPasswordResetDialog(slotProps.data)"
+                            />
+                            <Button
+                                :icon="slotProps.data.isActive ? 'pi pi-lock' : 'pi pi-lock-open'"
+                                text
+                                rounded
+                                :severity="slotProps.data.isActive ? 'danger' : 'success'"
+                                :aria-label="statusActionLabel(slotProps.data)"
+                                :title="statusActionLabel(slotProps.data)"
+                                :disabled="isCurrentAccount(slotProps.data) || Boolean(actionAccountId)"
+                                @click="toggleAccountStatus(slotProps.data)"
+                            />
+                        </div>
                     </template>
                 </Column>
             </DataTable>
@@ -255,9 +369,9 @@ onMounted(loadAccounts);
                         fluid
                         required
                         :invalid="submitted && Boolean(formErrors.temporaryPassword)"
-                        :inputProps="{ 'aria-describedby': 'account-password-help account-temporaryPassword-error' }"
+                        :inputProps="{ autocomplete: 'new-password', minlength: 8, maxlength: 128, 'aria-describedby': 'account-password-help account-temporaryPassword-error' }"
                     />
-                    <small id="account-password-help" class="text-muted-color">최초 로그인에 사용할 8자 이상의 임시 비밀번호입니다.</small>
+                    <small id="account-password-help" class="text-muted-color">최초 로그인에 사용할 8자 이상 128자 이하의 임시 비밀번호입니다.</small>
                     <small v-if="submitted && formErrors.temporaryPassword" id="account-temporaryPassword-error" class="field-error" role="alert">{{ formErrors.temporaryPassword }}</small>
                 </div>
 
@@ -306,6 +420,59 @@ onMounted(loadAccounts);
             </template>
         </Dialog>
 
+        <Dialog
+            v-model:visible="passwordResetDialog"
+            modal
+            :header="`${passwordResetAccount?.displayName || '계정'} 비밀번호 재설정`"
+            :style="{ width: '32rem' }"
+            :breakpoints="{ '640px': 'calc(100vw - 2rem)' }"
+            :closable="!resettingPassword"
+            :closeOnEscape="!resettingPassword"
+            @show="focusPasswordResetField"
+            @hide="clearPasswordResetDraft"
+        >
+            <form id="password-reset-form" class="account-form" novalidate @submit.prevent="resetAccountPassword">
+                <div class="field-group">
+                    <label for="reset-temporaryPassword">임시 비밀번호</label>
+                    <Password
+                        inputId="reset-temporaryPassword"
+                        v-model="passwordResetDraft.temporaryPassword"
+                        autocomplete="new-password"
+                        :feedback="false"
+                        toggleMask
+                        fluid
+                        required
+                        :disabled="resettingPassword"
+                        :invalid="passwordResetSubmitted && Boolean(passwordResetErrors.temporaryPassword)"
+                        :inputProps="{ autocomplete: 'new-password', minlength: 8, maxlength: 128, 'aria-describedby': 'reset-password-help reset-temporaryPassword-error' }"
+                    />
+                    <small id="reset-password-help" class="text-muted-color">사용자에게 안전한 경로로 전달할 8자 이상 128자 이하의 임시 비밀번호입니다.</small>
+                    <small v-if="passwordResetSubmitted && passwordResetErrors.temporaryPassword" id="reset-temporaryPassword-error" class="field-error" role="alert">{{ passwordResetErrors.temporaryPassword }}</small>
+                </div>
+                <div class="field-group">
+                    <label for="reset-confirmation">임시 비밀번호 확인</label>
+                    <Password
+                        inputId="reset-confirmation"
+                        v-model="passwordResetDraft.confirmation"
+                        autocomplete="new-password"
+                        :feedback="false"
+                        toggleMask
+                        fluid
+                        required
+                        :disabled="resettingPassword"
+                        :invalid="passwordResetSubmitted && Boolean(passwordResetErrors.confirmation)"
+                        :inputProps="{ autocomplete: 'new-password', maxlength: 128, 'aria-describedby': 'reset-confirmation-error' }"
+                    />
+                    <small v-if="passwordResetSubmitted && passwordResetErrors.confirmation" id="reset-confirmation-error" class="field-error" role="alert">{{ passwordResetErrors.confirmation }}</small>
+                </div>
+            </form>
+
+            <template #footer>
+                <Button label="취소" icon="pi pi-times" severity="secondary" text :disabled="resettingPassword" @click="closePasswordResetDialog" />
+                <Button label="재설정" icon="pi pi-key" type="submit" form="password-reset-form" :loading="resettingPassword" :disabled="resettingPassword || Boolean(Object.keys(passwordResetErrors).length)" />
+            </template>
+        </Dialog>
+
         <ConfirmDialog />
     </div>
 </template>
@@ -340,6 +507,13 @@ onMounted(loadAccounts);
     align-items: center;
     gap: 0.75rem;
     max-width: 18rem;
+}
+
+.account-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+    white-space: nowrap;
 }
 
 .account-avatar {

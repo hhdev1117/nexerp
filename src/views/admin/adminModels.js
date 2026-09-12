@@ -1,5 +1,8 @@
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FIXED_ADMIN_KEYS = new Set(['settings.accounts', 'settings.menu-permissions']);
+const TEMPORARY_PASSWORD_ERROR = '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.';
+
+const isValidTemporaryPassword = (password) => typeof password === 'string' && password.length >= 8 && password.length <= 128 && Boolean(password.trim());
 
 export const accountRoleOptions = Object.freeze([Object.freeze({ label: '관리자', value: 'admin' }), Object.freeze({ label: '결재자', value: 'approver' }), Object.freeze({ label: '사용자', value: 'user' })]);
 
@@ -28,12 +31,18 @@ export function validateAccountDraft(draft, mode) {
     if (mode === 'create') {
         const email = typeof draft?.email === 'string' ? draft.email.trim() : '';
         if (!EMAIL_PATTERN.test(email)) errors.email = '올바른 이메일 주소를 입력해 주세요.';
-        if (typeof draft?.temporaryPassword !== 'string' || draft.temporaryPassword.trim().length < 8) {
-            errors.temporaryPassword = '임시 비밀번호는 8자 이상이어야 합니다.';
-        }
+        if (!isValidTemporaryPassword(draft?.temporaryPassword)) errors.temporaryPassword = TEMPORARY_PASSWORD_ERROR;
     }
     if (!draft?.displayName?.trim()) errors.displayName = '이름을 입력해 주세요.';
     if (!draft?.department?.trim()) errors.department = '부서를 입력해 주세요.';
+    return errors;
+}
+
+export function validatePasswordResetDraft(draft) {
+    const errors = {};
+    if (!isValidTemporaryPassword(draft?.temporaryPassword)) errors.temporaryPassword = TEMPORARY_PASSWORD_ERROR;
+    if (typeof draft?.confirmation !== 'string' || !draft.confirmation.trim()) errors.confirmation = '임시 비밀번호 확인을 입력해 주세요.';
+    else if (draft.confirmation !== draft?.temporaryPassword) errors.confirmation = '임시 비밀번호가 일치하지 않습니다.';
     return errors;
 }
 

@@ -19,7 +19,7 @@ const deferred = () => {
     return { promise, resolve };
 };
 
-const createClient = ({ session = null, profiles = {}, signInResult, signOutError = null } = {}) => {
+const createClient = ({ session = null, profiles = {}, signInResult, signOutError = null, updateUserResult } = {}) => {
     let authListener;
     const unsubscribe = vi.fn();
     const profileRequests = [];
@@ -36,6 +36,7 @@ const createClient = ({ session = null, profiles = {}, signInResult, signOutErro
                     error: null
                 }
             ),
+            updateUser: vi.fn().mockResolvedValue(updateUserResult || { data: { user: session?.user || null }, error: null }),
             signOut: vi.fn().mockResolvedValue({ error: signOutError })
         },
         from: vi.fn((table) => {
@@ -153,6 +154,114 @@ describe('Supabase auth store', () => {
         expect(result).toEqual({ session, user: session.user });
         expect(store.profile.value).toEqual(approverProfile);
         expect(store.role.value).toBe('approver');
+    });
+
+    it('reauthenticates the current active user before changing the password', async () => {
+        const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            signInResult: { data: { session, user: session.user }, error: null },
+            updateUserResult: { data: { user: session.user }, error: null }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.changePassword('Current-Password-1!', 'Replacement-Password-2!')).resolves.toBeUndefined();
+
+        expect(fixture.client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'approver@nexerp.test', password: 'Current-Password-1!' });
+        expect(fixture.client.auth.updateUser).toHaveBeenCalledWith({ password: 'Replacement-Password-2!' });
+        expect(fixture.client.auth.signInWithPassword.mock.invocationCallOrder[0]).toBeLessThan(fixture.client.auth.updateUser.mock.invocationCallOrder[0]);
+        expect(store.error.value).toBeNull();
+        expect(store.loading.value).toBe(false);
+    });
+
+    it.each([
+        ['', 'Replacement-Password-2!', '현재 비밀번호를 입력해 주세요.'],
+        ['Current-Password-1!', '', '새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.'],
+        ['Current-Password-1!', '       ', '새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.'],
+        ['Current-Password-1!', 'short7', '새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.'],
+        ['Current-Password-1!', 'x'.repeat(129), '새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.'],
+        ['Same-Password-1!', 'Same-Password-1!', '새 비밀번호는 현재 비밀번호와 다르게 입력해 주세요.']
+    ])('rejects invalid password input without calling Supabase', async (currentPassword, newPassword, message) => {
+        const session = { user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.changePassword(currentPassword, newPassword)).rejects.toThrow(message);
+
+        expect(fixture.client.auth.signInWithPassword).not.toHaveBeenCalled();
+        expect(fixture.client.auth.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('requires a configured active identity with a session and email', async () => {
+        const unconfigured = createAuthStore({ client: null, configured: false });
+        await expect(unconfigured.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('Supabase 연결 정보가 설정되지 않았습니다.');
+
+        const fixture = createClient({ session: null });
+        const signedOut = createAuthStore({ client: fixture.client, configured: true });
+        await expect(signedOut.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.');
+
+        const inactiveSession = { user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const inactiveFixture = createClient({
+            session: inactiveSession,
+            profiles: { 'user-1': { data: { ...approverProfile, is_active: false }, error: null } }
+        });
+        const inactive = createAuthStore({ client: inactiveFixture.client, configured: true });
+        await inactive.initialize();
+        await expect(inactive.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('비활성화된 계정입니다. 관리자에게 문의해 주세요.');
+    });
+
+    it('redacts invalid current-password details and does not update the user', async () => {
+        const session = { user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const raw = new Error('Invalid login credentials password=sentinel-secret');
+        raw.status = 400;
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            signInResult: { data: { session: null, user: null }, error: raw }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.changePassword('sentinel-current-password', 'Replacement-Password-2!')).rejects.toThrow('현재 비밀번호가 올바르지 않습니다.');
+
+        expect(store.error.value).toBe('현재 비밀번호가 올바르지 않습니다.');
+        expect(store.error.value).not.toContain('sentinel');
+        expect(fixture.client.auth.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects a reauthenticated identity mismatch before updating the password', async () => {
+        const session = { user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            signInResult: { data: { session: { user: { id: 'user-2' } }, user: { id: 'user-2', email: 'other@nexerp.test' } }, error: null }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('로그인 상태가 변경되었습니다. 다시 로그인해 주세요.');
+
+        expect(fixture.client.auth.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('redacts password-update failures behind a stable message', async () => {
+        const session = { user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            signInResult: { data: { session, user: session.user }, error: null },
+            updateUserResult: { data: { user: null }, error: new Error('provider rejected password=sentinel-secret') }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('비밀번호를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+
+        expect(store.error.value).toBe('비밀번호를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        expect(store.error.value).not.toContain('sentinel');
     });
 
     it('keeps local identity when sign-out fails and clears it only after success', async () => {

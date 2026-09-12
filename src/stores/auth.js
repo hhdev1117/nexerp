@@ -228,6 +228,50 @@ export function createAuthStore({ client, configured }) {
         }
     };
 
+    const changePassword = async (currentPassword, newPassword) => {
+        const fail = (message) => {
+            error.value = message;
+            throw rejection(message);
+        };
+
+        if (!isConfigured) fail(NOT_CONFIGURED_MESSAGE);
+        if (!session.value || !user.value?.id || !user.value?.email?.trim() || session.value.user?.id !== user.value.id) {
+            fail('로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.');
+        }
+        if (!profile.value) fail(MISSING_PROFILE_MESSAGE);
+        if (!profile.value.is_active) fail(INACTIVE_PROFILE_MESSAGE);
+        if (typeof currentPassword !== 'string' || !currentPassword.trim()) fail('현재 비밀번호를 입력해 주세요.');
+        if (typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 128 || !newPassword.trim()) {
+            fail('새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.');
+        }
+        if (currentPassword === newPassword) fail('새 비밀번호는 현재 비밀번호와 다르게 입력해 주세요.');
+
+        const currentUserId = user.value.id;
+        const email = user.value.email.trim();
+        beginOperation();
+        error.value = null;
+        try {
+            let reauthenticated;
+            try {
+                reauthenticated = await client.auth.signInWithPassword({ email, password: currentPassword });
+            } catch {
+                fail('현재 비밀번호가 올바르지 않습니다.');
+            }
+            if (reauthenticated?.error) fail('현재 비밀번호가 올바르지 않습니다.');
+            if (reauthenticated?.data?.user?.id !== currentUserId) fail('로그인 상태가 변경되었습니다. 다시 로그인해 주세요.');
+
+            let updated;
+            try {
+                updated = await client.auth.updateUser({ password: newPassword });
+            } catch (cause) {
+                fail(normalizedError(cause, '비밀번호를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.'));
+            }
+            if (updated?.error) fail(normalizedError(updated.error, '비밀번호를 변경하지 못했습니다. 잠시 후 다시 시도해 주세요.'));
+        } finally {
+            endOperation();
+        }
+    };
+
     const signOut = async () => {
         if (!isConfigured) {
             error.value = NOT_CONFIGURED_MESSAGE;
@@ -301,6 +345,7 @@ export function createAuthStore({ client, configured }) {
         initialize,
         waitForIdentity,
         signIn,
+        changePassword,
         signOut,
         retryProfile,
         hasRole

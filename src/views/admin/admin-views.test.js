@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { erpMenu, flattenMenuRoutes } from '@/data/erp';
-import { accountCreatePayload, accountUpdatePayload, buildPermissionGroups, createAccountDraft, createEditAccountDraft, permissionKeysEqual, validateAccountDraft } from './adminModels';
+import { accountCreatePayload, accountUpdatePayload, buildPermissionGroups, createAccountDraft, createEditAccountDraft, permissionKeysEqual, validateAccountDraft, validatePasswordResetDraft } from './adminModels';
 
 const source = (file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
 const accountsSource = source('./AccountManagement.vue');
@@ -21,7 +21,7 @@ describe('administrator account screen', () => {
     it('validates every required create field before submitting', () => {
         expect(validateAccountDraft(createAccountDraft(), 'create')).toEqual({
             email: '올바른 이메일 주소를 입력해 주세요.',
-            temporaryPassword: '임시 비밀번호는 8자 이상이어야 합니다.',
+            temporaryPassword: '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.',
             displayName: '이름을 입력해 주세요.',
             department: '부서를 입력해 주세요.'
         });
@@ -69,6 +69,24 @@ describe('administrator account screen', () => {
         });
     });
 
+    it('validates reset passwords by total length, non-whitespace content, and confirmation', () => {
+        expect(validatePasswordResetDraft({ temporaryPassword: '', confirmation: '' })).toEqual({
+            temporaryPassword: '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.',
+            confirmation: '임시 비밀번호 확인을 입력해 주세요.'
+        });
+        expect(validatePasswordResetDraft({ temporaryPassword: '        ', confirmation: '        ' })).toEqual({
+            temporaryPassword: '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.',
+            confirmation: '임시 비밀번호 확인을 입력해 주세요.'
+        });
+        expect(validatePasswordResetDraft({ temporaryPassword: 'x'.repeat(129), confirmation: 'x'.repeat(129) })).toEqual({
+            temporaryPassword: '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.'
+        });
+        expect(validatePasswordResetDraft({ temporaryPassword: 'Replacement-Password-2!', confirmation: 'different-password' })).toEqual({
+            confirmation: '임시 비밀번호가 일치하지 않습니다.'
+        });
+        expect(validatePasswordResetDraft({ temporaryPassword: 'Replacement-Password-2!', confirmation: 'Replacement-Password-2!' })).toEqual({});
+    });
+
     it('loads, creates, edits, and protects the current administrator in the real view', () => {
         expect(accountsSource).toContain('await adminApi.listAccounts()');
         expect(accountsSource).toContain('await adminApi.createAccount(accountCreatePayload(draft.value))');
@@ -90,6 +108,19 @@ describe('administrator account screen', () => {
         expect(accountsSource).not.toContain('error.message');
         expect(accountsSource).toContain('responsiveLayout="scroll"');
         expect(accountsSource).toContain('min-width: 0');
+    });
+
+    it('provides explicit password-reset and ERP lock actions without allowing self-service', () => {
+        expect(accountsSource).toContain('icon="pi pi-key"');
+        expect(accountsSource).toContain("slotProps.data.isActive ? 'pi pi-lock' : 'pi pi-lock-open'");
+        expect(accountsSource).toContain(':disabled="isCurrentAccount(slotProps.data)');
+        expect(accountsSource).toContain('await adminApi.resetAccountPassword(passwordResetAccount.value.id, passwordResetDraft.value.temporaryPassword)');
+        expect(accountsSource).toContain("header: locking ? 'ERP 계정 잠금' : '계정 활성화'");
+        expect(accountsSource).toContain('adminApi.updateAccount(account.id, accountUpdatePayload({ ...account, isActive: !account.isActive }))');
+        expect(accountsSource).toContain('account.id === updated.id ? updated : account');
+        expect(accountsSource).toContain("passwordResetDraft.value = { temporaryPassword: '', confirmation: '' }");
+        expect(accountsSource).toContain(':title="passwordResetActionLabel(slotProps.data)"');
+        expect(accountsSource).toContain(':title="statusActionLabel(slotProps.data)"');
     });
 });
 

@@ -15,6 +15,7 @@ const authStore = {
     user: ref({ id: 'user-1', email: 'user@nexerp.test' }),
     profile: ref({ display_name: '박지민', department: '재무팀', role: 'user', is_active: true }),
     hasRole: vi.fn((roles) => roles.includes(authStore.profile.value?.role)),
+    changePassword: vi.fn(),
     signOut: vi.fn()
 };
 const accessStore = {
@@ -62,6 +63,11 @@ const openProfileMenu = async (wrapper) => {
     await flushPromises();
 };
 
+const submitPasswordForm = async () => {
+    document.querySelector('#profile-password-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+};
+
 beforeEach(() => {
     Object.defineProperty(window, 'matchMedia', {
         configurable: true,
@@ -70,6 +76,7 @@ beforeEach(() => {
     authStore.user.value = { id: 'user-1', email: 'user@nexerp.test' };
     authStore.profile.value = { display_name: '박지민', department: '재무팀', role: 'user', is_active: true };
     authStore.hasRole.mockClear();
+    authStore.changePassword.mockReset().mockResolvedValue(undefined);
     authStore.signOut.mockReset().mockResolvedValue(undefined);
     accessStore.canAccess.mockReset().mockReturnValue(false);
     toastAdd.mockReset();
@@ -254,6 +261,75 @@ describe('ERP application shell', () => {
             .click();
         await flushPromises();
         expect(router.currentRoute.value.path).toBe('/settings/accounts');
+    });
+
+    it('offers password change to every active account and hides it for inactive accounts', async () => {
+        const { wrapper } = await mountTopbar();
+
+        await openProfileMenu(wrapper);
+        const passwordItem = [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent.includes('비밀번호 변경'));
+        expect(passwordItem).toBeTruthy();
+        expect(passwordItem.querySelector('.pi-key')).toBeTruthy();
+
+        authStore.profile.value = { ...authStore.profile.value, is_active: false };
+        await nextTick();
+        expect(document.body.textContent).not.toContain('비밀번호 변경');
+    });
+
+    it('validates password-change fields before calling the auth store', async () => {
+        const { wrapper } = await mountTopbar();
+        await openProfileMenu(wrapper);
+        [...document.querySelectorAll('[role="menuitem"]')]
+            .find((item) => item.textContent.includes('비밀번호 변경'))
+            .querySelector('a, button')
+            .click();
+        await flushPromises();
+
+        const current = document.querySelector('#profile-current-password');
+        const next = document.querySelector('#profile-new-password');
+        const confirmation = document.querySelector('#profile-confirm-password');
+        expect(current.getAttribute('autocomplete')).toBe('current-password');
+        expect(next.getAttribute('autocomplete')).toBe('new-password');
+        expect(confirmation.getAttribute('autocomplete')).toBe('new-password');
+
+        await submitPasswordForm();
+
+        expect(authStore.changePassword).not.toHaveBeenCalled();
+        expect(document.body.textContent).toContain('현재 비밀번호를 입력해 주세요.');
+        expect(document.activeElement).toBe(current);
+    });
+
+    it.each([
+        ['success', undefined, 'success', '비밀번호 변경 완료'],
+        ['failure', new Error('sentinel-provider-secret'), 'error', '비밀번호 변경 실패']
+    ])('clears password fields after %s completion', async (_case, failure, severity, summary) => {
+        if (failure) authStore.changePassword.mockRejectedValueOnce(failure);
+        const { wrapper } = await mountTopbar();
+        await openProfileMenu(wrapper);
+        [...document.querySelectorAll('[role="menuitem"]')]
+            .find((item) => item.textContent.includes('비밀번호 변경'))
+            .querySelector('a, button')
+            .click();
+        await flushPromises();
+
+        const setValue = (selector, value) => {
+            const input = document.querySelector(selector);
+            input.value = value;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        setValue('#profile-current-password', 'Current-Password-1!');
+        setValue('#profile-new-password', 'Replacement-Password-2!');
+        setValue('#profile-confirm-password', 'Replacement-Password-2!');
+        await nextTick();
+        await submitPasswordForm();
+
+        expect(authStore.changePassword).toHaveBeenCalledWith('Current-Password-1!', 'Replacement-Password-2!');
+        expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity, summary }));
+        expect(JSON.stringify(toastAdd.mock.calls)).not.toContain('sentinel-provider-secret');
+        for (const selector of ['#profile-current-password', '#profile-new-password', '#profile-confirm-password']) {
+            const input = document.querySelector(selector);
+            if (input) expect(input.value).toBe('');
+        }
     });
 
     it('signs out once and replaces the current route with login', async () => {
