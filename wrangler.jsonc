@@ -1,12 +1,16 @@
 {
     "$schema": "./node_modules/wrangler/config-schema.json",
     "name": "nexerp",
+    "keep_vars": true,
     "account_id": "fb3e0684f8d1a9ced906edc27c0f3c8b",
     "main": "./worker/index.js",
     "compatibility_date": "2026-09-11",
     "vars": {
         "CLOUDFLARE_ACCOUNT_ID": "fb3e0684f8d1a9ced906edc27c0f3c8b",
         "CLOUDFLARE_WORKER_NAME": "nexerp"
+    },
+    "secrets": {
+        "required": ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY", "SUPABASE_MANAGEMENT_TOKEN"]
     },
     "assets": {
         "directory": "./dist",
