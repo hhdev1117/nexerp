@@ -157,7 +157,12 @@ const profileItems = computed(() => [
         items: [
             { label: '내 프로필', icon: 'pi pi-user', command: () => showMessage('내 프로필', '프로필 기능은 준비 중입니다.') },
             { label: '회사 · 사업장 설정', icon: 'pi pi-building', command: () => navigate('/settings/company') },
-            ...(authStore.hasRole(['admin']) ? [{ label: '사용자 · 권한', icon: 'pi pi-shield', command: () => navigate('/settings/access') }] : [])
+            ...(authStore.hasRole(['admin'])
+                ? [
+                      { label: '계정 관리', icon: 'pi pi-users', command: () => navigate('/settings/accounts') },
+                      { label: '메뉴 권한 관리', icon: 'pi pi-shield', command: () => navigate('/settings/menu-permissions') }
+                  ]
+                : [])
         ]
     },
     { separator: true },
@@ -176,7 +181,7 @@ const profileItems = computed(() => [
                 <span class="erp-logo-mark" aria-hidden="true"><i class="pi pi-box"></i></span>
                 <span class="erp-brand-copy">
                     <strong>NEXERP</strong>
-                    <small>SAKAI ERP</small>
+                    <small>업무관리 시스템</small>
                 </span>
             </router-link>
         </div>

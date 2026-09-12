@@ -46,7 +46,8 @@ const mountTopbar = async (path = '/') => {
             { path: '/', name: 'dashboard', component: { template: '<main />' } },
             { path: '/auth/login', name: 'login', component: { template: '<main />' } },
             { path: '/settings/company', component: { template: '<main />' } },
-            { path: '/settings/access', component: { template: '<main />' } }
+            { path: '/settings/accounts', component: { template: '<main />' } },
+            { path: '/settings/menu-permissions', component: { template: '<main />' } }
         ]
     });
     await router.push(path);
@@ -80,7 +81,7 @@ afterEach(() => {
 });
 
 describe('ERP application shell', () => {
-    it('renders the shared ERP navigation model through the animated Sakai menu item', () => {
+    it('renders the shared NEXERP navigation model through the animated menu item', () => {
         const source = readLayoutSource('AppMenu.vue');
 
         expect(source).toContain("import { erpMenu, filterMenuByAccess } from '@/data/erp'");
@@ -184,7 +185,8 @@ describe('ERP application shell', () => {
         expect(configuratorSource).toContain('ring-offset-2 ring-offset-surface-0 dark:ring-offset-surface-900');
         expect(source).toContain('pendingApprovalCount');
         expect(source).toContain('NEXERP');
-        expect(source).toContain('SAKAI ERP');
+        expect(source).toContain('업무관리 시스템');
+        expect(source).not.toContain('SAKAI ERP');
         expect(source).not.toContain('var(--primary-50)');
     });
 
@@ -235,14 +237,23 @@ describe('ERP application shell', () => {
     });
 
     it('shows access administration only to administrators', async () => {
-        const { wrapper } = await mountTopbar();
+        const { wrapper, router } = await mountTopbar();
 
         await openProfileMenu(wrapper);
         expect(document.body.textContent).not.toContain('사용자 · 권한');
 
         authStore.profile.value = { display_name: '관리자', department: '', role: 'admin', is_active: true };
         await nextTick();
-        expect(document.body.textContent).toContain('사용자 · 권한');
+        expect(document.body.textContent).toContain('계정 관리');
+        expect(document.body.textContent).toContain('메뉴 권한 관리');
+
+        const menuItems = [...document.querySelectorAll('[role="menuitem"]')];
+        menuItems
+            .find((item) => item.textContent.includes('계정 관리'))
+            .querySelector('a, button')
+            .click();
+        await flushPromises();
+        expect(router.currentRoute.value.path).toBe('/settings/accounts');
     });
 
     it('signs out once and replaces the current route with login', async () => {
@@ -292,7 +303,7 @@ describe('ERP application shell', () => {
         const source = readLayoutSource('AppFooter.vue');
 
         expect(source).toContain('NEXERP');
-        expect(source).toContain('SAKAI ERP');
+        expect(source).not.toContain('SAKAI ERP');
     });
 
     it('uses an accessible primary tone and Korean PrimeVue labels', () => {
