@@ -10,7 +10,7 @@ const missingUserCodes = new Set(['user_not_found']);
 const upstreamAuthErrorNames = new Set(['AuthRetryableFetchError', 'AuthUnknownError']);
 const upstreamAuthErrorCodes = new Set(['unexpected_failure', 'request_timeout', 'hook_timeout', 'hook_timeout_after_retry', 'over_request_rate_limit']);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const gmailEmailPattern = /^[^\s@]+@gmail\.com$/;
 
 const apiError = (status, code, message) => jsonResponse({ error: { code, message } }, { status });
 const upstreamError = () => apiError(502, 'upstream_error', '계정 관리 서비스를 사용할 수 없습니다.');
@@ -63,6 +63,17 @@ export async function authorizeAdministrator(request, env, createSupabaseClient)
     const user = authResult?.data?.user;
     if (!user) return { response: apiError(401, 'invalid_session', '유효하지 않은 로그인 세션입니다.') };
 
+    let assuranceResult;
+    try {
+        assuranceResult = await client.auth.mfa.getAuthenticatorAssuranceLevel(token);
+    } catch {
+        return { response: upstreamError() };
+    }
+    if (assuranceResult?.error || !assuranceResult?.data) return { response: upstreamError() };
+    if (assuranceResult.data.currentLevel !== 'aal2') {
+        return { response: apiError(403, 'mfa_required', '다중 인증을 완료한 후 다시 시도해 주세요.') };
+    }
+
     let profileResult;
     try {
         profileResult = await client.from('profiles').select('id, role, is_active').eq('id', user.id).maybeSingle();
@@ -105,8 +116,8 @@ function temporaryPassword(value) {
 
 function validateCreatePayload(body) {
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-    if (!email || email.length > 320 || !emailPattern.test(email)) {
-        return { response: apiError(400, 'invalid_email', '올바른 이메일 주소를 입력해 주세요.') };
+    if (!email || email.length > 320 || !gmailEmailPattern.test(email)) {
+        return { response: apiError(400, 'gmail_required', 'Gmail 주소만 사용할 수 있습니다.') };
     }
 
     const password = temporaryPassword(body.temporaryPassword);
@@ -212,7 +223,8 @@ async function createAccount(request, env, client, createAdminClient) {
         createResult = await adminClient.auth.admin.createUser({
             email: input.email,
             password: input.temporaryPassword,
-            email_confirm: true
+            email_confirm: true,
+            app_metadata: { nexerp_provisioned: true }
         });
     } catch {
         return upstreamError();
@@ -307,10 +319,45 @@ async function resetAccountPassword(request, env, accountId, createAdminClient) 
     return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 }
 
+async function resetAccountMfa(env, accountId, createAdminClient) {
+    if (!uuidPattern.test(accountId)) return apiError(400, 'invalid_account_id', '올바른 계정 ID가 아닙니다.');
+
+    let adminClient;
+    try {
+        adminClient = createAdminClient(env);
+    } catch (error) {
+        return error?.code === 'worker_configuration_error' ? serviceUnavailable() : upstreamError();
+    }
+
+    let listed;
+    try {
+        listed = await adminClient.auth.admin.mfa.listFactors({ userId: accountId });
+    } catch {
+        return upstreamError();
+    }
+    const factors = listed?.data?.factors;
+    if (listed?.error || !Array.isArray(factors) || factors.some((factor) => !factor || typeof factor.id !== 'string' || !factor.id.trim() || typeof factor.factor_type !== 'string')) return upstreamError();
+
+    let failed = false;
+    for (const factor of factors) {
+        if (factor.factor_type !== 'totp') continue;
+        let deleted;
+        try {
+            deleted = await adminClient.auth.admin.mfa.deleteFactor({ id: factor.id, userId: accountId });
+        } catch {
+            failed = true;
+            continue;
+        }
+        if (deleted?.error || deleted?.data?.id !== factor.id) failed = true;
+    }
+
+    return failed ? upstreamError() : new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
+}
+
 export async function handleAdminAccountRequest(
     request,
     env,
-    { accountId = null, passwordReset = false, createSupabaseClient = createUserSupabaseClient, createAdminClient = createAdminSupabaseClient } = {}
+    { accountId = null, passwordReset = false, mfaReset = false, createSupabaseClient = createUserSupabaseClient, createAdminClient = createAdminSupabaseClient } = {}
 ) {
     const authorization = await authorizeAdministrator(request, env, createSupabaseClient);
     if (authorization.response) return authorization.response;
@@ -323,6 +370,12 @@ export async function handleAdminAccountRequest(
             return apiError(403, 'self_password_reset_forbidden', '현재 관리자 계정의 비밀번호는 이 방식으로 변경할 수 없습니다.');
         }
         return resetAccountPassword(request, env, accountId, createAdminClient);
+    }
+    if (request.method === 'POST' && accountId !== null && mfaReset) {
+        if (typeof authorization.user.id === 'string' && accountId.toLowerCase() === authorization.user.id.toLowerCase()) {
+            return apiError(403, 'self_mfa_reset_forbidden', '현재 관리자 계정의 인증 앱은 이 방식으로 초기화할 수 없습니다.');
+        }
+        return resetAccountMfa(env, accountId, createAdminClient);
     }
 
     return apiError(400, 'invalid_request', '요청 내용을 확인해 주세요.');

@@ -48,7 +48,7 @@ const existingAccount = {
 describe('administrator account screen', () => {
     it('validates every required create field before submitting', () => {
         expect(validateAccountDraft(createAccountDraft(), 'create')).toEqual({
-            email: '올바른 이메일 주소를 입력해 주세요.',
+            email: 'Gmail 주소만 사용할 수 있습니다.',
             temporaryPassword: '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.',
             displayName: '이름을 입력해 주세요.',
             department: '부서를 입력해 주세요.'
@@ -57,7 +57,7 @@ describe('administrator account screen', () => {
         expect(
             validateAccountDraft(
                 {
-                    email: ' employee@nexerp.test ',
+                    email: ' employee@gmail.com ',
                     temporaryPassword: 'Temporary-9!',
                     displayName: ' 김서준 ',
                     department: ' 영업팀 ',
@@ -80,7 +80,7 @@ describe('administrator account screen', () => {
     it('normalizes a create payload without retaining form-only state', () => {
         expect(
             accountCreatePayload({
-                email: ' Employee@NEXERP.test ',
+                email: ' Employee@GMAIL.com ',
                 temporaryPassword: 'Temporary-9!',
                 displayName: ' 김서준 ',
                 department: ' 영업팀 ',
@@ -89,12 +89,19 @@ describe('administrator account screen', () => {
                 submitted: true
             })
         ).toEqual({
-            email: 'employee@nexerp.test',
+            email: 'employee@gmail.com',
             temporaryPassword: 'Temporary-9!',
             displayName: '김서준',
             department: '영업팀',
             role: 'user'
         });
+    });
+
+    it('accepts only normalized Gmail addresses for account provisioning', () => {
+        expect(validateAccountDraft({ email: ' Employee@GMAIL.com ', temporaryPassword: 'Temporary-9!', displayName: '김서준', department: '영업팀' }, 'create')).toEqual({});
+        for (const email of ['employee@gmail.com.evil', 'employee@sub.gmail.com', '@gmail.com', 'employee@nexerp.test']) {
+            expect(validateAccountDraft({ email, temporaryPassword: 'Temporary-9!', displayName: '김서준', department: '영업팀' }, 'create')).toEqual({ email: 'Gmail 주소만 사용할 수 있습니다.' });
+        }
     });
 
     it('validates reset passwords by total length, non-whitespace content, and confirmation', () => {
@@ -119,7 +126,7 @@ describe('administrator account screen', () => {
         expect(accountsSource).toContain('await adminApi.listAccounts()');
         expect(accountsSource).toContain('await adminApi.createAccount(accountCreatePayload(draft.value))');
         expect(accountsSource).toContain('await adminApi.updateAccount(editingAccount.value.id, accountUpdatePayload(draft.value))');
-        expect(accountsSource).toContain('const isCurrentAccount = (account) => account.id === authStore.user.value?.id');
+        expect(accountsSource).toContain("const isCurrentAccount = (account) => typeof account?.id === 'string' && account.id.toLowerCase() === authStore.user.value?.id?.toLowerCase()");
         expect(accountsSource).toContain(':disabled="isEditingCurrentAccount"');
         expect(accountsSource).toContain('type="password"');
         expect(accountsSource).toContain("draft.value.temporaryPassword = ''");
@@ -149,6 +156,16 @@ describe('administrator account screen', () => {
         expect(accountsSource).toContain("passwordResetDraft.value = { temporaryPassword: '', confirmation: '' }");
         expect(accountsSource).toContain(':title="passwordResetActionLabel(slotProps.data)"');
         expect(accountsSource).toContain(':title="statusActionLabel(slotProps.data)"');
+    });
+
+    it('provides an explicit, self-protected MFA reset action without exposing factors', () => {
+        expect(accountsSource).toContain('await adminApi.resetAccountMfa(account.id)');
+        expect(accountsSource).toContain("header: '인증 앱 초기화'");
+        expect(accountsSource).toContain('인증 앱을 초기화');
+        expect(accountsSource).toContain('pi pi-shield');
+        expect(accountsSource).toContain(':aria-label="mfaResetActionLabel(slotProps.data)"');
+        expect(accountsSource).toContain(':disabled="isCurrentAccount(slotProps.data) || resettingMfa"');
+        expect(accountsSource).not.toContain('factorId');
     });
 });
 

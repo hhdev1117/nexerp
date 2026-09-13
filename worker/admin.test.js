@@ -34,6 +34,9 @@ function createUserClientFixture({
     user = { id: callerId, email: 'admin@example.com' },
     authError = null,
     authThrows = null,
+    aal = { currentLevel: 'aal2', nextLevel: 'aal2' },
+    aalError = null,
+    aalThrows = null,
     profile = { id: callerId, role: 'admin', is_active: true },
     profileError = null,
     profileThrows = null,
@@ -48,6 +51,11 @@ function createUserClientFixture({
         events.push('get-user');
         if (authThrows) throw authThrows;
         return { data: { user }, error: authError };
+    });
+    const getAuthenticatorAssuranceLevel = vi.fn(async () => {
+        events.push('get-aal');
+        if (aalThrows) throw aalThrows;
+        return { data: aal, error: aalError };
     });
     const maybeSingle = vi.fn(async () => {
         events.push('get-profile');
@@ -72,7 +80,7 @@ function createUserClientFixture({
         return { data: rpcData, error: rpcError };
     });
 
-    return { client: { auth: { getUser }, from, rpc }, getUser, from, select, eq, maybeSingle, order, rpc };
+    return { client: { auth: { getUser, mfa: { getAuthenticatorAssuranceLevel } }, from, rpc }, getUser, getAuthenticatorAssuranceLevel, from, select, eq, maybeSingle, order, rpc };
 }
 
 function createAdminClientFixture({
@@ -84,7 +92,13 @@ function createAdminClientFixture({
     deleteThrows = null,
     updateError = null,
     updateThrows = null,
-    updateResultFactory = null
+    updateResultFactory = null,
+    factors = [],
+    listFactorsError = null,
+    listFactorsThrows = null,
+    deleteFactorError = null,
+    deleteFactorThrows = null,
+    deleteFactorResultFactory = null
 } = {}) {
     const createUser = vi.fn(async () => {
         events.push('create-user');
@@ -102,8 +116,19 @@ function createAdminClientFixture({
         if (updateResultFactory) return updateResultFactory();
         return { data: { user: { id: accountId, email: accountRow.email } }, error: updateError };
     });
+    const listFactors = vi.fn(async () => {
+        events.push('list-factors');
+        if (listFactorsThrows) throw listFactorsThrows;
+        return { data: { factors }, error: listFactorsError };
+    });
+    const deleteFactor = vi.fn(async ({ id, userId }) => {
+        events.push(`delete-factor:${id}`);
+        if (deleteFactorThrows) throw deleteFactorThrows;
+        if (deleteFactorResultFactory) return deleteFactorResultFactory({ id, userId });
+        return { data: { id, userId }, error: deleteFactorError };
+    });
 
-    return { client: { auth: { admin: { createUser, deleteUser, updateUserById } } }, createUser, deleteUser, updateUserById };
+    return { client: { auth: { admin: { createUser, deleteUser, updateUserById, mfa: { listFactors, deleteFactor } } } }, createUser, deleteUser, updateUserById, listFactors, deleteFactor };
 }
 
 function createApp({ userFixture = createUserClientFixture(), adminFixture = createAdminClientFixture(), events = [] } = {}) {
@@ -128,7 +153,7 @@ function request(path, { method = 'GET', body, token = 'session-token' } = {}) {
 }
 
 const validCreateBody = {
-    email: ' New.Employee@Example.com ',
+    email: ' New.Employee@GMAIL.com ',
     temporaryPassword: 'Temporary-Password-1!',
     displayName: ' 새 직원 ',
     department: ' 운영팀 ',
@@ -151,7 +176,8 @@ describe('administrator account API', () => {
         ['GET', '/api/admin/accounts'],
         ['POST', '/api/admin/accounts'],
         ['PATCH', `/api/admin/accounts/${accountId}`],
-        ['POST', `/api/admin/accounts/${accountId}/password`]
+        ['POST', `/api/admin/accounts/${accountId}/password`],
+        ['POST', `/api/admin/accounts/${accountId}/mfa-reset`]
     ])('requires a bearer token before handling %s %s', async (method, path) => {
         const { app, createSupabaseClient, createAdminClient } = createApp();
         const response = await app.fetch(request(path, { method, token: null }), {});
@@ -186,7 +212,7 @@ describe('administrator account API', () => {
 
         expect(response.status).toBe(403);
         expect(await response.json()).toEqual({ error: { code, message } });
-        expect(events).toEqual(['get-user', 'get-profile']);
+        expect(events).toEqual(['get-user', 'get-aal', 'get-profile']);
         expect(createAdminClient).not.toHaveBeenCalled();
     });
 
@@ -204,7 +230,9 @@ describe('administrator account API', () => {
 
     it.each([
         ['malformed JSON', '{', 'invalid_request', '요청 내용을 확인해 주세요.'],
-        ['invalid email', { ...validCreateBody, email: 'not-an-email' }, 'invalid_email', '올바른 이메일 주소를 입력해 주세요.'],
+        ['invalid email', { ...validCreateBody, email: 'not-an-email' }, 'gmail_required', 'Gmail 주소만 사용할 수 있습니다.'],
+        ['Gmail subdomain', { ...validCreateBody, email: 'staff@sub.gmail.com' }, 'gmail_required', 'Gmail 주소만 사용할 수 있습니다.'],
+        ['Gmail suffix', { ...validCreateBody, email: 'staff@gmail.com.evil' }, 'gmail_required', 'Gmail 주소만 사용할 수 있습니다.'],
         ['short password', { ...validCreateBody, temporaryPassword: 'short' }, 'invalid_temporary_password', '임시 비밀번호는 8자 이상이어야 합니다.'],
         ['blank name', { ...validCreateBody, displayName: '   ' }, 'invalid_display_name', '이름을 입력해 주세요.'],
         ['blank department', { ...validCreateBody, department: '   ' }, 'invalid_department', '부서를 입력해 주세요.'],
@@ -243,12 +271,13 @@ describe('administrator account API', () => {
 
         expect(response.status).toBe(201);
         expect(await response.json()).toEqual({ account: publicAccount });
-        expect(events).toEqual(['get-user', 'get-profile', 'create-admin-client', 'create-user', 'update-profile']);
+        expect(events).toEqual(['get-user', 'get-aal', 'get-profile', 'create-admin-client', 'create-user', 'update-profile']);
         expect(createAdminClient).toHaveBeenCalledOnce();
         expect(adminFixture.createUser).toHaveBeenCalledWith({
-            email: 'new.employee@example.com',
+            email: 'new.employee@gmail.com',
             password: 'Temporary-Password-1!',
-            email_confirm: true
+            email_confirm: true,
+            app_metadata: { nexerp_provisioned: true }
         });
         expect(userFixture.rpc).toHaveBeenCalledWith('admin_update_profile', {
             target_id: accountId,
@@ -299,7 +328,7 @@ describe('administrator account API', () => {
 
         expect(response.status).toBe(502);
         expect(body).toEqual({ error: { code: 'upstream_error', message: '계정 관리 서비스를 사용할 수 없습니다.' } });
-        expect(events).toEqual(['get-user', 'get-profile', 'create-admin-client', 'create-user', 'update-profile', 'delete-user']);
+        expect(events).toEqual(['get-user', 'get-aal', 'get-profile', 'create-admin-client', 'create-user', 'update-profile', 'delete-user']);
         expect(adminFixture.deleteUser).toHaveBeenCalledWith(accountId);
         expect(JSON.stringify(body)).not.toContain('raw database detail');
         expect(JSON.stringify(body)).not.toContain(validCreateBody.temporaryPassword);
@@ -348,6 +377,51 @@ describe('administrator account API', () => {
             new_is_active: false
         });
         expect(createAdminClient).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['AAL1', { currentLevel: 'aal1', nextLevel: 'aal2' }],
+        ['missing assurance level', { currentLevel: null, nextLevel: 'aal2' }]
+    ])('requires AAL2 before reading an administrator profile: %s', async (_label, aal) => {
+        const events = [];
+        const userFixture = createUserClientFixture({ events, aal });
+        const { app, createAdminClient } = createApp({ userFixture, events });
+
+        const response = await app.fetch(request('/api/admin/accounts'), {});
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({ error: { code: 'mfa_required', message: '다중 인증을 완료한 후 다시 시도해 주세요.' } });
+        expect(events).toEqual(['get-user', 'get-aal']);
+        expect(userFixture.from).not.toHaveBeenCalled();
+        expect(createAdminClient).not.toHaveBeenCalled();
+    });
+
+    it('redacts administrator assurance lookup failures before profile access', async () => {
+        const events = [];
+        const userFixture = createUserClientFixture({ events, aalError: new Error('raw assurance provider detail') });
+        const { app } = createApp({ userFixture, events });
+
+        const response = await app.fetch(request('/api/admin/accounts'), {});
+        const body = await response.json();
+
+        expect(response.status).toBe(502);
+        expect(body).toEqual({ error: { code: 'upstream_error', message: '계정 관리 서비스를 사용할 수 없습니다.' } });
+        expect(events).toEqual(['get-user', 'get-aal']);
+        expect(userFixture.from).not.toHaveBeenCalled();
+        expect(JSON.stringify(body)).not.toContain('raw assurance provider detail');
+    });
+
+    it('redacts thrown administrator assurance lookup failures before profile access', async () => {
+        const userFixture = createUserClientFixture({ aalThrows: new Error('raw assurance transport detail') });
+        const { app } = createApp({ userFixture });
+
+        const response = await app.fetch(request('/api/admin/accounts'), {});
+        const body = await response.json();
+
+        expect(response.status).toBe(502);
+        expect(body).toEqual({ error: { code: 'upstream_error', message: '계정 관리 서비스를 사용할 수 없습니다.' } });
+        expect(userFixture.from).not.toHaveBeenCalled();
+        expect(JSON.stringify(body)).not.toContain('raw assurance transport detail');
     });
 
     it('updates only activation through the status-specific protected RPC', async () => {
@@ -421,7 +495,7 @@ describe('administrator account API', () => {
 
         expect(response.status).toBe(204);
         expect(await response.text()).toBe('');
-        expect(events).toEqual(['get-user', 'get-profile', 'create-admin-client', 'reset-password']);
+        expect(events).toEqual(['get-user', 'get-aal', 'get-profile', 'create-admin-client', 'reset-password']);
         expect(createAdminClient).toHaveBeenCalledOnce();
         expect(adminFixture.updateUserById).toHaveBeenCalledWith(accountId, { password: validPasswordBody.temporaryPassword });
     });
@@ -450,11 +524,101 @@ describe('administrator account API', () => {
         expect(response.status).toBe(403);
         const body = await response.json();
         expect(body).toEqual({ error: { code: 'self_password_reset_forbidden', message: '현재 관리자 계정의 비밀번호는 이 방식으로 변경할 수 없습니다.' } });
-        expect(events).toEqual(['get-user', 'get-profile']);
+        expect(events).toEqual(['get-user', 'get-aal', 'get-profile']);
         expect(createAdminClient).not.toHaveBeenCalled();
         expect(adminFixture.updateUserById).not.toHaveBeenCalled();
         expect(JSON.stringify(body)).not.toContain(validPasswordBody.temporaryPassword);
         expect(JSON.stringify(body)).not.toContain('session-token');
+    });
+
+    it('resets only another account\'s TOTP factors and returns no factor details', async () => {
+        const firstFactorId = '33333333-3333-4333-8333-333333333333';
+        const secondFactorId = '44444444-4444-4444-8444-444444444444';
+        const adminFixture = createAdminClientFixture({
+            factors: [
+                { id: firstFactorId, factor_type: 'totp', status: 'verified', friendly_name: 'must-not-leak-primary' },
+                { id: secondFactorId, factor_type: 'totp', status: 'unverified', friendly_name: 'must-not-leak-backup' },
+                { id: '55555555-5555-4555-8555-555555555555', factor_type: 'phone', status: 'verified' }
+            ]
+        });
+        const { app } = createApp({ adminFixture });
+
+        const response = await app.fetch(request(`/api/admin/accounts/${accountId}/mfa-reset`, { method: 'POST' }), {});
+
+        expect(response.status).toBe(204);
+        expect(await response.text()).toBe('');
+        expect(adminFixture.listFactors).toHaveBeenCalledWith({ userId: accountId });
+        expect(adminFixture.deleteFactor).toHaveBeenNthCalledWith(1, { id: firstFactorId, userId: accountId });
+        expect(adminFixture.deleteFactor).toHaveBeenNthCalledWith(2, { id: secondFactorId, userId: accountId });
+        expect(adminFixture.deleteFactor).toHaveBeenCalledTimes(2);
+    });
+
+    it('treats an account without MFA factors as an idempotent reset', async () => {
+        const adminFixture = createAdminClientFixture({ factors: [] });
+        const { app } = createApp({ adminFixture });
+
+        const response = await app.fetch(request(`/api/admin/accounts/${accountId}/mfa-reset`, { method: 'POST' }), {});
+
+        expect(response.status).toBe(204);
+        expect(adminFixture.listFactors).toHaveBeenCalledWith({ userId: accountId });
+        expect(adminFixture.deleteFactor).not.toHaveBeenCalled();
+    });
+
+    it('redacts malformed MFA factor lists without attempting deletion', async () => {
+        const adminFixture = createAdminClientFixture();
+        adminFixture.listFactors.mockResolvedValueOnce({ data: { factors: 'raw-factor-list' }, error: null });
+        const { app } = createApp({ adminFixture });
+
+        const response = await app.fetch(request(`/api/admin/accounts/${accountId}/mfa-reset`, { method: 'POST' }), {});
+        const body = await response.json();
+
+        expect(response.status).toBe(502);
+        expect(body).toEqual({ error: { code: 'upstream_error', message: '계정 관리 서비스를 사용할 수 없습니다.' } });
+        expect(adminFixture.deleteFactor).not.toHaveBeenCalled();
+        expect(JSON.stringify(body)).not.toContain('raw-factor-list');
+    });
+
+    it('redacts blank MFA factor identifiers without attempting deletion', async () => {
+        const adminFixture = createAdminClientFixture({ factors: [{ id: '   ', factor_type: 'totp' }] });
+        const { app } = createApp({ adminFixture });
+
+        const response = await app.fetch(request(`/api/admin/accounts/${accountId}/mfa-reset`, { method: 'POST' }), {});
+
+        expect(response.status).toBe(502);
+        expect(await response.json()).toEqual({ error: { code: 'upstream_error', message: '계정 관리 서비스를 사용할 수 없습니다.' } });
+        expect(adminFixture.deleteFactor).not.toHaveBeenCalled();
+    });
+
+    it('continues MFA factor cleanup but redacts a partial provider failure', async () => {
+        const firstFactorId = '33333333-3333-4333-8333-333333333333';
+        const secondFactorId = '44444444-4444-4444-8444-444444444444';
+        const adminFixture = createAdminClientFixture({
+            factors: [
+                { id: firstFactorId, factor_type: 'totp', status: 'verified' },
+                { id: secondFactorId, factor_type: 'totp', status: 'verified' }
+            ],
+            deleteFactorResultFactory: ({ id }) => (id === firstFactorId ? { data: null, error: new Error('raw factor provider detail') } : { data: { id }, error: null })
+        });
+        const { app } = createApp({ adminFixture });
+
+        const response = await app.fetch(request(`/api/admin/accounts/${accountId}/mfa-reset`, { method: 'POST' }), {});
+        const body = await response.json();
+
+        expect(response.status).toBe(502);
+        expect(body).toEqual({ error: { code: 'upstream_error', message: '계정 관리 서비스를 사용할 수 없습니다.' } });
+        expect(adminFixture.deleteFactor).toHaveBeenCalledTimes(2);
+        expect(JSON.stringify(body)).not.toContain(firstFactorId);
+        expect(JSON.stringify(body)).not.toContain('raw factor provider detail');
+    });
+
+    it('forbids an administrator from resetting their own MFA before constructing the secret client', async () => {
+        const { app, createAdminClient } = createApp();
+
+        const response = await app.fetch(request(`/api/admin/accounts/${callerId.toUpperCase()}/mfa-reset`, { method: 'POST' }), {});
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({ error: { code: 'self_mfa_reset_forbidden', message: '현재 관리자 계정의 인증 앱은 이 방식으로 초기화할 수 없습니다.' } });
+        expect(createAdminClient).not.toHaveBeenCalled();
     });
 
     it('returns a stable service error when password reset secret configuration is missing', async () => {

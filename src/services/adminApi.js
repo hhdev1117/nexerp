@@ -6,8 +6,9 @@ const ERROR_MESSAGES = Object.freeze({
     invalid_session: '로그인 시간이 만료되었습니다. 다시 로그인해 주세요.',
     inactive_user: '비활성화된 계정입니다. 관리자에게 문의해 주세요.',
     admin_required: '관리자 권한이 필요합니다.',
+    mfa_required: '다중 인증을 완료한 후 다시 시도해 주세요.',
     invalid_request: '요청 내용을 확인해 주세요.',
-    invalid_email: '올바른 이메일 주소를 입력해 주세요.',
+    gmail_required: 'Gmail 주소만 사용할 수 있습니다.',
     invalid_temporary_password: '임시 비밀번호는 8자 이상이어야 합니다.',
     invalid_display_name: '이름을 입력해 주세요.',
     invalid_department: '부서를 입력해 주세요.',
@@ -19,6 +20,7 @@ const ERROR_MESSAGES = Object.freeze({
     self_demotion_forbidden: '현재 관리자 계정의 권한은 변경할 수 없습니다.',
     self_deactivation_forbidden: '현재 관리자 계정은 비활성화할 수 없습니다.',
     account_not_found: '계정을 찾을 수 없습니다.',
+    self_mfa_reset_forbidden: '현재 관리자 계정의 인증 앱은 이 방식으로 초기화할 수 없습니다.',
     service_unavailable: '계정 관리 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.',
     upstream_error: '계정 관리 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.'
 });
@@ -115,6 +117,9 @@ export function createAdminApi({ fetchImpl = fetch, getAccessToken = defaultAcce
                 method: 'POST',
                 body: { temporaryPassword }
             });
+        },
+        async resetAccountMfa(accountId) {
+            await request(`/api/admin/accounts/${encodeURIComponent(accountId)}/mfa-reset`, { method: 'POST' });
         }
     };
 }

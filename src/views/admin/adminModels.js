@@ -1,4 +1,5 @@
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const GMAIL_PATTERN = /^[^\s@]+@gmail\.com$/;
+const GMAIL_ERROR = 'Gmail 주소만 사용할 수 있습니다.';
 const FIXED_ADMIN_KEYS = new Set(['settings.accounts', 'settings.menu-permissions', 'settings.infrastructure-usage']);
 const TEMPORARY_PASSWORD_ERROR = '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.';
 
@@ -29,8 +30,8 @@ export function createEditAccountDraft(account) {
 export function validateAccountDraft(draft, mode) {
     const errors = {};
     if (mode === 'create') {
-        const email = typeof draft?.email === 'string' ? draft.email.trim() : '';
-        if (!EMAIL_PATTERN.test(email)) errors.email = '올바른 이메일 주소를 입력해 주세요.';
+        const email = typeof draft?.email === 'string' ? draft.email.trim().toLowerCase() : '';
+        if (!GMAIL_PATTERN.test(email)) errors.email = GMAIL_ERROR;
         if (!isValidTemporaryPassword(draft?.temporaryPassword)) errors.temporaryPassword = TEMPORARY_PASSWORD_ERROR;
     }
     if (!draft?.displayName?.trim()) errors.displayName = '이름을 입력해 주세요.';

@@ -15,10 +15,14 @@ const baseEnv = Object.freeze({
 const json = (body, status = 200) => Response.json(body, { status });
 const databaseRpcUrl = `${baseEnv.SUPABASE_URL}/rest/v1/rpc/infrastructure_database_size`;
 
-function createUserClientFixture({ events = [], user = { id: 'admin-id' }, profile = { id: 'admin-id', role: 'admin', is_active: true }, authError = null } = {}) {
+function createUserClientFixture({ events = [], user = { id: 'admin-id' }, profile = { id: 'admin-id', role: 'admin', is_active: true }, authError = null, aal = { currentLevel: 'aal2', nextLevel: 'aal2' } } = {}) {
     const getUser = vi.fn(async () => {
         events.push('authenticate');
         return { data: { user }, error: authError };
+    });
+    const getAuthenticatorAssuranceLevel = vi.fn(async () => {
+        events.push('authorize-aal');
+        return { data: aal, error: null };
     });
     const maybeSingle = vi.fn(async () => {
         events.push('authorize-profile');
@@ -27,7 +31,7 @@ function createUserClientFixture({ events = [], user = { id: 'admin-id' }, profi
     const eq = vi.fn(() => ({ maybeSingle }));
     const select = vi.fn(() => ({ eq }));
     const from = vi.fn(() => ({ select }));
-    return { client: { auth: { getUser }, from }, getUser, from };
+    return { client: { auth: { getUser, mfa: { getAuthenticatorAssuranceLevel } }, from }, getUser, getAuthenticatorAssuranceLevel, from };
 }
 
 function managementResponses() {

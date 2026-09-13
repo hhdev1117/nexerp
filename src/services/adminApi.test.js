@@ -125,6 +125,18 @@ describe('administrator API service', () => {
         });
     });
 
+    it('requests an account MFA reset without a body and accepts an empty 204 response', async () => {
+        fetchImpl.mockResolvedValue(new Response(null, { status: 204 }));
+        const api = createAdminApi({ fetchImpl, getAccessToken });
+
+        await expect(api.resetAccountMfa(account.id)).resolves.toBeUndefined();
+
+        expect(fetchImpl).toHaveBeenCalledWith(`/api/admin/accounts/${account.id}/mfa-reset`, {
+            method: 'POST',
+            headers: { Authorization: 'Bearer current-session-token' }
+        });
+    });
+
     it('normalizes password reset API failures without exposing provider text', async () => {
         fetchImpl.mockResolvedValue(response({ error: { code: 'account_not_found', message: 'sentinel-provider-detail' } }, 404));
         const api = createAdminApi({ fetchImpl, getAccessToken });

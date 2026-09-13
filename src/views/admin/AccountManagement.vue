@@ -28,6 +28,7 @@ const passwordResetAccount = ref(null);
 const passwordResetDraft = ref({ temporaryPassword: '', confirmation: '' });
 const passwordResetSubmitted = ref(false);
 const resettingPassword = ref(false);
+const resettingMfa = ref(false);
 const actionAccountId = ref(null);
 
 const roleLabels = Object.freeze({ admin: '관리자', approver: '결재자', user: '사용자' });
@@ -56,6 +57,9 @@ const filteredAccounts = computed(() => {
 const failureDetail = (error, fallback) => {
     const messages = {
         email_exists: '이미 사용 중인 이메일입니다.',
+        gmail_required: 'Gmail 주소만 사용할 수 있습니다.',
+        mfa_required: '다중 인증을 완료한 후 다시 시도해 주세요.',
+        self_mfa_reset_forbidden: '현재 관리자 계정의 인증 앱은 이 방식으로 초기화할 수 없습니다.',
         self_demotion_forbidden: '현재 관리자 계정의 권한은 변경할 수 없습니다.',
         self_deactivation_forbidden: '현재 관리자 계정은 비활성화할 수 없습니다.',
         invalid_session: '로그인 시간이 만료되었습니다. 다시 로그인해 주세요.',
@@ -64,8 +68,9 @@ const failureDetail = (error, fallback) => {
     return messages[error?.code] || fallback;
 };
 
-const isCurrentAccount = (account) => account.id === authStore.user.value?.id;
+const isCurrentAccount = (account) => typeof account?.id === 'string' && account.id.toLowerCase() === authStore.user.value?.id?.toLowerCase();
 const passwordResetActionLabel = (account) => `${account.displayName} 임시 비밀번호 재설정`;
+const mfaResetActionLabel = (account) => `${account.displayName} 인증 앱 초기화`;
 const statusActionLabel = (account) => `${account.displayName} ${account.isActive ? 'ERP 계정 잠금' : '계정 활성화'}`;
 
 async function loadAccounts() {
@@ -158,6 +163,31 @@ async function resetAccountPassword() {
         clearPasswordResetDraft();
         resettingPassword.value = false;
     }
+}
+
+async function persistAccountMfaReset(account) {
+    if (resettingMfa.value || !account || isCurrentAccount(account)) return;
+    resettingMfa.value = true;
+    try {
+        await adminApi.resetAccountMfa(account.id);
+        toast.add({ severity: 'success', summary: '인증 앱 초기화 완료', detail: `${account.displayName} 계정은 다시 로그인 후 인증 앱을 등록해야 합니다.`, life: 3000 });
+    } catch (error) {
+        toast.add({ severity: 'error', summary: '인증 앱 초기화 실패', detail: failureDetail(error, '인증 앱을 초기화하지 못했습니다. 잠시 후 다시 시도해 주세요.'), life: 3600 });
+    } finally {
+        resettingMfa.value = false;
+    }
+}
+
+function resetAccountMfa(account) {
+    if (resettingMfa.value || isCurrentAccount(account)) return;
+    confirm.require({
+        header: '인증 앱 초기화',
+        message: `${account.displayName} 계정의 인증 앱을 초기화하시겠습니까? 사용자는 다시 로그인해야 합니다.`,
+        icon: 'pi pi-shield',
+        rejectProps: { label: '취소', severity: 'secondary', outlined: true },
+        acceptProps: { label: '인증 앱 초기화', severity: 'danger' },
+        accept: () => persistAccountMfaReset(account)
+    });
 }
 
 async function persistAccountStatus(account) {
@@ -319,7 +349,7 @@ onMounted(loadAccounts);
                         <Tag :value="slotProps.data.isActive ? '활성' : '비활성'" :severity="slotProps.data.isActive ? 'success' : 'secondary'" />
                     </template>
                 </Column>
-                <Column header="작업" frozen alignFrozen="right" style="width: 11rem">
+                <Column header="작업" frozen alignFrozen="right" style="width: 13rem">
                     <template #body="slotProps">
                         <div class="account-actions">
                             <Button icon="pi pi-pencil" text rounded :aria-label="`${slotProps.data.displayName} 계정 수정`" :title="`${slotProps.data.displayName} 계정 수정`" @click="openEditDialog(slotProps.data)" />
@@ -332,6 +362,16 @@ onMounted(loadAccounts);
                                 :title="passwordResetActionLabel(slotProps.data)"
                                 :disabled="isCurrentAccount(slotProps.data) || resettingPassword"
                                 @click="openPasswordResetDialog(slotProps.data)"
+                            />
+                            <Button
+                                icon="pi pi-shield"
+                                text
+                                rounded
+                                severity="danger"
+                                :aria-label="mfaResetActionLabel(slotProps.data)"
+                                :title="mfaResetActionLabel(slotProps.data)"
+                                :disabled="isCurrentAccount(slotProps.data) || resettingMfa"
+                                @click="resetAccountMfa(slotProps.data)"
                             />
                             <Button
                                 :icon="slotProps.data.isActive ? 'pi pi-lock' : 'pi pi-lock-open'"
@@ -352,7 +392,7 @@ onMounted(loadAccounts);
         <Dialog v-model:visible="accountDialog" modal :header="dialogTitle" :style="{ width: '36rem' }" :breakpoints="{ '640px': '94vw' }" :closable="!saving" @hide="clearSensitiveDraft">
             <form id="account-form" class="account-form" novalidate @submit.prevent="saveAccount">
                 <div v-if="dialogMode === 'create'" class="field-group">
-                    <label for="account-email">이메일</label>
+                    <label for="account-email">Gmail 이메일</label>
                     <InputText id="account-email" v-model.trim="draft.email" type="email" autocomplete="off" required fluid :invalid="submitted && Boolean(formErrors.email)" aria-describedby="account-email-error" />
                     <small v-if="submitted && formErrors.email" id="account-email-error" class="field-error" role="alert">{{ formErrors.email }}</small>
                 </div>

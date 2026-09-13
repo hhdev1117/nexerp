@@ -68,7 +68,8 @@ describe('Cloudflare Worker app', () => {
         ['GET', '/api/admin/accounts'],
         ['POST', '/api/admin/accounts'],
         ['PATCH', '/api/admin/accounts/11111111-1111-4111-8111-111111111111'],
-        ['POST', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/password']
+        ['POST', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/password'],
+        ['POST', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/mfa-reset']
     ])('routes %s %s through administrator authorization', async (method, path) => {
         const app = createWorkerApp();
         const response = await app.fetch(new Request(`https://erp.test${path}`, { method }), {});
@@ -83,7 +84,12 @@ describe('Cloudflare Worker app', () => {
         ['GET', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/password'],
         ['PATCH', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/password'],
         ['PUT', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/password'],
-        ['POST', '/api/admin/accounts/11111111-1111-4111-8111-111111111111']
+        ['POST', '/api/admin/accounts/11111111-1111-4111-8111-111111111111'],
+        ['GET', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/mfa-reset'],
+        ['PATCH', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/mfa-reset'],
+        ['PUT', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/mfa-reset'],
+        ['DELETE', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/mfa-reset'],
+        ['POST', '/api/admin/accounts/11111111-1111-4111-8111-111111111111/mfa-reset/extra']
     ])('does not dispatch the wrong administrator account method: %s %s', async (method, path) => {
         const app = createWorkerApp();
         const response = await app.fetch(new Request(`https://erp.test${path}`, { method }), {});
