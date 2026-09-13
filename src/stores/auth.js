@@ -6,8 +6,17 @@ const PROFILE_FIELDS = 'id, email, display_name, department, role, is_active';
 const NOT_CONFIGURED_MESSAGE = 'Supabase 연결 정보가 설정되지 않았습니다.';
 const INACTIVE_PROFILE_MESSAGE = '비활성화된 계정입니다. 관리자에게 문의해 주세요.';
 const MISSING_PROFILE_MESSAGE = '계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.';
+const MFA_LOOKUP_MESSAGE = '다중 인증 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+const MFA_ENROLLMENT_MESSAGE = '인증 앱을 등록하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+const MFA_VERIFICATION_MESSAGE = '인증 코드를 확인하지 못했습니다. 다시 입력해 주세요.';
+const MFA_CANCELLATION_MESSAGE = '인증 앱 등록을 취소하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+const MFA_UNENROLLMENT_MESSAGE = '인증 앱을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+const MFA_CODE_MESSAGE = '인증 앱의 6자리 코드를 입력해 주세요.';
+const MFA_LAST_FACTOR_MESSAGE = '마지막 인증 앱은 삭제할 수 없습니다.';
+const MFA_IDENTITY_MESSAGE = '로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.';
 const INVALID_SESSION_NAMES = new Set(['AuthSessionMissingError', 'AuthInvalidJwtError', 'AuthInvalidTokenResponseError']);
 const INVALID_SESSION_CODES = new Set(['session_not_found', 'bad_jwt', 'invalid_jwt']);
+const TOTP_CODE_PATTERN = /^\d{6}$/;
 
 const isInvalidSessionError = (source) => INVALID_SESSION_NAMES.has(source?.name) || INVALID_SESSION_CODES.has(source?.code) || source?.status === 401 || source?.status === 403;
 
@@ -56,9 +65,13 @@ export function createAuthStore({ client, configured }) {
     const initialized = ref(false);
     const error = ref(null);
     const profileLoadFailed = ref(false);
+    const mfaStatus = ref('unknown');
+    const mfaFactors = ref([]);
+    const mfaEnrollment = ref(null);
     const isConfigured = Boolean(configured && client);
     const configuredState = computed(() => isConfigured);
     const role = computed(() => (profile.value?.is_active ? profile.value.role || null : null));
+    const mfaSatisfied = computed(() => mfaStatus.value === 'ready');
 
     let initializePromise = null;
     let subscription = null;
@@ -71,6 +84,7 @@ export function createAuthStore({ client, configured }) {
     let hydratingStoredSession = false;
     let bufferedInitialAuth = null;
     const rejectedAuthSessions = new Set();
+    let mfaOperationVersion = 0;
     const isRejectedSession = (nextSession) => {
         if (!nextSession) return false;
         const key = authSessionKey(nextSession);
@@ -87,6 +101,13 @@ export function createAuthStore({ client, configured }) {
         loading.value = pendingOperations > 0;
     };
 
+    const clearMfaState = () => {
+        mfaOperationVersion += 1;
+        mfaStatus.value = 'unknown';
+        mfaFactors.value = [];
+        mfaEnrollment.value = null;
+    };
+
     const clearIdentity = () => {
         identityVersion += 1;
         latestAuthUpdate = Promise.resolve();
@@ -94,12 +115,17 @@ export function createAuthStore({ client, configured }) {
         user.value = null;
         profile.value = null;
         profileLoadFailed.value = false;
+        clearMfaState();
         error.value = null;
     };
 
     const loadIdentity = async (nextSession) => {
         const version = ++identityVersion;
+        const previousSession = session.value;
+        const previousUser = user.value;
         const nextUser = nextSession?.user || null;
+        const identityChanged = previousUser?.id !== nextUser?.id || authSessionKey(previousSession) !== authSessionKey(nextSession);
+        if (identityChanged) clearMfaState();
         const keepRecoverableFailure = Boolean(nextUser && user.value?.id === nextUser.id && profileLoadFailed.value);
         session.value = nextSession || null;
         user.value = nextUser;
@@ -167,6 +193,215 @@ export function createAuthStore({ client, configured }) {
         const leftKey = authSessionKey(left);
         const rightKey = authSessionKey(right);
         return Boolean(sameUser && (!leftKey || !rightKey || leftKey === rightKey));
+    };
+
+    const startMfaOperation = () => ({
+        version: ++mfaOperationVersion,
+        userId: user.value?.id || null,
+        sessionKey: authSessionKey(session.value)
+    });
+
+    const isCurrentMfaOperation = (operation) =>
+        operation.version === mfaOperationVersion && operation.userId === user.value?.id && operation.sessionKey === authSessionKey(session.value);
+
+    const requireMfaIdentity = () => {
+        if (!isConfigured || !session.value || !user.value?.id || !profile.value?.is_active) {
+            error.value = isConfigured ? MFA_IDENTITY_MESSAGE : NOT_CONFIGURED_MESSAGE;
+            throw rejection(error.value);
+        }
+    };
+
+    const verifiedTotpFactors = (result) => {
+        const factors = Array.isArray(result?.data?.totp) ? result.data.totp : [];
+        return factors.filter((factor) => factor?.factor_type === 'totp' && factor.status === 'verified' && typeof factor.id === 'string' && factor.id.trim());
+    };
+
+    const failMfaOperation = (operation, message, status = null) => {
+        if (isCurrentMfaOperation(operation)) {
+            if (status) mfaStatus.value = status;
+            error.value = message;
+        }
+        throw rejection(message);
+    };
+
+    const refreshMfaState = async () => {
+        requireMfaIdentity();
+        const operation = startMfaOperation();
+        mfaStatus.value = 'unknown';
+        mfaFactors.value = [];
+        beginOperation();
+        try {
+            let factorsResult;
+            let assuranceResult;
+            try {
+                [factorsResult, assuranceResult] = await Promise.all([client.auth.mfa.listFactors(), client.auth.mfa.getAuthenticatorAssuranceLevel()]);
+            } catch {
+                return failMfaOperation(operation, MFA_LOOKUP_MESSAGE, 'error');
+            }
+            if (!isCurrentMfaOperation(operation)) return null;
+            if (factorsResult?.error || assuranceResult?.error || !assuranceResult?.data) return failMfaOperation(operation, MFA_LOOKUP_MESSAGE, 'error');
+
+            const factors = verifiedTotpFactors(factorsResult);
+            mfaFactors.value = factors;
+            mfaStatus.value = assuranceResult.data.currentLevel === 'aal2' ? 'ready' : factors.length ? 'challenge' : 'enroll';
+            error.value = null;
+            return { status: mfaStatus.value, factors };
+        } finally {
+            endOperation();
+        }
+    };
+
+    const beginTotpEnrollment = async () => {
+        requireMfaIdentity();
+        const operation = startMfaOperation();
+        beginOperation();
+        try {
+            let result;
+            try {
+                result = await client.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'NEXERP Authenticator', issuer: 'NEXERP' });
+            } catch {
+                return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
+            }
+            if (!isCurrentMfaOperation(operation)) return null;
+
+            const data = result?.data;
+            if (result?.error || typeof data?.id !== 'string' || typeof data?.totp?.qr_code !== 'string' || typeof data.totp.secret !== 'string' || typeof data.totp.uri !== 'string') {
+                return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
+            }
+
+            mfaEnrollment.value = { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret, uri: data.totp.uri };
+            mfaStatus.value = 'enroll';
+            error.value = null;
+            return mfaEnrollment.value;
+        } finally {
+            endOperation();
+        }
+    };
+
+    const verifyTotpFactor = async (factorId, code, clearEnrollment) => {
+        requireMfaIdentity();
+        if (typeof factorId !== 'string' || !factorId.trim()) {
+            error.value = MFA_VERIFICATION_MESSAGE;
+            throw rejection(MFA_VERIFICATION_MESSAGE);
+        }
+        if (typeof code !== 'string' || !TOTP_CODE_PATTERN.test(code)) {
+            error.value = MFA_CODE_MESSAGE;
+            throw rejection(MFA_CODE_MESSAGE);
+        }
+
+        const operation = startMfaOperation();
+        beginOperation();
+        try {
+            let challenge;
+            try {
+                challenge = await client.auth.mfa.challenge({ factorId });
+            } catch {
+                return failMfaOperation(operation, MFA_VERIFICATION_MESSAGE);
+            }
+            if (!isCurrentMfaOperation(operation)) return null;
+            const challengeId = challenge?.data?.id;
+            if (challenge?.error || typeof challengeId !== 'string' || !challengeId.trim()) return failMfaOperation(operation, MFA_VERIFICATION_MESSAGE);
+
+            let verified;
+            try {
+                verified = await client.auth.mfa.verify({ factorId, challengeId, code });
+            } catch {
+                return failMfaOperation(operation, MFA_VERIFICATION_MESSAGE);
+            }
+            if (!isCurrentMfaOperation(operation)) return null;
+
+            const nextSession = verified?.data;
+            if (verified?.error || !authSessionKey(nextSession) || nextSession.user?.id !== operation.userId) return failMfaOperation(operation, MFA_VERIFICATION_MESSAGE);
+
+            if (clearEnrollment) mfaEnrollment.value = null;
+            rejectedAuthSessions.delete(authSessionKey(nextSession));
+            trackIdentity(nextSession);
+            await awaitIdentitySettled();
+            if (user.value?.id !== operation.userId) return null;
+            return refreshMfaState();
+        } finally {
+            endOperation();
+        }
+    };
+
+    const verifyTotpEnrollment = (code) => {
+        const enrollment = mfaEnrollment.value;
+        if (!enrollment?.factorId) {
+            error.value = MFA_ENROLLMENT_MESSAGE;
+            return Promise.reject(rejection(MFA_ENROLLMENT_MESSAGE));
+        }
+        return verifyTotpFactor(enrollment.factorId, code, true);
+    };
+
+    const verifyTotpChallenge = (factorId, code) => verifyTotpFactor(factorId, code, false);
+
+    const cancelTotpEnrollment = async () => {
+        requireMfaIdentity();
+        const enrollment = mfaEnrollment.value;
+        if (!enrollment?.factorId) return null;
+
+        const operation = startMfaOperation();
+        mfaEnrollment.value = null;
+        beginOperation();
+        try {
+            let result;
+            try {
+                result = await client.auth.mfa.unenroll({ factorId: enrollment.factorId });
+            } catch {
+                return failMfaOperation(operation, MFA_CANCELLATION_MESSAGE, 'error');
+            }
+            if (!isCurrentMfaOperation(operation)) return null;
+            if (result?.error) return failMfaOperation(operation, MFA_CANCELLATION_MESSAGE, 'error');
+            return refreshMfaState();
+        } finally {
+            endOperation();
+        }
+    };
+
+    const unenrollTotp = async (factorId) => {
+        requireMfaIdentity();
+        const factor = mfaFactors.value.find((candidate) => candidate.id === factorId);
+        if (!factor) {
+            error.value = MFA_UNENROLLMENT_MESSAGE;
+            throw rejection(MFA_UNENROLLMENT_MESSAGE);
+        }
+        if (mfaFactors.value.length <= 1) {
+            error.value = MFA_LAST_FACTOR_MESSAGE;
+            throw rejection(MFA_LAST_FACTOR_MESSAGE);
+        }
+
+        const operation = startMfaOperation();
+        beginOperation();
+        try {
+            let result;
+            try {
+                result = await client.auth.mfa.unenroll({ factorId });
+            } catch {
+                return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+            }
+            if (!isCurrentMfaOperation(operation)) return null;
+            if (result?.error) return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+
+            let refreshed;
+            try {
+                refreshed = await client.auth.refreshSession();
+            } catch {
+                return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+            }
+            if (!isCurrentMfaOperation(operation)) return null;
+            const nextSession = refreshed?.data?.session;
+            if (refreshed?.error || !authSessionKey(nextSession) || nextSession.user?.id !== operation.userId) {
+                return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+            }
+
+            rejectedAuthSessions.delete(authSessionKey(nextSession));
+            trackIdentity(nextSession);
+            await awaitIdentitySettled();
+            if (user.value?.id !== operation.userId) return null;
+            return refreshMfaState();
+        } finally {
+            endOperation();
+        }
     };
 
     const subscribe = () => {
@@ -461,8 +696,18 @@ export function createAuthStore({ client, configured }) {
         configured: configuredState,
         error,
         profileLoadFailed,
+        mfaStatus,
+        mfaFactors,
+        mfaEnrollment,
+        mfaSatisfied,
         initialize,
         waitForIdentity,
+        refreshMfaState,
+        beginTotpEnrollment,
+        verifyTotpEnrollment,
+        verifyTotpChallenge,
+        cancelTotpEnrollment,
+        unenrollTotp,
         signIn,
         changePassword,
         signOut,

@@ -30,7 +30,21 @@ const jwtSession = (sessionId, issuedAt = 1789257600, userId = 'user-1') => {
     return { access_token: `${header}.${payload}.${signature}`, user: { id: userId, email: `${userId}@nexerp.test` } };
 };
 
-const createClient = ({ session = null, profiles = {}, signInResult, signOutError = null, updateUserResult, getUserResult } = {}) => {
+const mfaFactor = (id, status = 'verified') => ({ id, factor_type: 'totp', status, friendly_name: 'NEXERP Authenticator' });
+
+const createClient = ({
+    session = null,
+    profiles = {},
+    signInResult,
+    signOutError = null,
+    updateUserResult,
+    getUserResult,
+    mfaFactors = [],
+    mfaAal = { currentLevel: 'aal1', nextLevel: 'aal1' },
+    mfaEnrollResult,
+    mfaVerifyResult,
+    refreshSessionResult
+} = {}) => {
     let authListener;
     const unsubscribe = vi.fn();
     const profileRequests = [];
@@ -54,7 +68,33 @@ const createClient = ({ session = null, profiles = {}, signInResult, signOutErro
                 }
             ),
             updateUser: vi.fn().mockResolvedValue(updateUserResult || { data: { user: session?.user || null }, error: null }),
-            signOut: vi.fn().mockResolvedValue({ error: signOutError })
+            signOut: vi.fn().mockResolvedValue({ error: signOutError }),
+            refreshSession: vi.fn().mockResolvedValue(refreshSessionResult || { data: { session }, error: null }),
+            mfa: {
+                listFactors: vi.fn().mockResolvedValue({ data: { all: mfaFactors, totp: mfaFactors.filter((factor) => factor.factor_type === 'totp' && factor.status === 'verified') }, error: null }),
+                getAuthenticatorAssuranceLevel: vi.fn().mockResolvedValue({ data: mfaAal, error: null }),
+                enroll: vi.fn().mockResolvedValue(
+                    mfaEnrollResult || {
+                        data: {
+                            id: 'totp-factor-1',
+                            type: 'totp',
+                            totp: { qr_code: '<svg/>', secret: 'TEST-SECRET', uri: 'otpauth://totp/NEXERP:test?secret=TEST-SECRET' }
+                        },
+                        error: null
+                    }
+                ),
+                challenge: vi.fn().mockResolvedValue({ data: { id: 'challenge-1', type: 'totp', expires_at: 1789257660 }, error: null }),
+                verify: vi.fn().mockResolvedValue(
+                    mfaVerifyResult || {
+                        data: {
+                            access_token: session?.access_token || 'mfa-access-token',
+                            user: session?.user || { id: 'user-1', email: 'approver@nexerp.test' }
+                        },
+                        error: null
+                    }
+                ),
+                unenroll: vi.fn().mockResolvedValue({ data: { id: 'totp-factor-1' }, error: null })
+            }
         },
         from: vi.fn((table) => {
             expect(table).toBe('profiles');
@@ -1099,5 +1139,150 @@ describe('Supabase auth store', () => {
         expect(store.user.value).toEqual(newSession.user);
         expect(store.profile.value).toEqual(newProfile);
         expect(store.role.value).toBe('admin');
+    });
+
+    it.each([
+        ['enroll', [], { currentLevel: 'aal1', nextLevel: 'aal1' }],
+        ['challenge', [mfaFactor('totp-factor-1')], { currentLevel: 'aal1', nextLevel: 'aal2' }],
+        ['ready', [mfaFactor('totp-factor-1')], { currentLevel: 'aal2', nextLevel: 'aal2' }]
+    ])('maps the verified factor and assurance state to %s', async (expectedStatus, factors, aal) => {
+        const session = jwtSession('mfa-state');
+        const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } }, mfaFactors: factors, mfaAal: aal });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await store.refreshMfaState();
+
+        expect(store.mfaStatus.value).toBe(expectedStatus);
+        expect(store.mfaFactors.value).toEqual(factors.filter((factor) => factor.status === 'verified'));
+        expect(store.mfaSatisfied.value).toBe(expectedStatus === 'ready');
+    });
+
+    it('fails closed with a stable message when the MFA lookup fails', async () => {
+        const session = jwtSession('mfa-lookup-failure');
+        const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
+        fixture.client.auth.mfa.listFactors.mockResolvedValueOnce({ data: null, error: new Error('provider raw secret detail') });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.refreshMfaState()).rejects.toThrow('다중 인증 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+
+        expect(store.mfaStatus.value).toBe('error');
+        expect(store.mfaSatisfied.value).toBe(false);
+        expect(store.error.value).toBe('다중 인증 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        expect(store.error.value).not.toContain('provider raw secret detail');
+    });
+
+    it('keeps TOTP enrollment material only in the in-memory enrollment ref', async () => {
+        const session = jwtSession('mfa-enroll');
+        const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await store.beginTotpEnrollment();
+
+        expect(fixture.client.auth.mfa.enroll).toHaveBeenCalledWith({ factorType: 'totp', friendlyName: 'NEXERP Authenticator', issuer: 'NEXERP' });
+        expect(store.mfaStatus.value).toBe('enroll');
+        expect(store.mfaEnrollment.value).toEqual({ factorId: 'totp-factor-1', qrCode: '<svg/>', secret: 'TEST-SECRET', uri: 'otpauth://totp/NEXERP:test?secret=TEST-SECRET' });
+        expect(store.error.value || '').not.toContain('TEST-SECRET');
+    });
+
+    it('creates a new challenge for every TOTP verification attempt and consumes the verified session', async () => {
+        const session = jwtSession('mfa-verify-before');
+        const upgradedSession = jwtSession('mfa-verify-after', 1789257900);
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            mfaFactors: [mfaFactor('totp-factor-1')],
+            mfaAal: { currentLevel: 'aal1', nextLevel: 'aal2' },
+            mfaVerifyResult: { data: upgradedSession, error: null }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+        await store.refreshMfaState();
+
+        await store.verifyTotpChallenge('totp-factor-1', '123456');
+        await store.verifyTotpChallenge('totp-factor-1', '123456');
+
+        expect(fixture.client.auth.mfa.challenge).toHaveBeenCalledTimes(2);
+        expect(fixture.client.auth.mfa.verify).toHaveBeenCalledWith({ factorId: 'totp-factor-1', challengeId: 'challenge-1', code: '123456' });
+        expect(store.session.value).toEqual(upgradedSession);
+    });
+
+    it('cleans an unverified enrollment on cancellation without retaining secret material', async () => {
+        const session = jwtSession('mfa-cancel');
+        const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+        await store.beginTotpEnrollment();
+
+        await store.cancelTotpEnrollment();
+
+        expect(fixture.client.auth.mfa.unenroll).toHaveBeenCalledWith({ factorId: 'totp-factor-1' });
+        expect(store.mfaEnrollment.value).toBeNull();
+        expect(store.error.value || '').not.toContain('TEST-SECRET');
+    });
+
+    it('refuses to remove the last verified TOTP factor', async () => {
+        const session = jwtSession('mfa-last-factor');
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            mfaFactors: [mfaFactor('totp-factor-1')],
+            mfaAal: { currentLevel: 'aal2', nextLevel: 'aal2' }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+        await store.refreshMfaState();
+
+        await expect(store.unenrollTotp('totp-factor-1')).rejects.toThrow('마지막 인증 앱은 삭제할 수 없습니다.');
+
+        expect(fixture.client.auth.mfa.unenroll).not.toHaveBeenCalled();
+    });
+
+    it('refreshes the session before recomputing MFA state after removing a backup factor', async () => {
+        const session = jwtSession('mfa-remove-before');
+        const refreshedSession = jwtSession('mfa-remove-after', 1789257900);
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            mfaFactors: [mfaFactor('totp-factor-1'), mfaFactor('totp-factor-2')],
+            mfaAal: { currentLevel: 'aal2', nextLevel: 'aal2' },
+            refreshSessionResult: { data: { session: refreshedSession }, error: null }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+        await store.refreshMfaState();
+
+        await store.unenrollTotp('totp-factor-2');
+
+        expect(fixture.client.auth.mfa.unenroll).toHaveBeenCalledWith({ factorId: 'totp-factor-2' });
+        expect(fixture.client.auth.refreshSession).toHaveBeenCalledOnce();
+        expect(store.session.value).toEqual(refreshedSession);
+    });
+
+    it('does not let a stale MFA lookup replace a newer identity state', async () => {
+        const oldSession = jwtSession('mfa-stale-old', 1789257600, 'old-user');
+        const newSession = jwtSession('mfa-stale-new', 1789257900, 'new-user');
+        const staleFactors = deferred();
+        const fixture = createClient({
+            session: oldSession,
+            profiles: {
+                'old-user': { data: { ...approverProfile, id: 'old-user' }, error: null },
+                'new-user': { data: { ...approverProfile, id: 'new-user', role: 'admin' }, error: null }
+            }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+        fixture.client.auth.mfa.listFactors.mockReturnValueOnce(staleFactors.promise);
+
+        const checkingMfa = store.refreshMfaState();
+        await fixture.emit('SIGNED_IN', newSession);
+        staleFactors.resolve({ data: { all: [mfaFactor('old-factor')], totp: [mfaFactor('old-factor')] }, error: null });
+        await checkingMfa;
+
+        expect(store.user.value).toEqual(newSession.user);
+        expect(store.mfaStatus.value).toBe('unknown');
+        expect(store.mfaFactors.value).toEqual([]);
     });
 });
