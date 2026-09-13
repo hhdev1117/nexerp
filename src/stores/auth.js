@@ -14,6 +14,7 @@ const MFA_UNENROLLMENT_MESSAGE = '인증 앱을 삭제하지 못했습니다. �
 const MFA_CODE_MESSAGE = '인증 앱의 6자리 코드를 입력해 주세요.';
 const MFA_LAST_FACTOR_MESSAGE = '마지막 인증 앱은 삭제할 수 없습니다.';
 const MFA_IDENTITY_MESSAGE = '로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.';
+const MFA_MUTATION_MESSAGE = '인증 앱 변경을 처리 중입니다. 잠시 후 다시 시도해 주세요.';
 const INVALID_SESSION_NAMES = new Set(['AuthSessionMissingError', 'AuthInvalidJwtError', 'AuthInvalidTokenResponseError']);
 const INVALID_SESSION_CODES = new Set(['session_not_found', 'bad_jwt', 'invalid_jwt']);
 const TOTP_CODE_PATTERN = /^\d{6}$/;
@@ -85,6 +86,7 @@ export function createAuthStore({ client, configured }) {
     let bufferedInitialAuth = null;
     const rejectedAuthSessions = new Set();
     let mfaOperationVersion = 0;
+    let mfaMutationPromise = null;
     const isRejectedSession = (nextSession) => {
         if (!nextSession) return false;
         const key = authSessionKey(nextSession);
@@ -216,6 +218,28 @@ export function createAuthStore({ client, configured }) {
         return factors.filter((factor) => factor?.factor_type === 'totp' && factor.status === 'verified' && typeof factor.id === 'string' && factor.id.trim());
     };
 
+    const unverifiedTotpFactors = (result) => {
+        const factors = Array.isArray(result?.data?.all) ? result.data.all : [];
+        return factors.filter((factor) => factor?.factor_type === 'totp' && factor.status === 'unverified' && typeof factor.id === 'string' && factor.id.trim());
+    };
+
+    const runMfaMutation = (task) => {
+        if (mfaMutationPromise) return Promise.reject(rejection(MFA_MUTATION_MESSAGE));
+        const pending = Promise.resolve().then(task);
+        mfaMutationPromise = pending;
+        return pending.finally(() => {
+            if (mfaMutationPromise === pending) mfaMutationPromise = null;
+        });
+    };
+
+    const bestEffortUnenroll = async (factorId) => {
+        try {
+            await client.auth.mfa.unenroll({ factorId });
+        } catch {
+            // The factor ID is already stale and must not be retained in local state.
+        }
+    };
+
     const failMfaOperation = (operation, message, status = null) => {
         if (isCurrentMfaOperation(operation)) {
             if (status) mfaStatus.value = status;
@@ -251,32 +275,60 @@ export function createAuthStore({ client, configured }) {
         }
     };
 
-    const beginTotpEnrollment = async () => {
-        requireMfaIdentity();
-        const operation = startMfaOperation();
-        beginOperation();
-        try {
-            let result;
+    const beginTotpEnrollment = () =>
+        runMfaMutation(async () => {
+            requireMfaIdentity();
+            if (mfaEnrollment.value?.cleanupPending) {
+                error.value = MFA_CANCELLATION_MESSAGE;
+                throw rejection(MFA_CANCELLATION_MESSAGE);
+            }
+
+            const operation = startMfaOperation();
+            beginOperation();
             try {
-                result = await client.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'NEXERP Authenticator', issuer: 'NEXERP' });
-            } catch {
-                return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
-            }
-            if (!isCurrentMfaOperation(operation)) return null;
+                let existingFactors;
+                try {
+                    existingFactors = await client.auth.mfa.listFactors();
+                } catch {
+                    return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
+                }
+                if (!isCurrentMfaOperation(operation)) return null;
+                if (existingFactors?.error || !Array.isArray(existingFactors?.data?.all)) return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
 
-            const data = result?.data;
-            if (result?.error || typeof data?.id !== 'string' || typeof data?.totp?.qr_code !== 'string' || typeof data.totp.secret !== 'string' || typeof data.totp.uri !== 'string') {
-                return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
-            }
+                for (const factor of unverifiedTotpFactors(existingFactors)) {
+                    let cleanup;
+                    try {
+                        cleanup = await client.auth.mfa.unenroll({ factorId: factor.id });
+                    } catch {
+                        return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
+                    }
+                    if (!isCurrentMfaOperation(operation)) return null;
+                    if (cleanup?.error) return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
+                }
 
-            mfaEnrollment.value = { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret, uri: data.totp.uri };
-            mfaStatus.value = 'enroll';
-            error.value = null;
-            return mfaEnrollment.value;
-        } finally {
-            endOperation();
-        }
-    };
+                let result;
+                try {
+                    result = await client.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'NEXERP Authenticator', issuer: 'NEXERP' });
+                } catch {
+                    return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
+                }
+                const data = result?.data;
+                if (!isCurrentMfaOperation(operation)) {
+                    if (typeof data?.id === 'string' && data.id.trim()) await bestEffortUnenroll(data.id);
+                    return null;
+                }
+                if (result?.error || typeof data?.id !== 'string' || typeof data?.totp?.qr_code !== 'string' || typeof data.totp.secret !== 'string' || typeof data.totp.uri !== 'string') {
+                    return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
+                }
+
+                mfaEnrollment.value = { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret, uri: data.totp.uri };
+                mfaStatus.value = 'enroll';
+                error.value = null;
+                return mfaEnrollment.value;
+            } finally {
+                endOperation();
+            }
+        });
 
     const verifyTotpFactor = async (factorId, code, clearEnrollment) => {
         requireMfaIdentity();
@@ -324,85 +376,97 @@ export function createAuthStore({ client, configured }) {
         }
     };
 
-    const verifyTotpEnrollment = (code) => {
-        const enrollment = mfaEnrollment.value;
-        if (!enrollment?.factorId) {
-            error.value = MFA_ENROLLMENT_MESSAGE;
-            return Promise.reject(rejection(MFA_ENROLLMENT_MESSAGE));
-        }
-        return verifyTotpFactor(enrollment.factorId, code, true);
-    };
+    const verifyTotpEnrollment = (code) =>
+        runMfaMutation(() => {
+            const enrollment = mfaEnrollment.value;
+            if (!enrollment?.factorId || enrollment.cleanupPending) {
+                error.value = MFA_ENROLLMENT_MESSAGE;
+                throw rejection(MFA_ENROLLMENT_MESSAGE);
+            }
+            return verifyTotpFactor(enrollment.factorId, code, true);
+        });
 
-    const verifyTotpChallenge = (factorId, code) => verifyTotpFactor(factorId, code, false);
+    const verifyTotpChallenge = (factorId, code) => runMfaMutation(() => verifyTotpFactor(factorId, code, false));
 
-    const cancelTotpEnrollment = async () => {
-        requireMfaIdentity();
-        const enrollment = mfaEnrollment.value;
-        if (!enrollment?.factorId) return null;
+    const cancelTotpEnrollment = () =>
+        runMfaMutation(async () => {
+            requireMfaIdentity();
+            const enrollment = mfaEnrollment.value;
+            if (!enrollment?.factorId) return null;
 
-        const operation = startMfaOperation();
-        mfaEnrollment.value = null;
-        beginOperation();
-        try {
-            let result;
+            const operation = startMfaOperation();
+            const cleanupHandle = { factorId: enrollment.factorId, cleanupPending: true };
+            mfaEnrollment.value = null;
+            beginOperation();
             try {
-                result = await client.auth.mfa.unenroll({ factorId: enrollment.factorId });
-            } catch {
-                return failMfaOperation(operation, MFA_CANCELLATION_MESSAGE, 'error');
+                let result;
+                try {
+                    result = await client.auth.mfa.unenroll({ factorId: enrollment.factorId });
+                } catch {
+                    if (isCurrentMfaOperation(operation)) mfaEnrollment.value = cleanupHandle;
+                    return failMfaOperation(operation, MFA_CANCELLATION_MESSAGE, 'error');
+                }
+                if (!isCurrentMfaOperation(operation)) return null;
+                if (result?.error) {
+                    mfaEnrollment.value = cleanupHandle;
+                    return failMfaOperation(operation, MFA_CANCELLATION_MESSAGE, 'error');
+                }
+                return refreshMfaState();
+            } finally {
+                endOperation();
             }
-            if (!isCurrentMfaOperation(operation)) return null;
-            if (result?.error) return failMfaOperation(operation, MFA_CANCELLATION_MESSAGE, 'error');
-            return refreshMfaState();
-        } finally {
-            endOperation();
-        }
-    };
+        });
 
-    const unenrollTotp = async (factorId) => {
-        requireMfaIdentity();
-        const factor = mfaFactors.value.find((candidate) => candidate.id === factorId);
-        if (!factor) {
-            error.value = MFA_UNENROLLMENT_MESSAGE;
-            throw rejection(MFA_UNENROLLMENT_MESSAGE);
-        }
-        if (mfaFactors.value.length <= 1) {
-            error.value = MFA_LAST_FACTOR_MESSAGE;
-            throw rejection(MFA_LAST_FACTOR_MESSAGE);
-        }
-
-        const operation = startMfaOperation();
-        beginOperation();
-        try {
-            let result;
+    const unenrollTotp = (factorId) =>
+        runMfaMutation(async () => {
+            requireMfaIdentity();
+            const operation = startMfaOperation();
+            beginOperation();
             try {
-                result = await client.auth.mfa.unenroll({ factorId });
-            } catch {
-                return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
-            }
-            if (!isCurrentMfaOperation(operation)) return null;
-            if (result?.error) return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+                let authoritativeFactors;
+                try {
+                    authoritativeFactors = await client.auth.mfa.listFactors();
+                } catch {
+                    return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+                }
+                if (!isCurrentMfaOperation(operation)) return null;
+                if (authoritativeFactors?.error || !authoritativeFactors?.data) return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
 
-            let refreshed;
-            try {
-                refreshed = await client.auth.refreshSession();
-            } catch {
-                return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
-            }
-            if (!isCurrentMfaOperation(operation)) return null;
-            const nextSession = refreshed?.data?.session;
-            if (refreshed?.error || !authSessionKey(nextSession) || nextSession.user?.id !== operation.userId) {
-                return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
-            }
+                const factors = verifiedTotpFactors(authoritativeFactors);
+                mfaFactors.value = factors;
+                if (!factors.some((factor) => factor.id === factorId)) return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE);
+                if (factors.length <= 1) return failMfaOperation(operation, MFA_LAST_FACTOR_MESSAGE);
 
-            rejectedAuthSessions.delete(authSessionKey(nextSession));
-            trackIdentity(nextSession);
-            await awaitIdentitySettled();
-            if (user.value?.id !== operation.userId) return null;
-            return refreshMfaState();
-        } finally {
-            endOperation();
-        }
-    };
+                let result;
+                try {
+                    result = await client.auth.mfa.unenroll({ factorId });
+                } catch {
+                    return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+                }
+                if (!isCurrentMfaOperation(operation)) return null;
+                if (result?.error) return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+
+                let refreshed;
+                try {
+                    refreshed = await client.auth.refreshSession();
+                } catch {
+                    return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+                }
+                if (!isCurrentMfaOperation(operation)) return null;
+                const nextSession = refreshed?.data?.session;
+                if (refreshed?.error || !authSessionKey(nextSession) || nextSession.user?.id !== operation.userId) {
+                    return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+                }
+
+                rejectedAuthSessions.delete(authSessionKey(nextSession));
+                trackIdentity(nextSession);
+                await awaitIdentitySettled();
+                if (user.value?.id !== operation.userId) return null;
+                return refreshMfaState();
+            } finally {
+                endOperation();
+            }
+        });
 
     const subscribe = () => {
         if (subscription || !isConfigured) return;
