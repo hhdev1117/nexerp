@@ -35,7 +35,9 @@ describe('ERP router', () => {
     it('registers public auth routes and protected role policies', () => {
         expect(router.resolve('/auth/login')).toMatchObject({ name: 'login', meta: { public: true, guestOnly: true } });
         expect(router.resolve('/auth/setup')).toMatchObject({ name: 'setup-required', meta: { public: true } });
+        expect(router.resolve('/auth/mfa')).toMatchObject({ name: 'mfa' });
         expect(router.resolve('/auth/access-denied')).toMatchObject({ name: 'access-denied' });
+        expect(router.resolve('/settings/security')).toMatchObject({ name: 'settings-security' });
         expect(router.resolve('/approvals').meta).toMatchObject({ menuKey: 'approvals' });
         expect(router.resolve('/approvals').meta.roles).toBeUndefined();
         expect(router.resolve('/settings/accounts').meta).toMatchObject({ roles: ['admin'], menuKey: 'settings.accounts', fixedAccess: true });

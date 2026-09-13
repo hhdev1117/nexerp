@@ -1,8 +1,31 @@
+// @vitest-environment jsdom
+
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
+import PrimeVue from 'primevue/config';
+import { describe, expect, it, vi } from 'vitest';
+import { ref } from 'vue';
 import { erpMenu, flattenMenuRoutes } from '@/data/erp';
 import { accountCreatePayload, accountUpdatePayload, buildPermissionGroups, createAccountDraft, createEditAccountDraft, permissionKeysEqual, validateAccountDraft, validatePasswordResetDraft } from './adminModels';
+import SecuritySettings from './SecuritySettings.vue';
+
+const confirmRequire = vi.hoisted(() => vi.fn());
+const securityAuthStore = {
+    loading: ref(false),
+    mfaStatus: ref('ready'),
+    mfaSatisfied: ref(true),
+    mfaEnrollment: ref(null),
+    mfaFactors: ref([]),
+    refreshMfaState: vi.fn(),
+    beginTotpEnrollment: vi.fn(),
+    verifyTotpEnrollment: vi.fn(),
+    cancelTotpEnrollment: vi.fn(),
+    unenrollTotp: vi.fn()
+};
+
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => securityAuthStore }));
+vi.mock('primevue/useconfirm', () => ({ useConfirm: () => ({ require: confirmRequire }) }));
 
 const source = (file) => {
     const path = fileURLToPath(new URL(file, import.meta.url));
@@ -11,6 +34,7 @@ const source = (file) => {
 const accountsSource = source('./AccountManagement.vue');
 const permissionsSource = source('./MenuPermissionManagement.vue');
 const infrastructureSource = source('./InfrastructureUsage.vue');
+const securitySource = source('./SecuritySettings.vue');
 
 const existingAccount = {
     id: 'admin-1',
@@ -125,6 +149,39 @@ describe('administrator account screen', () => {
         expect(accountsSource).toContain("passwordResetDraft.value = { temporaryPassword: '', confirmation: '' }");
         expect(accountsSource).toContain(':title="passwordResetActionLabel(slotProps.data)"');
         expect(accountsSource).toContain(':title="statusActionLabel(slotProps.data)"');
+    });
+});
+
+describe('security settings screen', () => {
+    it('confirms backup-factor deletion and never persists enrollment material', async () => {
+        securityAuthStore.loading.value = false;
+        securityAuthStore.mfaStatus.value = 'ready';
+        securityAuthStore.mfaSatisfied.value = true;
+        securityAuthStore.mfaEnrollment.value = null;
+        securityAuthStore.mfaFactors.value = [
+            { id: 'factor-primary', friendly_name: 'Primary authenticator' },
+            { id: 'factor-backup', friendly_name: 'Backup authenticator' }
+        ];
+        securityAuthStore.refreshMfaState.mockReset().mockResolvedValue({ status: 'ready' });
+        securityAuthStore.unenrollTotp.mockReset().mockResolvedValue({ status: 'ready' });
+        confirmRequire.mockReset();
+        const wrapper = mount(SecuritySettings, {
+            global: { plugins: [PrimeVue], stubs: { ConfirmDialog: true } }
+        });
+        await flushPromises();
+
+        await wrapper.get('[aria-label="Backup authenticator 삭제"]').trigger('click');
+        expect(confirmRequire).toHaveBeenCalledOnce();
+        await confirmRequire.mock.calls[0][0].accept();
+        expect(securityAuthStore.unenrollTotp).toHaveBeenCalledWith('factor-backup');
+        wrapper.unmount();
+
+        expect(securitySource).toContain('인증 앱 관리');
+        expect(securitySource).toContain('beginTotpEnrollment');
+        expect(securitySource).toContain('unenrollTotp');
+        expect(securitySource).toContain('<ConfirmDialog />');
+        expect(securitySource).not.toContain('localStorage');
+        expect(securitySource).not.toContain('sessionStorage');
     });
 });
 

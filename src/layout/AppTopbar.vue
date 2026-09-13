@@ -230,6 +230,7 @@ const profileItems = computed(() => [
         items: [
             { label: '내 프로필', icon: 'pi pi-user', command: () => showMessage('내 프로필', '프로필 기능은 준비 중입니다.') },
             ...(authStore.profile.value?.is_active ? [{ label: '비밀번호 변경', icon: 'pi pi-key', command: openPasswordDialog }] : []),
+            ...(authStore.profile.value?.is_active ? [{ label: '2단계 인증 관리', icon: 'pi pi-shield', command: () => navigate('/settings/security') }] : []),
             { label: '회사 · 사업장 설정', icon: 'pi pi-building', command: () => navigate('/settings/company') },
             ...(authStore.hasRole(['admin'])
                 ? [

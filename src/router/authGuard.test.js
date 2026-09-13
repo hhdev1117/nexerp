@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 import { createAuthStore } from '@/stores/auth';
-import { createAuthGuard } from './authGuard';
+import { createAuthGuard, safeLocalRedirect } from './authGuard';
 
 const deferred = () => {
     let resolve;
@@ -23,7 +23,17 @@ const createActualStoreFixture = ({ session, profileResults }) => {
                 return { data: { subscription: { unsubscribe: vi.fn() } } };
             }),
             signInWithPassword: vi.fn(),
-            signOut: vi.fn().mockResolvedValue({ error: null })
+            signOut: vi.fn().mockResolvedValue({ error: null }),
+            mfa: {
+                listFactors: vi.fn().mockResolvedValue({
+                    data: {
+                        all: [{ id: 'factor-1', factor_type: 'totp', status: 'verified' }],
+                        totp: [{ id: 'factor-1', factor_type: 'totp', status: 'verified' }]
+                    },
+                    error: null
+                }),
+                getAuthenticatorAssuranceLevel: vi.fn().mockResolvedValue({ data: { currentLevel: 'aal2' }, error: null })
+            }
         },
         from: vi.fn(() => ({
             select() {
@@ -49,11 +59,13 @@ const createActualStoreFixture = ({ session, profileResults }) => {
     };
 };
 
-const makeStore = ({ configured = true, user = null, profile = null, initialize } = {}) => ({
+const makeStore = ({ configured = true, user = null, profile = null, initialize, mfaStatus = 'ready', refreshMfaState } = {}) => ({
     configured: ref(configured),
     user: ref(user),
     profile: ref(profile),
+    mfaStatus: ref(mfaStatus),
     initialize: initialize || vi.fn().mockResolvedValue(undefined),
+    refreshMfaState: refreshMfaState || vi.fn().mockResolvedValue({ status: mfaStatus }),
     hasRole: vi.fn((roles) => Boolean(profile?.is_active) && roles.includes(profile.role))
 });
 
@@ -70,6 +82,25 @@ const route = (overrides = {}) => ({
 });
 
 describe('authentication route guard', () => {
+    it.each(['//evil.example', '\\evil', '/sales\\orders', 'https://evil.example', 'mailto:user@nexerp.test', '/auth/login', '/auth/login?redirect=/sales', '/auth/mfa', '/auth/mfa?redirect=/sales', '', null])('rejects unsafe or self-loop MFA redirect %j', (redirect) => {
+        expect(safeLocalRedirect(redirect)).toBe('/');
+    });
+
+    it('sends active AAL1 users to MFA while preserving a protected local destination', async () => {
+        const store = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true }, mfaStatus: 'challenge' });
+        const guard = createAuthGuard(store, makeAccessStore());
+
+        await expect(guard(route({ fullPath: '/approvals?tab=open', meta: { menuKey: 'approvals' } }))).resolves.toEqual({ name: 'mfa', query: { redirect: '/approvals?tab=open' } });
+        expect(store.refreshMfaState).toHaveBeenCalledOnce();
+    });
+
+    it('allows active AAL1 users onto the MFA route and returns AAL2 users to a safe redirect', async () => {
+        const pending = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true }, mfaStatus: 'enroll' });
+        await expect(createAuthGuard(pending)(route({ name: 'mfa', fullPath: '/auth/mfa?redirect=/approvals', meta: { public: true } }))).resolves.toBe(true);
+
+        const ready = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true }, mfaStatus: 'ready' });
+        await expect(createAuthGuard(ready)(route({ name: 'mfa', fullPath: '/auth/mfa?redirect=/approvals', query: { redirect: '/approvals' }, meta: { public: true } }))).resolves.toBe('/approvals');
+    });
     it('sends an unconfigured deployment to setup', async () => {
         const guard = createAuthGuard(makeStore({ configured: false }));
 

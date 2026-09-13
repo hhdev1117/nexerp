@@ -8,6 +8,7 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import LoginView from './LoginView.vue';
 import SetupRequiredView from './SetupRequiredView.vue';
 import AccessDeniedView from './AccessDeniedView.vue';
+import MfaView from './MfaView.vue';
 
 const authStore = {
     loading: ref(false),
@@ -17,7 +18,16 @@ const authStore = {
     profileLoadFailed: ref(false),
     signIn: vi.fn(),
     retryProfile: vi.fn(),
-    signOut: vi.fn()
+    signOut: vi.fn(),
+    mfaStatus: ref('enroll'),
+    mfaSatisfied: ref(false),
+    mfaEnrollment: ref(null),
+    mfaFactors: ref([]),
+    refreshMfaState: vi.fn(),
+    beginTotpEnrollment: vi.fn(),
+    verifyTotpEnrollment: vi.fn(),
+    verifyTotpChallenge: vi.fn(),
+    cancelTotpEnrollment: vi.fn()
 };
 
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => authStore }));
@@ -76,6 +86,19 @@ beforeEach(() => {
     authStore.signIn.mockReset().mockResolvedValue({ user: { id: 'user-1' } });
     authStore.retryProfile.mockReset().mockResolvedValue(undefined);
     authStore.signOut.mockReset().mockResolvedValue(undefined);
+    authStore.mfaStatus.value = 'enroll';
+    authStore.mfaSatisfied.value = false;
+    authStore.mfaEnrollment.value = null;
+    authStore.mfaFactors.value = [];
+    authStore.refreshMfaState.mockReset().mockResolvedValue({ status: 'enroll' });
+    authStore.beginTotpEnrollment.mockReset().mockImplementation(async () => {
+        const nextEnrollment = { factorId: 'factor-1', qrCode: '<svg/>', secret: 'TEST-SECRET', uri: 'otpauth://secret' };
+        authStore.mfaEnrollment.value = nextEnrollment;
+        return nextEnrollment;
+    });
+    authStore.verifyTotpEnrollment.mockReset().mockResolvedValue({ status: 'ready' });
+    authStore.verifyTotpChallenge.mockReset();
+    authStore.cancelTotpEnrollment.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -202,6 +225,133 @@ describe('login view', () => {
 });
 
 describe('supporting auth views', () => {
+    it('keeps enrollment secrets hidden until explicitly revealed and validates a six-digit code', async () => {
+        const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/auth/mfa', name: 'mfa', component: MfaView }, { path: '/', component: { template: '<main />' } }] });
+        await router.push('/auth/mfa');
+        await router.isReady();
+        const wrapper = mount(MfaView, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
+        wrappers.push(wrapper);
+        await flushPromises();
+
+        expect(wrapper.text()).not.toContain('TEST-SECRET');
+        expect(wrapper.get('img').attributes('src')).toContain('data:image/svg+xml');
+        expect(wrapper.get('[aria-label="수동 키 표시"]').exists()).toBe(true);
+        await wrapper.get('[aria-label="수동 키 표시"]').trigger('click');
+        expect(wrapper.text()).toContain('TEST-SECRET');
+        await wrapper.get('button').trigger('click');
+        expect(wrapper.text()).not.toContain('TEST-SECRET');
+        await wrapper.get('form').trigger('submit');
+        expect(authStore.verifyTotpEnrollment).not.toHaveBeenCalled();
+        expect(wrapper.get('[role="alert"]').text()).toContain('6자리');
+    });
+
+    it('cancels an incomplete enrollment and returns a verified session only after it is ready', async () => {
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [
+                { path: '/auth/mfa', name: 'mfa', component: MfaView },
+                { path: '/approvals', name: 'approvals', component: { template: '<main />' } },
+                { path: '/', component: { template: '<main />' } }
+            ]
+        });
+        await router.push('/auth/mfa?redirect=/approvals');
+        await router.isReady();
+        const wrapper = mount(MfaView, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
+        wrappers.push(wrapper);
+        await flushPromises();
+
+        const cancelButton = wrapper.findAll('button').find((button) => button.text().includes('등록 취소'));
+        await cancelButton.trigger('click');
+        expect(authStore.cancelTotpEnrollment).toHaveBeenCalledOnce();
+
+        authStore.mfaStatus.value = 'challenge';
+        authStore.mfaFactors.value = [{ id: 'factor-primary', friendly_name: 'Primary authenticator' }];
+        authStore.mfaEnrollment.value = null;
+        authStore.verifyTotpChallenge.mockImplementation(async () => {
+            authStore.mfaStatus.value = 'ready';
+            authStore.mfaSatisfied.value = true;
+            return { status: 'ready' };
+        });
+        await wrapper.get('#mfa-code').setValue('123456');
+        await wrapper.get('form').trigger('submit');
+        await flushPromises();
+
+        expect(router.currentRoute.value.fullPath).toBe('/approvals');
+    });
+
+    it('does not navigate after verification when authoritative MFA state is not ready', async () => {
+        const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/auth/mfa', name: 'mfa', component: MfaView }, { path: '/approvals', component: { template: '<main />' } }, { path: '/', component: { template: '<main />' } }] });
+        await router.push('/auth/mfa?redirect=/approvals');
+        await router.isReady();
+        authStore.mfaStatus.value = 'challenge';
+        authStore.mfaFactors.value = [{ id: 'factor-primary', friendly_name: 'Primary authenticator' }];
+        const wrapper = mount(MfaView, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
+        wrappers.push(wrapper);
+        await flushPromises();
+
+        await wrapper.get('#mfa-code').setValue('123456');
+        await wrapper.get('form').trigger('submit');
+        await flushPromises();
+
+        expect(router.currentRoute.value.fullPath).toBe('/auth/mfa?redirect=/approvals');
+        expect(wrapper.get('[role="alert"]').text()).toContain('인증 상태를 확인하지 못했습니다');
+    });
+
+    it('keeps the MFA screen stable when sign-out fails', async () => {
+        authStore.signOut.mockRejectedValueOnce(new Error('network'));
+        const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/auth/mfa', name: 'mfa', component: MfaView }, { path: '/', component: { template: '<main />' } }] });
+        await router.push('/auth/mfa');
+        await router.isReady();
+        const wrapper = mount(MfaView, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
+        wrappers.push(wrapper);
+        await flushPromises();
+
+        const signOutButton = wrapper.findAll('button').find((button) => button.text().includes('로그아웃'));
+        await signOutButton.trigger('click');
+        await flushPromises();
+
+        expect(router.currentRoute.value.fullPath).toBe('/auth/mfa');
+        expect(wrapper.get('[role="alert"]').text()).toContain('로그아웃하지 못했습니다');
+        expect(wrapper.text()).not.toContain('network');
+    });
+
+    it('shows only a retry action for a failed MFA lookup', async () => {
+        authStore.mfaStatus.value = 'error';
+        authStore.refreshMfaState.mockRejectedValueOnce(new Error('network'));
+        const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/auth/mfa', name: 'mfa', component: MfaView }, { path: '/', component: { template: '<main />' } }] });
+        await router.push('/auth/mfa');
+        await router.isReady();
+        const wrapper = mount(MfaView, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
+        wrappers.push(wrapper);
+        await flushPromises();
+
+        expect(wrapper.text()).toContain('다시 시도');
+        expect(wrapper.find('form').exists()).toBe(false);
+        expect(wrapper.text()).not.toContain('network');
+    });
+
+    it('lets the user select among multiple verified authenticators for a challenge', async () => {
+        authStore.mfaStatus.value = 'challenge';
+        authStore.mfaFactors.value = [
+            { id: 'factor-primary', friendly_name: 'Primary authenticator' },
+            { id: 'factor-backup', friendly_name: 'Backup authenticator' }
+        ];
+        authStore.refreshMfaState.mockResolvedValue({ status: 'challenge' });
+        const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/auth/mfa', name: 'mfa', component: MfaView }, { path: '/', component: { template: '<main />' } }] });
+        await router.push('/auth/mfa');
+        await router.isReady();
+        const wrapper = mount(MfaView, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
+        wrappers.push(wrapper);
+        await flushPromises();
+
+        expect(wrapper.get('#mfa-factor').text()).toContain('Backup authenticator');
+        await wrapper.get('#mfa-factor').setValue('factor-backup');
+        await wrapper.get('#mfa-code').setValue('123456');
+        await wrapper.get('form').trigger('submit');
+        await flushPromises();
+
+        expect(authStore.verifyTotpChallenge).toHaveBeenCalledWith('factor-backup', '123456');
+    });
     it('names only the required public connection variables and offers reload', async () => {
         const reload = vi.fn();
         const wrapper = mount(SetupRequiredView, { attachTo: document.body, props: { reloadPage: reload }, global: { plugins: [PrimeVue] } });

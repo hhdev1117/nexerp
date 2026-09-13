@@ -48,6 +48,12 @@ const router = createRouter({
             meta: { title: '연결 설정', public: true }
         },
         {
+            path: '/auth/mfa',
+            name: 'mfa',
+            component: () => import('@/views/auth/MfaView.vue'),
+            meta: { title: '2단계 인증', public: true }
+        },
+        {
             path: '/auth/access-denied',
             name: 'access-denied',
             component: () => import('@/views/auth/AccessDeniedView.vue'),
@@ -56,7 +62,10 @@ const router = createRouter({
         {
             path: '/',
             component: AppLayout,
-            children: erpRoutes
+            children: [
+                ...erpRoutes,
+                { path: '/settings/security', name: 'settings-security', component: () => import('@/views/admin/SecuritySettings.vue'), meta: { title: '2단계 인증 관리' } }
+            ]
         },
         {
             path: '/:pathMatch(.*)*',

@@ -48,6 +48,7 @@ const mountTopbar = async (path = '/') => {
             { path: '/auth/login', name: 'login', component: { template: '<main />' } },
             { path: '/settings/company', component: { template: '<main />' } },
             { path: '/settings/accounts', component: { template: '<main />' } },
+            { path: '/settings/security', component: { template: '<main />' } },
             { path: '/settings/menu-permissions', component: { template: '<main />' } }
         ]
     });
@@ -213,6 +214,7 @@ describe('ERP application shell', () => {
         expect(source).toContain('pendingApprovalCount');
         expect(source).toContain('NEXERP');
         expect(source).toContain('업무관리 시스템');
+        expect(source).toContain('2단계 인증 관리');
         expect(source).not.toContain('SAKAI ERP');
         expect(source).not.toContain('var(--primary-50)');
     });

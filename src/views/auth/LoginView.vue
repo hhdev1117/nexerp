@@ -2,6 +2,7 @@
 import { nextTick, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { safeLocalRedirect } from '@/router/authGuard';
 
 const authStore = useAuthStore();
 const route = useRoute();
@@ -14,8 +15,6 @@ const submitting = ref(false);
 const errorSummary = ref(null);
 const AUTH_FAILURE_MESSAGE = '로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 const NAVIGATION_FAILURE_MESSAGE = '화면을 이동하지 못했습니다. 다시 시도해 주세요.';
-
-const localRedirect = (value) => (typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/');
 
 const validate = () => {
     const errors = { email: '', password: '' };
@@ -55,7 +54,7 @@ const submit = async () => {
         }
 
         try {
-            await router.replace(localRedirect(route.query.redirect));
+            await router.replace(safeLocalRedirect(route.query.redirect));
         } catch {
             submitError.value = NAVIGATION_FAILURE_MESSAGE;
             await focusErrorSummary();
