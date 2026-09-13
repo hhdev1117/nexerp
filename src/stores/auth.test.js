@@ -1352,7 +1352,7 @@ describe('Supabase auth store', () => {
         expect(store.mfaEnrollment.value?.factorId).toBe('new-factor');
     });
 
-    it('best-effort cleans a factor returned after enrollment becomes stale', async () => {
+    it('discards a stale enrollment result without sending cleanup through the new identity session', async () => {
         const oldSession = jwtSession('mfa-stale-enroll-old', 1789257600, 'old-user');
         const newSession = jwtSession('mfa-stale-enroll-new', 1789257900, 'new-user');
         const enroll = deferred();
@@ -1370,17 +1370,32 @@ describe('Supabase auth store', () => {
         const enrolling = store.beginTotpEnrollment();
         await vi.waitFor(() => expect(fixture.client.auth.mfa.enroll).toHaveBeenCalledOnce());
         await fixture.emit('SIGNED_IN', newSession);
-        const originalMfa = fixture.client.auth.mfa;
-        const replacementUnenroll = vi.fn().mockResolvedValue({ data: { id: 'wrong-context-factor' }, error: null });
-        fixture.client.auth.mfa = { ...fixture.client.auth.mfa, unenroll: replacementUnenroll };
         enroll.resolve({ data: { id: 'stale-factor', type: 'totp', totp: { qr_code: '<svg/>', secret: 'STALE-SECRET', uri: 'otpauth://totp/NEXERP:stale?secret=STALE-SECRET' } }, error: null });
         await enrolling;
 
-        expect(originalMfa.unenroll).toHaveBeenCalledWith({ factorId: 'stale-factor' });
-        expect(replacementUnenroll).not.toHaveBeenCalled();
+        expect(fixture.client.auth.mfa.unenroll).not.toHaveBeenCalled();
         expect(store.mfaEnrollment.value).toBeNull();
         expect(store.error.value || '').not.toContain('STALE-SECRET');
         expect(JSON.stringify(store.mfaEnrollment.value)).not.toContain('otpauth://totp/NEXERP:stale');
+    });
+
+    it('best-effort cleans a superseded enrollment when its initiating session remains active', async () => {
+        const session = jwtSession('mfa-superseded-enroll');
+        const enroll = deferred();
+        const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
+        fixture.client.auth.mfa.enroll.mockReturnValueOnce(enroll.promise);
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        const enrolling = store.beginTotpEnrollment();
+        await vi.waitFor(() => expect(fixture.client.auth.mfa.enroll).toHaveBeenCalledOnce());
+        await store.refreshMfaState();
+        enroll.resolve({ data: { id: 'superseded-factor', type: 'totp', totp: { qr_code: '<svg/>', secret: 'SUPERSEDED-SECRET', uri: 'otpauth://totp/NEXERP:superseded?secret=SUPERSEDED-SECRET' } }, error: null });
+        await enrolling;
+
+        expect(fixture.client.auth.mfa.unenroll).toHaveBeenCalledWith({ factorId: 'superseded-factor' });
+        expect(store.mfaEnrollment.value).toBeNull();
+        expect(JSON.stringify(store.mfaEnrollment.value)).not.toContain('SUPERSEDED-SECRET');
     });
 
     it('keeps a retryable cleanup handle but clears enrollment material when cancellation fails', async () => {
@@ -1418,18 +1433,23 @@ describe('Supabase auth store', () => {
 
         const oldMutation = store.beginTotpEnrollment();
         await vi.waitFor(() => expect(fixture.client.auth.mfa.enroll).toHaveBeenCalledOnce());
+        expect(store.loading.value).toBe(true);
         await fixture.emit('SIGNED_IN', newSession);
+        expect(store.loading.value).toBe(false);
         const newMutation = store.beginTotpEnrollment();
         await vi.waitFor(() => expect(fixture.client.auth.mfa.enroll).toHaveBeenCalledTimes(2));
+        expect(store.loading.value).toBe(true);
 
         oldEnrollment.resolve({ data: { id: 'old-factor', type: 'totp', totp: { qr_code: '<svg/>', secret: 'OLD-SECRET', uri: 'otpauth://totp/NEXERP:old?secret=OLD-SECRET' } }, error: null });
         await oldMutation;
         await expect(store.beginTotpEnrollment()).rejects.toThrow('인증 앱 변경을 처리 중입니다. 잠시 후 다시 시도해 주세요.');
+        expect(store.loading.value).toBe(true);
         expect(store.mfaEnrollment.value).toBeNull();
         expect(JSON.stringify(store.mfaEnrollment.value)).not.toContain('OLD-SECRET');
 
         newEnrollment.resolve({ data: { id: 'new-factor', type: 'totp', totp: { qr_code: '<svg/>', secret: 'NEW-SECRET', uri: 'otpauth://totp/NEXERP:new?secret=NEW-SECRET' } }, error: null });
         await newMutation;
+        expect(store.loading.value).toBe(false);
     });
 
     it('uses the same-origin factor lock while re-checking a backup-factor deletion', async () => {
@@ -1473,5 +1493,42 @@ describe('Supabase auth store', () => {
         await expect(secondRemoval).rejects.toThrow('마지막 인증 앱은 삭제할 수 없습니다.');
         expect(locks.request).toHaveBeenCalledWith('nexerp-mfa-totp:user-1', expect.any(Function));
         expect(secondFixture.client.auth.mfa.unenroll).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the authoritative factor check when Web Locks are unavailable', async () => {
+        const session = jwtSession('mfa-no-web-lock');
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            mfaFactors: [mfaFactor('totp-factor-1'), mfaFactor('totp-factor-2')],
+            mfaAal: { currentLevel: 'aal2', nextLevel: 'aal2' }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true, locks: null });
+        await store.initialize();
+
+        await store.unenrollTotp('totp-factor-2');
+
+        expect(fixture.client.auth.mfa.listFactors).toHaveBeenCalledTimes(2);
+        expect(fixture.client.auth.mfa.unenroll).toHaveBeenCalledWith({ factorId: 'totp-factor-2' });
+    });
+
+    it('normalizes a rejected Web Lock request without deleting a factor', async () => {
+        const session = jwtSession('mfa-web-lock-rejection');
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            mfaFactors: [mfaFactor('totp-factor-1'), mfaFactor('totp-factor-2')],
+            mfaAal: { currentLevel: 'aal2', nextLevel: 'aal2' }
+        });
+        const locks = { request: vi.fn().mockRejectedValue(new Error('provider raw lock detail')) };
+        const store = createAuthStore({ client: fixture.client, configured: true, locks });
+        await store.initialize();
+
+        await expect(store.unenrollTotp('totp-factor-2')).rejects.toThrow('인증 앱을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+
+        expect(fixture.client.auth.mfa.listFactors).not.toHaveBeenCalled();
+        expect(fixture.client.auth.mfa.unenroll).not.toHaveBeenCalled();
+        expect(store.error.value).toBe('인증 앱을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        expect(store.error.value).not.toContain('provider raw lock detail');
     });
 });

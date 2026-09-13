@@ -78,6 +78,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
     let subscription = null;
     let identityVersion = 0;
     let pendingOperations = 0;
+    const mfaLoadingTickets = new Set();
     let latestAuthUpdate = Promise.resolve();
     let nextSignOutOperationId = 0;
     const activeSignOutOperations = new Set();
@@ -94,22 +95,28 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         return !key || rejectedAuthSessions.has(key);
     };
 
+    const updateLoading = () => {
+        loading.value = pendingOperations > 0 || mfaLoadingTickets.size > 0;
+    };
+
     const beginOperation = () => {
         pendingOperations += 1;
-        loading.value = true;
+        updateLoading();
     };
 
     const endOperation = () => {
         pendingOperations = Math.max(0, pendingOperations - 1);
-        loading.value = pendingOperations > 0;
+        updateLoading();
     };
 
     const clearMfaState = () => {
         mfaOperationVersion += 1;
         mfaMutation = null;
+        mfaLoadingTickets.clear();
         mfaStatus.value = 'unknown';
         mfaFactors.value = [];
         mfaEnrollment.value = null;
+        updateLoading();
     };
 
     const clearIdentity = () => {
@@ -205,8 +212,21 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         sessionKey: authSessionKey(session.value)
     });
 
-    const isCurrentMfaOperation = (operation) =>
-        operation.version === mfaOperationVersion && operation.userId === user.value?.id && operation.sessionKey === authSessionKey(session.value);
+    const isSameMfaIdentity = (operation) => operation.userId === user.value?.id && operation.sessionKey === authSessionKey(session.value);
+
+    const isCurrentMfaOperation = (operation) => operation.version === mfaOperationVersion && isSameMfaIdentity(operation);
+
+    const beginMfaLoading = (operation) => {
+        const ticket = { userId: operation.userId, sessionKey: operation.sessionKey };
+        mfaLoadingTickets.add(ticket);
+        updateLoading();
+        return ticket;
+    };
+
+    const endMfaLoading = (ticket) => {
+        mfaLoadingTickets.delete(ticket);
+        updateLoading();
+    };
 
     const requireMfaIdentity = () => {
         if (!isConfigured || !session.value || !user.value?.id || !profile.value?.is_active) {
@@ -248,7 +268,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         try {
             await mfaApi.unenroll({ factorId });
         } catch {
-            // The factor ID is already stale and must not be retained in local state.
+            // The unverified factor is short-lived; do not retain its ID or credentials for a retry.
         }
     };
 
@@ -278,7 +298,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         const operation = startMfaOperation();
         mfaStatus.value = 'unknown';
         mfaFactors.value = [];
-        beginOperation();
+        const loadingTicket = beginMfaLoading(operation);
         try {
             let factorsResult;
             let assuranceResult;
@@ -296,7 +316,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
             error.value = null;
             return { status: mfaStatus.value, factors };
         } finally {
-            endOperation();
+            endMfaLoading(loadingTicket);
         }
     };
 
@@ -310,7 +330,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
 
             const operation = startMfaOperation();
             const mfaApi = client.auth.mfa;
-            beginOperation();
+            const loadingTicket = beginMfaLoading(operation);
             try {
                 let existingFactors;
                 try {
@@ -340,7 +360,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
                 }
                 const data = result?.data;
                 if (!isCurrentMfaOperation(operation)) {
-                    if (typeof data?.id === 'string' && data.id.trim()) await bestEffortUnenroll(mfaApi, data.id);
+                    if (isSameMfaIdentity(operation) && typeof data?.id === 'string' && data.id.trim()) await bestEffortUnenroll(mfaApi, data.id);
                     return null;
                 }
                 if (result?.error || typeof data?.id !== 'string' || typeof data?.totp?.qr_code !== 'string' || typeof data.totp.secret !== 'string' || typeof data.totp.uri !== 'string') {
@@ -352,7 +372,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
                 error.value = null;
                 return mfaEnrollment.value;
             } finally {
-                endOperation();
+                endMfaLoading(loadingTicket);
             }
         });
 
@@ -368,7 +388,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         }
 
         const operation = startMfaOperation();
-        beginOperation();
+        const loadingTicket = beginMfaLoading(operation);
         try {
             let challenge;
             try {
@@ -398,7 +418,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
             if (user.value?.id !== operation.userId) return null;
             return refreshMfaState();
         } finally {
-            endOperation();
+            endMfaLoading(loadingTicket);
         }
     };
 
@@ -423,7 +443,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
             const operation = startMfaOperation();
             const cleanupHandle = { factorId: enrollment.factorId, cleanupPending: true };
             mfaEnrollment.value = null;
-            beginOperation();
+            const loadingTicket = beginMfaLoading(operation);
             try {
                 let result;
                 try {
@@ -439,7 +459,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
                 }
                 return refreshMfaState();
             } finally {
-                endOperation();
+                endMfaLoading(loadingTicket);
             }
         });
 
@@ -447,7 +467,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         runMfaMutation(async () => {
             requireMfaIdentity();
             const operation = startMfaOperation();
-            beginOperation();
+            const loadingTicket = beginMfaLoading(operation);
             try {
                 await withTotpFactorLock(operation, async () => {
                     let authoritativeFactors;
@@ -493,7 +513,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
                 if (user.value?.id !== operation.userId) return null;
                 return refreshMfaState();
             } finally {
-                endOperation();
+                endMfaLoading(loadingTicket);
             }
         });
 
