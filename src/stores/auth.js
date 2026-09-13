@@ -58,7 +58,7 @@ const rejection = (message) => {
     return authError;
 };
 
-export function createAuthStore({ client, configured }) {
+export function createAuthStore({ client, configured, locks = typeof window === 'undefined' ? null : window.navigator?.locks }) {
     const session = ref(null);
     const user = ref(null);
     const profile = ref(null);
@@ -86,7 +86,8 @@ export function createAuthStore({ client, configured }) {
     let bufferedInitialAuth = null;
     const rejectedAuthSessions = new Set();
     let mfaOperationVersion = 0;
-    let mfaMutationPromise = null;
+    let mfaMutation = null;
+    let nextTotpLabelNumber = 0;
     const isRejectedSession = (nextSession) => {
         if (!nextSession) return false;
         const key = authSessionKey(nextSession);
@@ -105,6 +106,7 @@ export function createAuthStore({ client, configured }) {
 
     const clearMfaState = () => {
         mfaOperationVersion += 1;
+        mfaMutation = null;
         mfaStatus.value = 'unknown';
         mfaFactors.value = [];
         mfaEnrollment.value = null;
@@ -223,20 +225,43 @@ export function createAuthStore({ client, configured }) {
         return factors.filter((factor) => factor?.factor_type === 'totp' && factor.status === 'unverified' && typeof factor.id === 'string' && factor.id.trim());
     };
 
+    const currentMfaMutationScope = () => ({ userId: user.value?.id || null, sessionKey: authSessionKey(session.value) });
+
     const runMfaMutation = (task) => {
-        if (mfaMutationPromise) return Promise.reject(rejection(MFA_MUTATION_MESSAGE));
+        const scope = currentMfaMutationScope();
+        if (mfaMutation?.userId === scope.userId && mfaMutation?.sessionKey === scope.sessionKey) return Promise.reject(rejection(MFA_MUTATION_MESSAGE));
         const pending = Promise.resolve().then(task);
-        mfaMutationPromise = pending;
+        const mutation = { ...scope, pending };
+        mfaMutation = mutation;
         return pending.finally(() => {
-            if (mfaMutationPromise === pending) mfaMutationPromise = null;
+            if (mfaMutation === mutation) mfaMutation = null;
         });
     };
 
-    const bestEffortUnenroll = async (factorId) => {
+    const nextTotpFriendlyName = () => {
+        const browserCrypto = typeof window === 'undefined' ? null : window.crypto;
+        const identifier = typeof browserCrypto?.randomUUID === 'function' ? browserCrypto.randomUUID() : `${Date.now().toString(36)}-${++nextTotpLabelNumber}`;
+        return `NEXERP Authenticator ${identifier}-${++nextTotpLabelNumber}`;
+    };
+
+    const bestEffortUnenroll = async (mfaApi, factorId) => {
         try {
-            await client.auth.mfa.unenroll({ factorId });
+            await mfaApi.unenroll({ factorId });
         } catch {
             // The factor ID is already stale and must not be retained in local state.
+        }
+    };
+
+    const withTotpFactorLock = async (operation, task) => {
+        if (typeof locks?.request !== 'function') return task();
+        try {
+            return await locks.request(`nexerp-mfa-totp:${operation.userId}`, async () => {
+                if (!isCurrentMfaOperation(operation)) return null;
+                return task();
+            });
+        } catch (cause) {
+            if (cause?.name === 'AuthError') throw cause;
+            return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
         }
     };
 
@@ -267,7 +292,7 @@ export function createAuthStore({ client, configured }) {
 
             const factors = verifiedTotpFactors(factorsResult);
             mfaFactors.value = factors;
-            mfaStatus.value = assuranceResult.data.currentLevel === 'aal2' ? 'ready' : factors.length ? 'challenge' : 'enroll';
+            mfaStatus.value = factors.length && assuranceResult.data.currentLevel === 'aal2' ? 'ready' : factors.length ? 'challenge' : 'enroll';
             error.value = null;
             return { status: mfaStatus.value, factors };
         } finally {
@@ -284,11 +309,12 @@ export function createAuthStore({ client, configured }) {
             }
 
             const operation = startMfaOperation();
+            const mfaApi = client.auth.mfa;
             beginOperation();
             try {
                 let existingFactors;
                 try {
-                    existingFactors = await client.auth.mfa.listFactors();
+                    existingFactors = await mfaApi.listFactors();
                 } catch {
                     return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
                 }
@@ -298,7 +324,7 @@ export function createAuthStore({ client, configured }) {
                 for (const factor of unverifiedTotpFactors(existingFactors)) {
                     let cleanup;
                     try {
-                        cleanup = await client.auth.mfa.unenroll({ factorId: factor.id });
+                        cleanup = await mfaApi.unenroll({ factorId: factor.id });
                     } catch {
                         return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
                     }
@@ -308,13 +334,13 @@ export function createAuthStore({ client, configured }) {
 
                 let result;
                 try {
-                    result = await client.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'NEXERP Authenticator', issuer: 'NEXERP' });
+                    result = await mfaApi.enroll({ factorType: 'totp', friendlyName: nextTotpFriendlyName(), issuer: 'NEXERP' });
                 } catch {
                     return failMfaOperation(operation, MFA_ENROLLMENT_MESSAGE, 'error');
                 }
                 const data = result?.data;
                 if (!isCurrentMfaOperation(operation)) {
-                    if (typeof data?.id === 'string' && data.id.trim()) await bestEffortUnenroll(data.id);
+                    if (typeof data?.id === 'string' && data.id.trim()) await bestEffortUnenroll(mfaApi, data.id);
                     return null;
                 }
                 if (result?.error || typeof data?.id !== 'string' || typeof data?.totp?.qr_code !== 'string' || typeof data.totp.secret !== 'string' || typeof data.totp.uri !== 'string') {
@@ -423,28 +449,31 @@ export function createAuthStore({ client, configured }) {
             const operation = startMfaOperation();
             beginOperation();
             try {
-                let authoritativeFactors;
-                try {
-                    authoritativeFactors = await client.auth.mfa.listFactors();
-                } catch {
-                    return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
-                }
-                if (!isCurrentMfaOperation(operation)) return null;
-                if (authoritativeFactors?.error || !authoritativeFactors?.data) return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+                await withTotpFactorLock(operation, async () => {
+                    let authoritativeFactors;
+                    try {
+                        authoritativeFactors = await client.auth.mfa.listFactors();
+                    } catch {
+                        return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+                    }
+                    if (!isCurrentMfaOperation(operation)) return null;
+                    if (authoritativeFactors?.error || !authoritativeFactors?.data) return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
 
-                const factors = verifiedTotpFactors(authoritativeFactors);
-                mfaFactors.value = factors;
-                if (!factors.some((factor) => factor.id === factorId)) return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE);
-                if (factors.length <= 1) return failMfaOperation(operation, MFA_LAST_FACTOR_MESSAGE);
+                    const factors = verifiedTotpFactors(authoritativeFactors);
+                    mfaFactors.value = factors;
+                    if (!factors.some((factor) => factor.id === factorId)) return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE);
+                    if (factors.length <= 1) return failMfaOperation(operation, MFA_LAST_FACTOR_MESSAGE);
 
-                let result;
-                try {
-                    result = await client.auth.mfa.unenroll({ factorId });
-                } catch {
-                    return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
-                }
+                    let result;
+                    try {
+                        result = await client.auth.mfa.unenroll({ factorId });
+                    } catch {
+                        return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+                    }
+                    if (!isCurrentMfaOperation(operation)) return null;
+                    if (result?.error) return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
+                });
                 if (!isCurrentMfaOperation(operation)) return null;
-                if (result?.error) return failMfaOperation(operation, MFA_UNENROLLMENT_MESSAGE, 'error');
 
                 let refreshed;
                 try {
