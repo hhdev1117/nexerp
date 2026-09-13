@@ -26,6 +26,11 @@ const containerClass = computed(() => {
 
 const getFocusableElements = () => Array.from(document.querySelector('.layout-sidebar')?.querySelectorAll(focusableSelector) || []).filter((element) => element.offsetParent !== null);
 
+const releasePageScrollLock = () => {
+    document.body.classList.remove('blocked-scroll');
+    document.removeEventListener('keydown', handleMobileMenuKeydown);
+};
+
 const handleMobileMenuKeydown = (event) => {
     if (!layoutState.mobileMenuActive) return;
 
@@ -59,7 +64,12 @@ const handleMobileMenuKeydown = (event) => {
 
 const handleViewportResize = () => {
     if (isDesktop() && layoutState.mobileMenuActive) hideMobileMenu();
+    if (isDesktop()) releasePageScrollLock();
     if (!isDesktop() && layoutState.overlayMenuActive) layoutState.overlayMenuActive = false;
+};
+
+const handlePageShow = () => {
+    if (!layoutState.mobileMenuActive) releasePageScrollLock();
 };
 
 const handleDesktopOverlayKeydown = (event) => {
@@ -80,8 +90,7 @@ watch(
             return;
         }
 
-        document.body.classList.remove('blocked-scroll');
-        document.removeEventListener('keydown', handleMobileMenuKeydown);
+        releasePageScrollLock();
         const focusTarget = previousFocusedElement?.isConnected ? previousFocusedElement : document.querySelector('.layout-menu-button');
         await nextTick();
         focusTarget?.focus();
@@ -114,6 +123,7 @@ watch([() => layoutState.overlayMenuActive, () => layoutConfig.menuMode], async 
 watch(
     () => route.fullPath,
     async () => {
+        releasePageScrollLock();
         await nextTick();
         const heading = document.querySelector('.layout-main h1');
         if (!heading) return;
@@ -124,13 +134,14 @@ watch(
 
 onMounted(() => {
     window.addEventListener('resize', handleViewportResize);
+    window.addEventListener('pageshow', handlePageShow);
 });
 
 onBeforeUnmount(() => {
-    document.body.classList.remove('blocked-scroll');
-    document.removeEventListener('keydown', handleMobileMenuKeydown);
+    releasePageScrollLock();
     document.removeEventListener('keydown', handleDesktopOverlayKeydown);
     window.removeEventListener('resize', handleViewportResize);
+    window.removeEventListener('pageshow', handlePageShow);
 });
 </script>
 

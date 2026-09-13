@@ -150,6 +150,26 @@ describe('ERP application shell', () => {
         expect(sidebarSource).toContain("layoutConfig.menuMode === 'overlay'");
     });
 
+    it('releases the mobile drawer scroll lock across navigation and browser lifecycle exits', () => {
+        const layoutSource = readLayoutSource('AppLayout.vue');
+
+        expect(layoutSource).toContain('const releasePageScrollLock = () =>');
+        expect(layoutSource).toContain("window.addEventListener('pageshow', handlePageShow)");
+        expect(layoutSource).toContain("window.removeEventListener('pageshow', handlePageShow)");
+        expect(layoutSource).toMatch(/handleViewportResize[\s\S]*releasePageScrollLock\(\)/);
+        expect(layoutSource).toMatch(/\(\) => route\.fullPath[\s\S]*releasePageScrollLock\(\)[\s\S]*document\.querySelector\('\.layout-main h1'\)/);
+        expect(layoutSource).toMatch(/onBeforeUnmount\(\(\) => \{[\s\S]*releasePageScrollLock\(\)/);
+        expect((layoutSource.match(/releasePageScrollLock\(\)/g) || []).length).toBeGreaterThanOrEqual(5);
+    });
+
+    it('gives the mobile drawer an owned dynamic-viewport touch scroll container', () => {
+        const menuSource = readSource('src', 'assets', 'layout', '_menu.scss');
+        const responsiveSource = readSource('src', 'assets', 'layout', '_responsive.scss');
+
+        expect(menuSource).toMatch(/\.layout-sidebar\s*\{[\s\S]*overflow-y:\s*auto;[\s\S]*overscroll-behavior:\s*contain;[\s\S]*touch-action:\s*pan-y;[\s\S]*-webkit-overflow-scrolling:\s*touch;[\s\S]*scrollbar-gutter:\s*stable;/);
+        expect(responsiveSource).toMatch(/@media \(max-width: 991px\)[\s\S]*\.layout-sidebar\s*\{[\s\S]*height:\s*100vh;[\s\S]*height:\s*100dvh;[\s\S]*max-height:\s*100vh;[\s\S]*max-height:\s*100dvh;/);
+    });
+
     it('keeps the ERP shell within narrow mobile viewports', () => {
         const source = readLayoutSource('AppLayout.vue');
 

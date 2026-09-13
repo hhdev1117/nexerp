@@ -6,6 +6,10 @@
     height: calc(100vh - 8rem);
     z-index: 999;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
     user-select: none;
     top: 6rem;
     left: 2rem;
