@@ -21,7 +21,7 @@ const mfaStatus = computed(() => authStore.mfaStatus.value);
 const isEnroll = computed(() => mfaStatus.value === 'enroll');
 const isChallenge = computed(() => mfaStatus.value === 'challenge');
 const hasMfaError = computed(() => mfaStatus.value === 'error');
-const isMfaReady = computed(() => authStore.mfaSatisfied?.value || mfaStatus.value === 'ready');
+const cleanupPending = computed(() => Boolean(enrollment.value?.cleanupPending));
 const validCode = computed(() => /^\d{6}$/.test(code.value));
 const qrSource = computed(() => {
     const qrCode = enrollment.value?.qrCode || '';
@@ -48,8 +48,8 @@ const showMessage = async (nextMessage) => {
     errorSummary.value?.focus();
 };
 
-const returnToDestination = async () => {
-    if (!isMfaReady.value) {
+const returnToDestination = async (result) => {
+    if (result?.status !== 'ready') {
         await showMessage('인증 상태를 확인하지 못했습니다. 다시 시도해 주세요.');
         return;
     }
@@ -60,9 +60,9 @@ const refresh = async () => {
     message.value = '';
     clearEntry();
     try {
-        await authStore.refreshMfaState();
-        if (isEnroll.value && !enrollment.value) await authStore.beginTotpEnrollment();
-        if (isMfaReady.value) await returnToDestination();
+        const result = await authStore.refreshMfaState();
+        if (result?.status === 'ready') await returnToDestination(result);
+        else if (result?.status === 'enroll' && !enrollment.value) await authStore.beginTotpEnrollment();
     } catch {
         await showMessage('다중 인증 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     }
@@ -77,14 +77,15 @@ const submit = async () => {
     }
 
     try {
-        if (isEnroll.value) await authStore.verifyTotpEnrollment(code.value);
-        else if (isChallenge.value && selectedFactorId.value) await authStore.verifyTotpChallenge(selectedFactorId.value, code.value);
+        let result = null;
+        if (isEnroll.value) result = await authStore.verifyTotpEnrollment(code.value);
+        else if (isChallenge.value && selectedFactorId.value) result = await authStore.verifyTotpChallenge(selectedFactorId.value, code.value);
         else {
             await showMessage('사용할 인증 앱을 선택한 후 다시 시도해 주세요.');
             return;
         }
         clearEntry();
-        await returnToDestination();
+        await returnToDestination(result);
     } catch {
         await showMessage('인증 코드를 확인하지 못했습니다. 다시 입력해 주세요.');
     }
@@ -93,13 +94,17 @@ const submit = async () => {
 const cancelEnrollment = async () => {
     message.value = '';
     try {
-        await authStore.cancelTotpEnrollment();
+        const result = await authStore.cancelTotpEnrollment();
         clearEntry();
-        await refresh();
+        if (result?.status === 'ready') await returnToDestination(result);
+        else if (result?.status === 'enroll') await refresh();
+        else await showMessage('인증 앱 등록 상태를 확인하지 못했습니다. 다시 시도해 주세요.');
     } catch {
         await showMessage('인증 앱 등록을 취소하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     }
 };
+
+const retryCleanup = cancelEnrollment;
 
 const signOut = async () => {
     message.value = '';
@@ -127,7 +132,8 @@ onMounted(refresh);
 
             <div class="auth-heading">
                 <h1 id="mfa-title">2단계 인증</h1>
-                <p v-if="isEnroll">Google Authenticator에 인증 앱을 등록해 주세요.</p>
+                <p v-if="cleanupPending">이전 인증 앱 등록을 정리한 후 다시 시도해 주세요.</p>
+                <p v-else-if="isEnroll">Google Authenticator에 인증 앱을 등록해 주세요.</p>
                 <p v-else-if="isChallenge">인증 앱의 6자리 코드를 입력해 주세요.</p>
                 <p v-else-if="hasMfaError">인증 상태를 다시 확인해 주세요.</p>
                 <p v-else>인증 상태를 확인하고 있습니다.</p>
@@ -138,7 +144,11 @@ onMounted(refresh);
                 <span>{{ message }}</span>
             </div>
 
-            <template v-if="hasMfaError">
+            <template v-if="cleanupPending">
+                <Button label="등록 정리 다시 시도" icon="pi pi-refresh" fluid :loading="busy" :disabled="busy" @click="retryCleanup" />
+            </template>
+
+            <template v-else-if="hasMfaError">
                 <Button label="다시 시도" icon="pi pi-refresh" fluid :loading="busy" :disabled="busy" @click="refresh" />
             </template>
 
@@ -181,8 +191,8 @@ onMounted(refresh);
             </template>
 
             <div class="mfa-actions">
-                <Button v-if="!hasMfaError" label="상태 새로고침" icon="pi pi-refresh" severity="secondary" text :disabled="busy" @click="refresh" />
-                <Button v-if="isEnroll && enrollment" label="등록 취소" icon="pi pi-times" severity="secondary" text :disabled="busy" @click="cancelEnrollment" />
+                <Button v-if="!cleanupPending && !hasMfaError" label="상태 새로고침" icon="pi pi-refresh" severity="secondary" text :disabled="busy" @click="refresh" />
+                <Button v-if="isEnroll && enrollment && !cleanupPending" label="등록 취소" icon="pi pi-times" severity="secondary" text :disabled="busy" @click="cancelEnrollment" />
                 <Button label="로그아웃" icon="pi pi-sign-out" severity="secondary" text :disabled="busy" @click="signOut" />
             </div>
         </section>
