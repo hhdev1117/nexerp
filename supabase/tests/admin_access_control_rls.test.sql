@@ -4,13 +4,13 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(24);
+select plan(26);
 
-insert into auth.users (id, email, raw_user_meta_data)
+insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
 values
-    ('20000000-0000-0000-0000-000000000001', 'member@example.test', '{}'::jsonb),
-    ('20000000-0000-0000-0000-000000000002', 'admin@example.test', '{}'::jsonb),
-    ('20000000-0000-0000-0000-000000000003', 'inactive@example.test', '{}'::jsonb);
+    ('20000000-0000-0000-0000-000000000001', 'member@gmail.com', '{}'::jsonb, '{"nexerp_provisioned":true}'::jsonb),
+    ('20000000-0000-0000-0000-000000000002', 'admin@gmail.com', '{}'::jsonb, '{"nexerp_provisioned":true}'::jsonb),
+    ('20000000-0000-0000-0000-000000000003', 'inactive@gmail.com', '{}'::jsonb, '{"nexerp_provisioned":true}'::jsonb);
 
 update public.profiles
 set role = 'admin'::public.app_role
@@ -30,13 +30,13 @@ select ok(
     'anonymous clients have no select grant on role menu permissions'
 );
 
+select set_config('request.jwt.claims', '{"sub":"20000000-0000-0000-0000-000000000001","aal":"aal1"}', true);
 select set_config('request.jwt.claim.sub', '20000000-0000-0000-0000-000000000001', true);
 set local role authenticated;
 
-select results_eq(
-    $$select role from public.role_menu_permissions order by role::text$$,
-    $$values ('user'::public.app_role)$$,
-    'an active user reads only their own role permissions'
+select is_empty(
+    $$select role from public.role_menu_permissions$$,
+    'an AAL1 user cannot read role permissions'
 );
 
 select is_empty(
@@ -80,6 +80,7 @@ select throws_ok(
 );
 
 reset role;
+select set_config('request.jwt.claims', '{"sub":"20000000-0000-0000-0000-000000000003","aal":"aal1"}', true);
 select set_config('request.jwt.claim.sub', '20000000-0000-0000-0000-000000000003', true);
 set local role authenticated;
 
@@ -89,13 +90,31 @@ select is_empty(
 );
 
 reset role;
+select set_config('request.jwt.claims', '{"sub":"20000000-0000-0000-0000-000000000002","aal":"aal1"}', true);
+select set_config('request.jwt.claim.sub', '20000000-0000-0000-0000-000000000002', true);
+set local role authenticated;
+
+select is_empty(
+    $$select role from public.role_menu_permissions$$,
+    'an AAL1 administrator cannot read role permissions'
+);
+
+select throws_ok(
+    $$select * from public.admin_update_profile_status('20000000-0000-0000-0000-000000000003'::uuid, true)$$,
+    '42501',
+    'admin_required',
+    'an AAL1 administrator cannot invoke administrator RPCs'
+);
+
+reset role;
+select set_config('request.jwt.claims', '{"sub":"20000000-0000-0000-0000-000000000002","aal":"aal2"}', true);
 select set_config('request.jwt.claim.sub', '20000000-0000-0000-0000-000000000002', true);
 set local role authenticated;
 
 select results_eq(
     $$select count(*) from public.role_menu_permissions$$,
     $$values (3::bigint)$$,
-    'an active administrator reads every role permissions row'
+    'an AAL2 administrator reads every role permissions row'
 );
 
 select throws_ok(

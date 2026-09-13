@@ -37,8 +37,8 @@
 Cover no factor to `enroll`, verified factor to `challenge`, AAL2 to `ready`,
 lookup failure to fail-closed `error`, enrollment data remaining in memory only,
 fresh challenge per verification attempt, session replacement after verify,
-unverified-factor cleanup, cancellation cleanup, and refusal to remove the last
-verified factor.
+current-identity unverified-factor cleanup, stale-identity response discard,
+cancellation cleanup, and refusal to remove the last verified factor.
 
 - [ ] **Step 2: Run focused tests and confirm RED**
 
@@ -51,7 +51,9 @@ Expected: FAIL because MFA state and methods do not exist.
 Use stable Korean validation/errors, six numeric digits, identity-version checks
 for asynchronous results, and `clearMfaState()` from every identity-clearing path.
 Consume the session returned by `verify`, then recompute factors/AAL. After
-unenroll, call `refreshSession()` before recomputing AAL.
+unenroll, call `refreshSession()` before recomputing AAL. Never try to clean an old
+identity's stale factor with the replacement identity's session; discard its
+enrollment material and rely on Supabase's short unverified-factor expiry.
 
 - [ ] **Step 4: Run focused tests**
 
@@ -123,9 +125,13 @@ git commit -m "feat: require Google Authenticator login"
 **Files:**
 - Modify: `worker/admin.js`
 - Modify: `worker/admin.test.js`
+- Modify: `worker/app.js`
+- Modify: `worker/app.test.js`
+- Modify: `worker/infrastructure.test.js`
 - Modify: `src/services/adminApi.js`
 - Modify: `src/services/adminApi.test.js`
 - Modify: `src/views/admin/AccountManagement.vue`
+- Modify: `src/views/admin/adminModels.js`
 - Modify: `src/views/admin/admin-views.test.js`
 
 **Interfaces:**
@@ -141,7 +147,7 @@ rejection, partial provider failure handling, and confirmation UI.
 
 - [ ] **Step 2: Run focused tests and confirm RED**
 
-Run: `npm test -- --run worker/admin.test.js src/services/adminApi.test.js src/views/admin/admin-views.test.js`
+Run: `npm test -- --run worker/admin.test.js worker/app.test.js worker/infrastructure.test.js src/services/adminApi.test.js src/views/admin/admin-views.test.js`
 
 Expected: FAIL for missing Gmail/AAL/reset behavior.
 
@@ -162,7 +168,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add worker/admin.js worker/admin.test.js src/services/adminApi.js src/services/adminApi.test.js src/views/admin/AccountManagement.vue src/views/admin/admin-views.test.js
+git add worker/admin.js worker/admin.test.js worker/app.js worker/app.test.js worker/infrastructure.test.js src/services/adminApi.js src/services/adminApi.test.js src/views/admin/AccountManagement.vue src/views/admin/adminModels.js src/views/admin/admin-views.test.js
 git commit -m "feat: enforce MFA and Gmail account provisioning"
 ```
 
@@ -183,7 +189,7 @@ git commit -m "feat: enforce MFA and Gmail account provisioning"
 
 Assert exact Gmail suffix validation, `nexerp_provisioned` app-metadata guard,
 empty search paths, ownership/grants, AAL2 dependency in `private.is_admin`, AAL2
-role-menu access, and explicit local TOTP enablement.
+role-menu access, explicit local TOTP enablement, and disabled public signup.
 
 - [ ] **Step 2: Run migration tests and confirm RED**
 
@@ -198,6 +204,8 @@ Replace `private.is_admin()` to require it, replace the role-menu read policies
 with AAL2 conditions, and replace `private.handle_new_user()` so only exact Gmail
 emails carrying a true `nexerp_provisioned` marker create profiles. Set local
 `auth.mfa.totp` enrollment and verification to true.
+Set local `auth.enable_signup` to false so only the administrator provisioning path
+creates accounts.
 
 - [ ] **Step 4: Run migration and full tests**
 
@@ -233,19 +241,21 @@ Run: `npx wrangler deploy --dry-run`
 
 Expected: tests and build PASS; Worker assets are recognized.
 
-- [ ] **Step 2: Apply the Supabase migration**
+- [ ] **Step 2: Deploy the MFA-capable application**
+
+Run: `npm run deploy`
+
+Expected: the MFA route and Gmail-aware Worker are live before database enforcement
+changes the authorization and provisioning contracts.
+
+- [ ] **Step 3: Apply the Supabase migration**
 
 Run the exact SQL from
 `supabase/migrations/20260913000300_enforce_totp_and_gmail_provisioning.sql` in the
 connected project, then query catalog definitions and privileges to verify the
-functions and policies.
-
-- [ ] **Step 3: Deploy Cloudflare**
-
-Run: `npm run deploy`
-
-Expected: a new `nexerp.merciful-chips.workers.dev` version receives 100% traffic
-and `/api/health` remains `200` with Supabase configured.
+functions and policies. In the hosted Auth settings, disable public/email signup
+and confirm TOTP enrollment and verification are enabled; local `config.toml`
+does not change these hosted controls.
 
 - [ ] **Step 4: Complete browser verification**
 
@@ -262,4 +272,3 @@ git ls-remote origin refs/heads/main
 ```
 
 Expected: remote `main` equals local `HEAD`.
-
