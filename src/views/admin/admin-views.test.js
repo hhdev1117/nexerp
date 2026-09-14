@@ -38,7 +38,7 @@ const securitySource = source('./SecuritySettings.vue');
 
 const existingAccount = {
     id: 'admin-1',
-    email: 'admin@nexerp.test',
+    loginId: 'admin01',
     displayName: '시스템 관리자',
     department: '시스템 관리',
     role: 'admin',
@@ -48,7 +48,7 @@ const existingAccount = {
 describe('administrator account screen', () => {
     it('validates every required create field before submitting', () => {
         expect(validateAccountDraft(createAccountDraft(), 'create')).toEqual({
-            email: 'Gmail 주소만 사용할 수 있습니다.',
+            loginId: '아이디는 영문 소문자와 숫자 4~20자로 입력해 주세요.',
             temporaryPassword: '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.',
             displayName: '이름을 입력해 주세요.',
             department: '부서를 입력해 주세요.'
@@ -57,7 +57,7 @@ describe('administrator account screen', () => {
         expect(
             validateAccountDraft(
                 {
-                    email: ' employee@gmail.com ',
+                    loginId: 'employee01',
                     temporaryPassword: 'Temporary-9!',
                     displayName: ' 김서준 ',
                     department: ' 영업팀 ',
@@ -80,7 +80,7 @@ describe('administrator account screen', () => {
     it('normalizes a create payload without retaining form-only state', () => {
         expect(
             accountCreatePayload({
-                email: ' Employee@GMAIL.com ',
+                loginId: 'employee01',
                 temporaryPassword: 'Temporary-9!',
                 displayName: ' 김서준 ',
                 department: ' 영업팀 ',
@@ -89,7 +89,7 @@ describe('administrator account screen', () => {
                 submitted: true
             })
         ).toEqual({
-            email: 'employee@gmail.com',
+            loginId: 'employee01',
             temporaryPassword: 'Temporary-9!',
             displayName: '김서준',
             department: '영업팀',
@@ -97,11 +97,18 @@ describe('administrator account screen', () => {
         });
     });
 
-    it('accepts only normalized Gmail addresses for account provisioning', () => {
-        expect(validateAccountDraft({ email: ' Employee@GMAIL.com ', temporaryPassword: 'Temporary-9!', displayName: '김서준', department: '영업팀' }, 'create')).toEqual({});
-        for (const email of ['employee@gmail.com.evil', 'employee@sub.gmail.com', '@gmail.com', 'employee@nexerp.test']) {
-            expect(validateAccountDraft({ email, temporaryPassword: 'Temporary-9!', displayName: '김서준', department: '영업팀' }, 'create')).toEqual({ email: 'Gmail 주소만 사용할 수 있습니다.' });
+    it('accepts only exact lowercase login IDs for account provisioning', () => {
+        expect(validateAccountDraft({ loginId: 'admin01', temporaryPassword: 'Temporary-9!', displayName: '김서준', department: '영업팀' }, 'create')).toEqual({});
+        for (const loginId of ['Admin01', 'abc', 'admin_01', 'admin 01']) {
+            expect(validateAccountDraft({ loginId, temporaryPassword: 'Temporary-9!', displayName: '김서준', department: '영업팀' }, 'create')).toEqual({ loginId: '아이디는 영문 소문자와 숫자 4~20자로 입력해 주세요.' });
         }
+    });
+
+    it('uses login IDs in account search, list display, and duplicate errors without exposing internal emails', () => {
+        expect(accountsSource).toContain('[account.loginId, account.displayName, account.department]');
+        expect(accountsSource).toContain('{{ slotProps.data.loginId }}');
+        expect(accountsSource).toContain('이미 사용 중인 아이디입니다.');
+        expect(accountsSource).not.toContain('@nexerp.internal');
     });
 
     it('validates reset passwords by total length, non-whitespace content, and confirmation', () => {

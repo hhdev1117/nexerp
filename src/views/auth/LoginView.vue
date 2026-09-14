@@ -3,13 +3,14 @@ import { nextTick, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { safeLocalRedirect } from '@/router/authGuard';
+import { isValidLoginId } from '@/lib/auth/loginIdentity';
 
 const authStore = useAuthStore();
 const route = useRoute();
 const router = useRouter();
-const email = ref('');
+const loginId = ref('');
 const password = ref('');
-const fieldErrors = ref({ email: '', password: '' });
+const fieldErrors = ref({ loginId: '', password: '' });
 const submitError = ref('');
 const submitting = ref(false);
 const errorSummary = ref(null);
@@ -17,9 +18,9 @@ const AUTH_FAILURE_MESSAGE = '로그인하지 못했습니다. 잠시 후 다시
 const NAVIGATION_FAILURE_MESSAGE = '화면을 이동하지 못했습니다. 다시 시도해 주세요.';
 
 const validate = () => {
-    const errors = { email: '', password: '' };
-    if (!email.value.trim()) errors.email = '이메일을 입력해 주세요.';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) errors.email = '올바른 이메일 주소를 입력해 주세요.';
+    const errors = { loginId: '', password: '' };
+    if (!loginId.value) errors.loginId = '아이디를 입력해 주세요.';
+    else if (!isValidLoginId(loginId.value)) errors.loginId = '아이디는 영문 소문자와 숫자 4~20자로 입력해 주세요.';
     if (!password.value) errors.password = '비밀번호를 입력해 주세요.';
     fieldErrors.value = errors;
     return errors;
@@ -38,15 +39,15 @@ const focusErrorSummary = async () => {
 const submit = async () => {
     submitError.value = '';
     const errors = validate();
-    if (errors.email || errors.password) {
-        await focus(errors.email ? 'email' : 'password');
+    if (errors.loginId || errors.password) {
+        await focus(errors.loginId ? 'login-id' : 'password');
         return;
     }
 
     submitting.value = true;
     try {
         try {
-            await authStore.signIn(email.value.trim(), password.value);
+            await authStore.signIn(loginId.value, password.value);
         } catch {
             submitError.value = authStore.error.value || AUTH_FAILURE_MESSAGE;
             await focusErrorSummary();
@@ -88,9 +89,9 @@ const submit = async () => {
                 </div>
 
                 <div class="auth-field">
-                    <label for="email">이메일</label>
-                    <InputText id="email" v-model="email" type="email" autocomplete="email" fluid :invalid="Boolean(fieldErrors.email)" :aria-invalid="Boolean(fieldErrors.email)" aria-describedby="email-error" />
-                    <small id="email-error">{{ fieldErrors.email }}</small>
+                    <label for="login-id">아이디</label>
+                    <InputText id="login-id" v-model="loginId" type="text" inputmode="text" autocomplete="username" fluid :invalid="Boolean(fieldErrors.loginId)" :aria-invalid="Boolean(fieldErrors.loginId)" aria-describedby="login-id-error" />
+                    <small id="login-id-error">{{ fieldErrors.loginId }}</small>
                 </div>
 
                 <div class="auth-field">
