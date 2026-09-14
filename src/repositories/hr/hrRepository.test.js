@@ -69,3 +69,61 @@ describe('HR repository', () => {
         expect(rpc).toHaveBeenLastCalledWith('hr_cancel_personnel_action', { target_company: company, target_employee: id, target_action: id, expected_revision: 4, change_reason: 'cancel' });
     });
 });
+
+describe('reference and correction RPC contracts', () => {
+    const reference = () => ({ id, companyId: company, kind: 'department', code: 'ENG', name: 'Engineering', parentCode: null, isActive: true, revision: 1 });
+    it('loads company scoped catalog and validates every row and permission', async () => {
+        const data = { items: [reference()], canManage: false };
+        const rpc = vi.fn().mockResolvedValue({ data });
+        const repo = createHrRepository({ rpc });
+        expect(await repo.loadReferences(company)).toEqual(data);
+        expect(rpc).toHaveBeenCalledWith('hr_reference_catalog', { target_company: company });
+        for (const patch of [{ companyId: id }, { kind: 'other' }, { code: '' }, { name: ' ' }, { parentCode: 3 }, { isActive: 'true' }, { revision: 0 }, { kind: 'grade', parentCode: 'ENG' }]) {
+            rpc.mockResolvedValue({ data: { ...data, items: [{ ...reference(), ...patch }] } });
+            await expect(repo.loadReferences(company)).rejects.toThrow();
+        }
+        rpc.mockResolvedValue({ data: { items: [], canManage: 'true' } });
+        await expect(repo.loadReferences(company)).rejects.toThrow();
+    });
+    it('sends exact save and correction arguments and validates acknowledgements', async () => {
+        const rpc = vi.fn().mockResolvedValue({ data: id });
+        const repo = createHrRepository({ rpc });
+        const doc = reference();
+        await repo.saveReference(company, doc, 2, 'rename');
+        expect(rpc).toHaveBeenLastCalledWith('hr_save_reference', { target_company: company, reference_document: doc, expected_revision: 2, change_reason: 'rename' });
+        rpc.mockResolvedValue({ data: null });
+        const correction = { name: 'Kim', hireDate: '2026-01-01' };
+        await repo.correctEmployee(company, id, 3, correction, 'fix');
+        expect(rpc).toHaveBeenLastCalledWith('hr_correct_employee', { target_company: company, target_employee: id, expected_revision: 3, correction_document: correction, change_reason: 'fix' });
+        rpc.mockResolvedValue({ data: {} });
+        await expect(repo.correctEmployee(company, id, 3, correction, 'fix')).rejects.toThrow();
+        await expect(repo.saveReference(company, doc, 2, 'rename')).rejects.toThrow();
+    });
+    it('validates correction history dates and sanitizes failures', async () => {
+        const row = { id, before: { name: 'Kim', hireDate: '2026-01-01' }, after: { name: 'Lee', hireDate: '2026-02-01' }, reason: 'fix', createdAt: '2026-09-14T00:00:00Z' };
+        const rpc = vi.fn().mockResolvedValue({ data: [row] });
+        const repo = createHrRepository({ rpc });
+        expect(await repo.loadCorrections(company, id)).toEqual([row]);
+        expect(rpc).toHaveBeenLastCalledWith('hr_employee_corrections', { target_company: company, target_employee: id });
+        rpc.mockResolvedValue({ data: [{ ...row, after: { name: 'Lee', hireDate: '2026-02-30' } }] });
+        await expect(repo.loadCorrections(company, id)).rejects.toThrow();
+        rpc.mockRejectedValue(new Error('private SQL'));
+        await expect(repo.loadCorrections(company, id)).rejects.not.toThrow('private SQL');
+    });
+});
+
+it.each(['reference_in_use', 'invalid_parent', 'immutable_reference', 'invalid_correction_date'])('only maps trusted database error %s', async (message) => {
+    const repo = createHrRepository({ rpc: async () => ({ error: { code: '22023', message } }) });
+    await expect(repo.loadReferences(company)).rejects.toMatchObject({ code: message });
+    const unsafe = createHrRepository({ rpc: async () => ({ error: { code: 'other', message } }) });
+    await expect(unsafe.loadReferences(company)).rejects.toMatchObject({ code: 'hr_request_failed' });
+});
+
+it('preserves nonempty legacy whitespace codes and department parent codes', async () => {
+    const items = [
+        { id, companyId: company, kind: 'department', code: ' ', name: '기존 공백 코드', parentCode: null, isActive: true, revision: 1 },
+        { id, companyId: company, kind: 'department', code: 'child', name: 'Child', parentCode: ' ', isActive: true, revision: 1 }
+    ];
+    const repo = createHrRepository({ rpc: async () => ({ data: { items, canManage: true } }) });
+    expect((await repo.loadReferences(company)).items).toEqual(items);
+});

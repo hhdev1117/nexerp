@@ -3,6 +3,39 @@ import { computed, ref, watch, onBeforeUnmount } from 'vue';
 import { useHrStore } from '@/stores/hr';
 import { useAuthStore } from '@/stores/auth';
 import { useEnterpriseRuntimeStore } from '@/stores/enterpriseRuntime';
+import { useHrReferenceStore } from '@/stores/hrReference';
+import { createHrRepository } from '@/repositories/hr/hrRepository';
+import ReferenceCatalog from './ReferenceCatalog.vue';
+const references = useHrReferenceStore();
+const repository = createHrRepository();
+const kinds = { department: '부서', grade: '직급', position: '직책' };
+const referenceName = (kind, code) => {
+    const item = references.catalog.value.find((x) => x.kind === kind && x.code === code);
+    return item ? `${item.name} (${code})` : code || '—';
+};
+const options = (kind) => references.catalog.value.filter((x) => x.kind === kind && x.isActive);
+const inactive = (kind) => draft.value[kind] && !options(kind).some((x) => x.code === draft.value[kind]);
+const correctionTime = (value) => new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+const corrections = ref([]);
+const correctionsLoading = ref(false);
+const correctionsError = ref('');
+let historyVersion = 0;
+async function loadCorrections() {
+    const version = ++historyVersion;
+    corrections.value = [];
+    correctionsError.value = '';
+    correctionsLoading.value = false;
+    if (!selectedId.value || !company.value || !auth.user.value?.id) return;
+    correctionsLoading.value = true;
+    try {
+        const rows = await repository.loadCorrections(company.value, selectedId.value);
+        if (version === historyVersion) corrections.value = rows;
+    } catch {
+        if (version === historyVersion) correctionsError.value = '정정 이력을 불러오지 못했습니다.';
+    } finally {
+        if (version === historyVersion) correctionsLoading.value = false;
+    }
+}
 const hr = useHrStore();
 const auth = useAuthStore();
 const runtime = useEnterpriseRuntimeStore();
@@ -30,6 +63,11 @@ function close() {
     validation.value = '';
     cancelTarget.value = null;
 }
+function correct() {
+    close();
+    draft.value = { name: selected.value.name, hireDate: selected.value.hireDate };
+    dialog.value = 'correct';
+}
 function load(page = 1) {
     if (company.value) return hr.load(company.value, search.value.trim(), page);
 }
@@ -37,14 +75,28 @@ watch(
     () => [auth.user.value?.id, company.value],
     ([identity, id]) => {
         hr.reset();
+        references.reset();
         close();
         selectedId.value = null;
         search.value = '';
-        if (identity && id) hr.load(id, '', 1);
+        if (identity && id) {
+            hr.load(id, '', 1);
+            references.load(id);
+        }
     },
     { immediate: true, flush: 'sync' }
 );
+watch(
+    () => [selectedId.value, company.value, auth.user.value?.id],
+    () => {
+        close();
+        loadCorrections();
+    },
+    { flush: 'sync' }
+);
 onBeforeUnmount(() => {
+    ++historyVersion;
+    references.reset();
     hr.reset();
     close();
 });
@@ -74,6 +126,15 @@ async function save() {
         validation.value = '접근 권한에 미치는 영향을 확인해 주세요.';
         return;
     }
+    if (dialog.value === 'correct' && draft.value.hireDate !== selected.value?.hireDate && !confirmed.value) {
+        validation.value = '입사일 변경 영향을 확인해 주세요.';
+        return;
+    }
+    if ((dialog.value === 'register' || (dialog.value === 'action' && draft.value.type === 'transfer')) && (references.loading.value || references.error.value || Object.keys(kinds).some(inactive))) {
+        validation.value = '사용 중인 기준정보를 선택해 주세요.';
+        return;
+    }
+    const employeeId = selectedId.value;
     const identity = auth.user.value?.id;
     const companyId = company.value;
     let success = false;
@@ -82,13 +143,18 @@ async function save() {
     } else if (directory.value?.permissions.update && selected.value) {
         const employee = selected.value;
         success =
-            dialog.value === 'cancel'
-                ? await hr.cancelAction(employee.id, cancelTarget.value.id, employee.revision, reason.value.trim())
-                : await hr.recordAction(employee.id, employee.revision, { ...draft.value, siteId: draft.value.siteId || null, reason: reason.value.trim() });
+            dialog.value === 'correct'
+                ? await hr.correctEmployee(employee.id, employee.revision, { name: draft.value.name.trim(), hireDate: draft.value.hireDate }, reason.value.trim())
+                : dialog.value === 'cancel'
+                  ? await hr.cancelAction(employee.id, cancelTarget.value.id, employee.revision, reason.value.trim())
+                  : await hr.recordAction(employee.id, employee.revision, { ...draft.value, siteId: draft.value.siteId || null, reason: reason.value.trim() });
     }
     if (success && identity === auth.user.value?.id && companyId === company.value) {
-        close();
-        await runtime.refresh(identity, companyId);
+        if (employeeId === selectedId.value) {
+            close();
+            void loadCorrections();
+        }
+        if (identity === auth.user.value?.id && companyId === company.value) await runtime.refresh(identity, companyId);
     }
 }
 </script>
@@ -129,8 +195,8 @@ async function save() {
                                     ><br />{{ employee.name }}
                                 </td>
                                 <td>{{ statusLabel(employee.status) }}</td>
-                                <td>{{ siteName(employee.siteId) }}<br />{{ employee.department || '—' }}</td>
-                                <td>{{ employee.grade || '—' }} / {{ employee.position || '—' }}</td>
+                                <td>{{ siteName(employee.siteId) }}<br />{{ referenceName('department', employee.department) }}</td>
+                                <td>{{ referenceName('grade', employee.grade) }} / {{ referenceName('position', employee.position) }}</td>
                                 <td><Button data-testid="employee-detail" label="상세 보기" :aria-label="`${employee.name} 상세 보기`" severity="secondary" @click="selectedId = employee.id" /></td>
                             </tr>
                         </tbody>
@@ -150,9 +216,24 @@ async function save() {
         <div v-if="selected" class="card" aria-label="선택한 직원 상세">
             <div class="hr-heading">
                 <h2 class="text-xl font-semibold">{{ selected.name }} · {{ selected.employeeNo }}</h2>
+                <Button v-if="directory.permissions.update" data-testid="correct-employee" label="기본정보 정정" severity="secondary" :disabled="saving" @click="correct" />
                 <Button v-if="directory.permissions.update && selected.status !== 'terminated'" data-testid="action" label="인사 발령 기록" :disabled="saving || latest?.type === 'terminate'" @click="action" />
             </div>
             <p class="my-4">입사일 {{ selected.hireDate }} · 로그인 계정 {{ selected.profileId ? '연결됨' : '연결 없음' }}</p>
+            <h3 class="font-semibold">기본정보 정정 이력</h3>
+            <p v-if="correctionsLoading" role="status">정정 이력을 불러오는 중입니다.</p>
+            <p v-else-if="correctionsError" role="alert">{{ correctionsError }}</p>
+            <p v-else-if="!corrections.length" class="text-muted-color my-3">기본정보 정정 이력이 없습니다.</p>
+            <ol class="hr-history">
+                <li v-for="item in corrections" :key="item.id">
+                    <div>
+                        <strong>{{ correctionTime(item.createdAt) }}</strong>
+                        <p>이름 {{ item.before.name }} → {{ item.after.name }}</p>
+                        <p>입사일 {{ item.before.hireDate }} → {{ item.after.hireDate }}</p>
+                        <p>{{ item.reason }}</p>
+                    </div>
+                </li>
+            </ol>
             <h3 class="font-semibold">발령 이력</h3>
             <p v-if="!actions.length" class="text-muted-color mt-3">등록 이후 발령 이력이 없습니다.</p>
             <ol class="hr-history">
@@ -160,17 +241,18 @@ async function save() {
                     <div>
                         <strong>{{ item.effectiveDate }} · {{ item.type === 'terminate' ? '퇴사' : '주 소속 변경' }}</strong
                         ><span v-if="item.cancelled"> · 취소됨</span><span v-else> · {{ item.effectiveDate > today() ? '예정' : '적용됨' }}</span>
-                        <p v-if="item.type === 'transfer'">{{ siteName(item.siteId) }} / {{ item.department || '—' }} / {{ item.grade || '—' }} / {{ item.position || '—' }}</p>
+                        <p v-if="item.type === 'transfer'">{{ siteName(item.siteId) }} / {{ referenceName('department', item.department) }} / {{ referenceName('grade', item.grade) }} / {{ referenceName('position', item.position) }}</p>
                         <p>{{ item.reason }}</p>
                     </div>
                     <Button v-if="directory.permissions.update && !item.cancelled && latest?.id === item.id && item.effectiveDate > today()" label="발령 취소" severity="secondary" :disabled="saving" @click="cancel(item)" />
                 </li>
             </ol>
         </div>
+        <ReferenceCatalog v-if="company" :key="`${auth.user.value?.id}:${company}`" />
         <Dialog
             :visible="Boolean(dialog)"
             modal
-            :header="dialog === 'register' ? '직원 등록' : dialog === 'cancel' ? '예정 발령 취소' : '인사 발령 기록'"
+            :header="dialog === 'correct' ? '기본정보 정정' : dialog === 'register' ? '직원 등록' : dialog === 'cancel' ? '예정 발령 취소' : '인사 발령 기록'"
             :style="{ width: '40rem', maxWidth: '95vw' }"
             :closable="!saving"
             @update:visible="
@@ -180,6 +262,15 @@ async function save() {
             "
         >
             <form data-testid="save-action" class="hr-form" @submit.prevent="save">
+                <template v-if="dialog === 'correct'">
+                    <p class="hr-note">정정 전: {{ selected?.name }} · 입사일 {{ selected?.hireDate }}</p>
+                    <label for="correction-name">정정 후 이름<input id="correction-name" v-model="draft.name" required maxlength="100" /></label>
+                    <label for="correction-date">정정 후 입사일<input id="correction-date" v-model="draft.hireDate" type="date" required /></label>
+                    <p class="hr-note">입사일 변경은 재직 상태와 연결 계정의 접근 시작일에 영향을 줍니다. 모든 발령일(취소 포함)보다 늦은 입사일은 저장할 수 없습니다.</p>
+                    <label v-if="draft.hireDate !== selected?.hireDate" for="correction-confirm" class="hr-confirm"
+                        ><input id="correction-confirm" v-model="confirmed" type="checkbox" />입사일 변경에 따른 재직 상태와 접근 권한 영향을 확인했습니다.</label
+                    >
+                </template>
                 <template v-if="dialog === 'register'">
                     <label for="employee-no">사번 (등록 후 변경 불가)<input id="employee-no" v-model="draft.employeeNo" required maxlength="100" /></label>
                     <label for="employee-name">이름<input id="employee-name" v-model="draft.name" required maxlength="100" /></label>
@@ -207,10 +298,15 @@ async function save() {
                             <option value="">미지정</option>
                             <option v-for="site in directory?.sites || []" :key="site.id" :value="site.id">{{ site.name }}</option>
                         </select></label
-                    ><label for="employee-department">부서 코드<input id="employee-department" v-model.trim="draft.department" maxlength="150" /></label
-                    ><label for="employee-grade">직급 코드<input id="employee-grade" v-model.trim="draft.grade" maxlength="150" /></label
-                    ><label for="employee-position">직책 코드<input id="employee-position" v-model.trim="draft.position" maxlength="150" /></label
-                ></template>
+                    ><label v-for="(label, kind) in kinds" :key="kind" :for="`employee-${kind}`"
+                        >{{ label
+                        }}<select :id="`employee-${kind}`" v-model="draft[kind]" :disabled="references.loading.value">
+                            <option value="">미지정</option>
+                            <option v-if="inactive(kind)" :value="draft[kind]" disabled>{{ referenceName(kind, draft[kind]) }} · 사용 중지 또는 미조회</option>
+                            <option v-for="item in options(kind)" :key="item.id" :value="item.code">{{ item.name }} ({{ item.code }})</option>
+                        </select></label
+                    ></template
+                >
                 <p v-if="dialog === 'action'" class="hr-note">승인 절차 없이 직접 기록됩니다. 주 소속만 관리하며, 직급·직책 변경은 연결 계정의 유효 레벨과 메뉴에 영향을 줍니다. 직접 지정한 레벨과 개별 예외는 유지됩니다.</p>
                 <p v-if="dialog === 'cancel'" class="hr-note">{{ cancelTarget?.effectiveDate }} 예정 발령을 취소합니다. 이전 재직 상태와 주 소속이 계속 적용되며 예정된 접근 권한 변경도 취소됩니다.</p>
                 <label for="action-reason">변경 사유 (필수)<textarea id="action-reason" v-model="reason" required rows="3" maxlength="2000" /></label>
@@ -267,10 +363,12 @@ async function save() {
     background: var(--surface-card);
     min-height: 44px;
 }
+.hr-page > .card { min-width: 0; }
 .hr-table {
     overflow-x: auto;
 }
 table {
+    min-width: 600px;
     width: 100%;
     border-collapse: collapse;
     text-align: left;

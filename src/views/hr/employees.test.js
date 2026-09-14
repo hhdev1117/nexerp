@@ -4,11 +4,15 @@ import { ref } from 'vue';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Employees from './Employees.vue';
 const mocks = vi.hoisted(() => ({}));
+vi.mock('@/stores/hrReference', () => ({ useHrReferenceStore: () => mocks.references }));
+vi.mock('@/repositories/hr/hrRepository', () => ({ createHrRepository: () => ({ loadCorrections: (...args) => mocks.corrections(...args) }) }));
 vi.mock('@/stores/hr', () => ({ useHrStore: () => mocks.hr }));
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => mocks.auth }));
 vi.mock('@/stores/enterpriseRuntime', () => ({ useEnterpriseRuntimeStore: () => mocks.runtime }));
 const employee = { id: 'employee', employeeNo: 'E1', name: '홍길동', status: 'active', revision: 3, actions: [] };
 beforeEach(() => {
+    mocks.references = { catalog: ref([]), canManage: ref(false), loading: ref(false), saving: ref(false), error: ref(null), reset: vi.fn(), load: vi.fn() };
+    mocks.corrections = vi.fn().mockResolvedValue([]);
     mocks.auth = { user: ref({ id: 'user' }) };
     mocks.runtime = { context: ref({ companyId: 'company', mode: 'active' }), refresh: vi.fn().mockResolvedValue(true) };
     mocks.hr = {
@@ -20,6 +24,7 @@ beforeEach(() => {
         load: vi.fn(),
         recordAction: vi.fn().mockResolvedValue(true),
         createEmployee: vi.fn().mockResolvedValue(true),
+        correctEmployee: vi.fn().mockResolvedValue(true),
         cancelAction: vi.fn().mockResolvedValue(true)
     };
 });
@@ -130,4 +135,99 @@ it('does not refresh another identity after an in-flight mutation', async () => 
     resolve(true);
     await flushPromises();
     expect(mocks.runtime.refresh).not.toHaveBeenCalled();
+});
+
+it('corrects basic information with date impact confirmation and reason', async () => {
+    mocks.hr.directory.value.employees = [{ ...employee, hireDate: '2026-01-01' }];
+    const w = setup();
+    await w.get('[data-testid="employee-detail"]').trigger('click');
+    await w.get('[data-testid="correct-employee"]').trigger('click');
+    await w.get('#correction-name').setValue('김직원');
+    await w.get('#correction-date').setValue('2026-01-02');
+    await w.get('#action-reason').setValue('입력 오류 정정');
+    await w.get('[data-testid="save-action"]').trigger('submit');
+    expect(mocks.hr.correctEmployee).not.toHaveBeenCalled();
+    await w.get('#correction-confirm').setValue(true);
+    await w.get('[data-testid="save-action"]').trigger('submit');
+    await flushPromises();
+    expect(mocks.hr.correctEmployee).toHaveBeenCalledWith('employee', 3, { name: '김직원', hireDate: '2026-01-02' }, '입력 오류 정정');
+});
+it('rejects stale correction history after employee changes', async () => {
+    let done;
+    mocks.corrections
+        .mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    done = resolve;
+                })
+        )
+        .mockResolvedValue([]);
+    mocks.hr.directory.value.employees = [employee, { ...employee, id: 'second', name: '둘째' }];
+    const w = setup();
+    await w.findAll('[data-testid="employee-detail"]')[0].trigger('click');
+    await w.findAll('[data-testid="employee-detail"]')[1].trigger('click');
+    done([{ id: 'old', before: { name: '옛이름' }, after: { name: '새이름' }, reason: 'stale secret', createdAt: '2026-01-01' }]);
+    await flushPromises();
+    expect(w.text()).not.toContain('stale secret');
+});
+it('shows names and codes, blocks inactive transfers but permits termination', async () => {
+    mocks.references.catalog.value = [
+        { id: 'd', kind: 'department', code: 'OLD', name: '옛 부서', isActive: false },
+        { id: 'new', kind: 'department', code: 'NEW', name: '새 부서', isActive: true }
+    ];
+    mocks.hr.directory.value.employees = [{ ...employee, department: 'OLD' }];
+    const w = setup();
+    await w.get('[data-testid="employee-detail"]').trigger('click');
+    await w.get('[data-testid="action"]').trigger('click');
+    expect(w.get('#employee-department').element.tagName).toBe('SELECT');
+    expect(w.get('#employee-department').text()).toContain('옛 부서 (OLD)');
+    expect(w.get('#employee-department').text()).toContain('새 부서 (NEW)');
+    await w.get('#action-reason').setValue('배정');
+    await w.get('[data-testid="save-action"]').trigger('submit');
+    expect(mocks.hr.recordAction).not.toHaveBeenCalled();
+    await w.get('#action-type').setValue('terminate');
+    await w.get('#impact-confirm').setValue(true);
+    await w.get('[data-testid="save-action"]').trigger('submit');
+    await flushPromises();
+    expect(mocks.hr.recordAction).toHaveBeenCalled();
+});
+it('clears pending correction history on identity switch', async () => {
+    let done;
+    mocks.corrections.mockImplementation(
+        () =>
+            new Promise((resolve) => {
+                done = resolve;
+            })
+    );
+    const w = setup();
+    await w.get('[data-testid="employee-detail"]').trigger('click');
+    mocks.auth.user.value = { id: 'other' };
+    done([{ id: 'private', before: { name: 'old' }, after: { name: 'new' }, reason: 'private reason', createdAt: 'now' }]);
+    await flushPromises();
+    expect(w.text()).not.toContain('private reason');
+    expect(mocks.references.reset).toHaveBeenCalledTimes(2);
+});
+it('refreshes access after correction while audit history is still pending', async () => {
+    let resolveHistory;
+    mocks.corrections.mockResolvedValueOnce([]).mockImplementationOnce(
+        () =>
+            new Promise((resolve) => {
+                resolveHistory = resolve;
+            })
+    );
+    mocks.hr.directory.value.employees = [{ ...employee, hireDate: '2026-01-01' }];
+    const w = setup();
+    await w.get('[data-testid="employee-detail"]').trigger('click');
+    await flushPromises();
+    await w.get('[data-testid="correct-employee"]').trigger('click');
+    await w.get('#correction-date').setValue('2026-01-02');
+    await w.get('#action-reason').setValue('입사일 정정');
+    await w.get('#correction-confirm').setValue(true);
+    await w.get('[data-testid="save-action"]').trigger('submit');
+    await flushPromises();
+    expect(mocks.hr.correctEmployee).toHaveBeenCalled();
+    expect(resolveHistory).toBeTypeOf('function');
+    expect(mocks.runtime.refresh).toHaveBeenCalledWith('user', 'company');
+    resolveHistory([]);
+    await flushPromises();
 });

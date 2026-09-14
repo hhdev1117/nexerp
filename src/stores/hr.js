@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import { createHrRepository } from '@/repositories/hr/hrRepository';
+import { createHrRepository, hrErrorMessage } from '@/repositories/hr/hrRepository';
 
 export function createHrStore({ repository = createHrRepository() } = {}) {
     const directory = ref(null);
@@ -57,7 +57,7 @@ export function createHrStore({ repository = createHrRepository() } = {}) {
             await load(company, search, page);
             return generation === identity;
         } catch (cause) {
-            if (generation === identity) error.value = cause?.code === 'revision_conflict' ? '다른 작업에서 인사 정보가 변경되었습니다. 최신 정보를 불러와 주세요.' : '인사 정보를 저장하지 못했습니다. 권한과 입력 내용을 확인해 주세요.';
+            if (generation === identity) error.value = hrErrorMessage(cause?.code);
             return false;
         } finally {
             if (generation === identity) saving.value = false;
@@ -71,6 +71,7 @@ export function createHrStore({ repository = createHrRepository() } = {}) {
         error,
         load,
         reset,
+        correctEmployee: (employeeId, revision, document, reason) => mutate('correctEmployee', 'update', [employeeId, revision, document, reason]),
         createEmployee: (document, reason) => mutate('createEmployee', 'create', [document, reason]),
         recordAction: (employeeId, revision, document) => mutate('recordAction', 'update', [employeeId, revision, document]),
         cancelAction: (employeeId, actionId, revision, reason) => mutate('cancelAction', 'update', [employeeId, actionId, revision, reason])

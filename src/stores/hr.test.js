@@ -76,3 +76,14 @@ describe('HR store', () => {
         expect(store.saving.value).toBe(false);
     });
 });
+
+it('acknowledges corrections even when refresh fails, preserving safe empty state', async () => {
+    const repository = { loadDirectory: vi.fn().mockResolvedValueOnce(directory('A')).mockRejectedValueOnce(new Error('private')), correctEmployee: vi.fn().mockResolvedValue(null) };
+    const store = createHrStore({ repository });
+    expect(await store.correctEmployee('employee', 2, {}, 'fix')).toBe(false);
+    await store.load('A');
+    expect(await store.correctEmployee('employee', 2, { name: 'Lee', hireDate: '2026-01-01' }, 'fix')).toBe(true);
+    expect(repository.correctEmployee).toHaveBeenCalledWith('A', 'employee', 2, { name: 'Lee', hireDate: '2026-01-01' }, 'fix');
+    expect(store.directory.value).toBeNull();
+    expect(store.error.value).not.toContain('private');
+});
