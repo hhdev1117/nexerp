@@ -602,6 +602,16 @@ onMounted(loadAccounts);
 }
 
 @media (max-width: 640px) {
+    :deep(.p-inputtext),
+    :deep(.p-select),
+    :deep(.p-button) {
+        min-height: 2.75rem;
+    }
+
+    :deep(.p-button) {
+        min-width: 2.75rem;
+    }
+
     .form-grid {
         grid-template-columns: minmax(0, 1fr);
     }

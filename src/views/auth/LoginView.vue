@@ -202,6 +202,15 @@ form {
 }
 
 @media (max-width: 575px) {
+    :deep(.p-inputtext),
+    :deep(.p-button) {
+        min-height: 2.75rem;
+    }
+
+    :deep(.p-button) {
+        min-width: 2.75rem;
+    }
+
     .auth-shell {
         align-items: stretch;
         padding: 0;
