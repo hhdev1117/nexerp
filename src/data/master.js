@@ -71,6 +71,7 @@ export function validateCompanyDraft(draft) {
 }
 
 export function validatePartnerDraft(draft) {
+    const hasBusinessNumber = Boolean(normalizeText(draft?.businessNumber));
     const businessNumber = normalizeBusinessNumber(draft?.businessNumber);
     const email = normalizeText(draft?.email);
     const errors = {
@@ -78,7 +79,7 @@ export function validatePartnerDraft(draft) {
         code: !MASTER_CODE_PATTERN.test(normalizeCode(draft?.code)),
         name: !normalizeText(draft?.name),
         roles: draft?.isCustomer !== true && draft?.isVendor !== true,
-        businessNumber: Boolean(businessNumber && !BUSINESS_NUMBER_PATTERN.test(businessNumber)),
+        businessNumber: hasBusinessNumber && !BUSINESS_NUMBER_PATTERN.test(businessNumber ?? ''),
         email: Boolean(email && !EMAIL_PATTERN.test(email))
     };
 

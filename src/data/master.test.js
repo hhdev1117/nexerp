@@ -76,6 +76,13 @@ describe('partner master rules', () => {
             isValid: true
         });
     });
+
+    it('rejects a supplied business number that normalizes to no digits', () => {
+        const result = validatePartnerDraft({ companyId: 'company-1', code: 'PARTNER-1', name: '넥서스', isCustomer: true, isVendor: false, businessNumber: 'abc', email: '' });
+
+        expect(result.errors.businessNumber).toBe(true);
+        expect(result.isValid).toBe(false);
+    });
 });
 
 describe('site master rules', () => {
