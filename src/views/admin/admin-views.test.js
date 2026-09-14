@@ -269,7 +269,7 @@ describe('administrator infrastructure usage screen', () => {
         expect(infrastructureSource).toContain("partial: { label: '일부 확인', severity: 'warn' }");
         expect(infrastructureSource).toContain("unconfigured: { label: '설정 필요', severity: 'secondary' }");
         expect(infrastructureSource).toContain("unavailable: { label: '연결 실패', severity: 'danger' }");
-        expect(infrastructureSource).toContain("return value === null || value === undefined ? '확인 불가'");
+        expect(infrastructureSource).not.toContain("'확인 불가'");
         expect(infrastructureSource).toContain('조회된 호출 내역이 없습니다.');
         expect(infrastructureSource).toContain('인프라 사용량 다시 불러오기');
         expect(infrastructureSource).toContain('generatedAt');
@@ -279,7 +279,7 @@ describe('administrator infrastructure usage screen', () => {
         expect(infrastructureSource).toContain('샘플링 기반 운영 지표');
         expect(infrastructureSource).toContain('시간별 운영 이력');
         expect(infrastructureSource).toContain('수집 한도에 도달해 상세 이력을 표시할 수 없습니다.');
-        expect(infrastructureSource).toContain('제공 안 됨');
+        expect(infrastructureSource).not.toContain('응답 바이트');
     });
 
     it('uses full-width provider sections and responsive metric grids without nested cards', () => {

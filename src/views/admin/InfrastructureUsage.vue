@@ -36,14 +36,14 @@ const supabase = computed(() => usage.value?.providers?.supabase || null);
 const cloudflare = computed(() => usage.value?.providers?.cloudflare || null);
 
 const providerMeta = (provider) => stateMeta[provider?.state] || stateMeta.unavailable;
+const hasValue = (value) => value !== null && value !== undefined;
 const formatMetric = (value, suffix = '') => {
-    return value === null || value === undefined ? '확인 불가' : `${Number(value).toLocaleString('ko-KR')}${suffix}`;
+    return `${Number(value).toLocaleString('ko-KR')}${suffix}`;
 };
 const formatDurationUs = (value) => {
-    return value === null || value === undefined ? '확인 불가' : `${(value / 1000).toLocaleString('ko-KR', { maximumFractionDigits: 3 })} ms`;
+    return `${(value / 1000).toLocaleString('ko-KR', { maximumFractionDigits: 3 })} ms`;
 };
 const formatBytes = (value) => {
-    if (value === null || value === undefined) return '확인 불가';
     if (value < 1024) return `${value.toLocaleString('ko-KR')} B`;
     const units = ['KB', 'MB', 'GB', 'TB'];
     let amount = value;
@@ -56,9 +56,26 @@ const formatBytes = (value) => {
 };
 const formatTime = (value) => {
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? '확인 불가' : new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'Asia/Seoul' }).format(date);
+    return Number.isNaN(date.getTime()) ? '시각 정보 없음' : new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'Asia/Seoul' }).format(date);
 };
 const issueText = (issue) => issueLabels[issue] || issueLabels.metric_unavailable;
+const visibleIssues = (provider) => (provider?.issues || []).filter((issue) => issue !== 'metric_unavailable' || provider.issues.length === 1);
+const statusLabels = Object.freeze({
+    ACTIVE_HEALTHY: '정상',
+    ACTIVE_UNHEALTHY: '장애',
+    COMING_UP: '시작 중',
+    GOING_DOWN: '종료 중',
+    INACTIVE: '중지',
+    HEALTHY: '정상',
+    UNHEALTHY: '장애',
+    UNKNOWN: '상태 미확인',
+    success: '성공',
+    clientDisconnected: '클라이언트 연결 종료',
+    scriptThrewException: '스크립트 예외',
+    exceededResources: '리소스 초과',
+    internalError: '내부 오류'
+});
+const statusLabel = (status) => statusLabels[status] || status;
 
 async function loadUsage() {
     const requestId = ++requestSequence;
@@ -133,61 +150,62 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                     <Tag :value="providerMeta(supabase).label" :severity="providerMeta(supabase).severity" />
                 </div>
 
-                <div v-if="supabase?.issues?.length" class="issue-strip" role="status">
-                    <span v-for="issue in supabase.issues" :key="issue"><i class="pi pi-info-circle" aria-hidden="true"></i>{{ issueText(issue) }}</span>
+                <div v-if="visibleIssues(supabase).length" class="issue-strip" role="status">
+                    <span v-for="issue in visibleIssues(supabase)" :key="issue"><i class="pi pi-info-circle" aria-hidden="true"></i>{{ issueText(issue) }}</span>
                 </div>
 
                 <div class="metric-grid">
-                    <div class="metric-tile database-metric">
+                    <div v-if="hasValue(supabase?.database?.sizeBytes) && hasValue(supabase?.database?.limitBytes)" class="metric-tile database-metric">
                         <span>데이터베이스 크기 / 무료 한도</span><strong>{{ formatBytes(supabase?.database?.sizeBytes) }} / {{ formatBytes(supabase?.database?.limitBytes) }}</strong>
                     </div>
-                    <div class="metric-tile">
+                    <div v-if="hasValue(supabase?.database?.usagePercent)" class="metric-tile">
                         <span>사용률</span><strong>{{ formatMetric(supabase?.database?.usagePercent, '%') }}</strong>
                     </div>
-                    <div class="metric-tile">
+                    <div v-if="hasValue(supabase?.usage?.totalRequests)" class="metric-tile">
                         <span>전체 API 요청</span><strong>{{ formatMetric(supabase?.usage?.totalRequests) }}</strong>
                     </div>
-                    <div class="metric-tile">
+                    <div v-if="hasValue(supabase?.usage?.authRequests)" class="metric-tile">
                         <span>Auth 요청</span><strong>{{ formatMetric(supabase?.usage?.authRequests) }}</strong>
                     </div>
-                    <div class="metric-tile">
+                    <div v-if="hasValue(supabase?.usage?.restRequests)" class="metric-tile">
                         <span>REST 요청</span><strong>{{ formatMetric(supabase?.usage?.restRequests) }}</strong>
                     </div>
-                    <div class="metric-tile">
+                    <div v-if="hasValue(supabase?.usage?.realtimeRequests)" class="metric-tile">
                         <span>Realtime 요청</span><strong>{{ formatMetric(supabase?.usage?.realtimeRequests) }}</strong>
                     </div>
-                    <div class="metric-tile">
+                    <div v-if="hasValue(supabase?.usage?.storageRequests)" class="metric-tile">
                         <span>Storage 요청</span><strong>{{ formatMetric(supabase?.usage?.storageRequests) }}</strong>
                     </div>
                 </div>
+                <p v-if="!supabase?.project && !supabase?.disk && !supabase?.services?.length && !supabase?.usage && !hasValue(supabase?.database?.sizeBytes)" class="provider-empty">연결 정보가 준비되면 사용량과 운영 상태가 여기에 표시됩니다.</p>
 
-                <div class="details-grid">
-                    <div class="detail-block">
+                <div v-if="supabase?.project || supabase?.disk || supabase?.services?.length" class="details-grid">
+                    <div v-if="supabase?.project || supabase?.disk" class="detail-block">
                         <h3>프로젝트</h3>
                         <dl>
-                            <div>
+                            <div v-if="supabase?.project?.status">
                                 <dt>상태</dt>
-                                <dd>{{ supabase?.project?.status || '확인 불가' }}</dd>
+                                <dd>{{ statusLabel(supabase.project.status) }}</dd>
                             </div>
-                            <div>
+                            <div v-if="supabase?.project?.region">
                                 <dt>리전</dt>
-                                <dd>{{ supabase?.project?.region || '확인 불가' }}</dd>
+                                <dd>{{ supabase.project.region }}</dd>
                             </div>
-                            <div>
+                            <div v-if="hasValue(supabase?.disk?.provisionedSizeGb)">
                                 <dt>할당 디스크</dt>
                                 <dd>{{ formatMetric(supabase?.disk?.provisionedSizeGb, ' GB') }}</dd>
                             </div>
-                            <div>
+                            <div v-if="hasValue(supabase?.disk?.usedBytes)">
                                 <dt>전체 디스크(데이터베이스+WAL+시스템)</dt>
                                 <dd>{{ formatBytes(supabase?.disk?.usedBytes) }}</dd>
                             </div>
-                            <div>
+                            <div v-if="hasValue(supabase?.disk?.availableBytes)">
                                 <dt>가용 공간</dt>
                                 <dd>{{ formatBytes(supabase?.disk?.availableBytes) }}</dd>
                             </div>
                         </dl>
                     </div>
-                    <div class="detail-block service-block">
+                    <div v-if="supabase?.services?.length" class="detail-block service-block">
                         <h3>서비스 상태</h3>
                         <div v-if="supabase?.services?.length" class="table-scroll">
                             <table>
@@ -205,7 +223,6 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                                 </tbody>
                             </table>
                         </div>
-                        <p v-else class="empty-row">확인 가능한 서비스 상태가 없습니다.</p>
                     </div>
                 </div>
             </section>
@@ -219,38 +236,36 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                     <Tag :value="providerMeta(cloudflare).label" :severity="providerMeta(cloudflare).severity" />
                 </div>
 
-                <div v-if="cloudflare?.issues?.length" class="issue-strip" role="status">
-                    <span v-for="issue in cloudflare.issues" :key="issue"><i class="pi pi-info-circle" aria-hidden="true"></i>{{ issueText(issue) }}</span>
+                <div v-if="visibleIssues(cloudflare).length" class="issue-strip" role="status">
+                    <span v-for="issue in visibleIssues(cloudflare)" :key="issue"><i class="pi pi-info-circle" aria-hidden="true"></i>{{ issueText(issue) }}</span>
                 </div>
 
-                <div class="metric-grid">
-                    <div class="metric-tile">
+                <div v-if="hasValue(cloudflare?.requests) || hasValue(cloudflare?.cpuTimeUs?.p50)" class="metric-grid">
+                    <div v-if="hasValue(cloudflare?.requests)" class="metric-tile">
                         <span>요청</span><strong>{{ formatMetric(cloudflare?.requests) }}</strong>
                     </div>
-                    <div class="metric-tile">
+                    <div v-if="hasValue(cloudflare?.errors)" class="metric-tile">
                         <span>오류</span><strong>{{ formatMetric(cloudflare?.errors) }}</strong>
                     </div>
-                    <div class="metric-tile">
+                    <div v-if="hasValue(cloudflare?.errorRate)" class="metric-tile">
                         <span>오류율</span><strong>{{ formatMetric(cloudflare?.errorRate, '%') }}</strong>
                     </div>
-                    <div class="metric-tile">
+                    <div v-if="hasValue(cloudflare?.subrequests)" class="metric-tile">
                         <span>서브요청</span><strong>{{ formatMetric(cloudflare?.subrequests) }}</strong>
                     </div>
-                    <div class="metric-tile">
+                    <div v-if="hasValue(cloudflare?.cpuTimeUs?.p50)" class="metric-tile">
                         <span>CPU P50</span><strong>{{ formatDurationUs(cloudflare?.cpuTimeUs?.p50) }}</strong>
                     </div>
-                    <div class="metric-tile">
+                    <div v-if="hasValue(cloudflare?.cpuTimeUs?.p99)" class="metric-tile">
                         <span>CPU P99</span><strong>{{ formatDurationUs(cloudflare?.cpuTimeUs?.p99) }}</strong>
                     </div>
-                    <div class="metric-tile">
-                        <span>응답 바이트</span><strong>{{ cloudflare?.responseBytes === null ? '제공 안 됨' : formatBytes(cloudflare?.responseBytes) }}</strong>
-                    </div>
                 </div>
+                <p v-else class="provider-empty">Cloudflare API 토큰을 연결하면 요청량과 실행 상태가 여기에 표시됩니다.</p>
 
-                <p class="analytics-note">Cloudflare Analytics는 샘플링 기반 운영 지표이며 청구 사용량과 다를 수 있습니다.</p>
+                <p v-if="hasValue(cloudflare?.requests)" class="analytics-note">Cloudflare Analytics는 샘플링 기반 운영 지표이며 청구 사용량과 다를 수 있습니다.</p>
                 <p v-if="cloudflare?.seriesComplete === false" class="detail-limit" role="status">수집 한도에 도달해 상세 이력을 표시할 수 없습니다.</p>
 
-                <div class="details-grid cloudflare-details" :class="{ 'detail-only': cloudflare?.seriesComplete === false }">
+                <div v-if="cloudflare?.byStatus?.length || cloudflare?.settings" class="details-grid cloudflare-details" :class="{ 'detail-only': cloudflare?.seriesComplete === false }">
                     <div v-if="cloudflare?.seriesComplete !== false" class="detail-block">
                         <h3>상태별 호출</h3>
                         <div v-if="cloudflare?.byStatus?.length" class="table-scroll">
@@ -265,7 +280,7 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                                 </thead>
                                 <tbody>
                                     <tr v-for="row in cloudflare.byStatus" :key="row.status">
-                                        <td>{{ row.status }}</td>
+                                        <td>{{ statusLabel(row.status) }}</td>
                                         <td>{{ formatMetric(row.requests) }}</td>
                                         <td>{{ formatMetric(row.errors) }}</td>
                                         <td>{{ formatMetric(row.subrequests) }}</td>
@@ -275,18 +290,18 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                         </div>
                         <p v-else class="empty-row compact-empty">확인 가능한 상태별 호출이 없습니다.</p>
                     </div>
-                    <div class="detail-block">
+                    <div v-if="cloudflare?.settings" class="detail-block">
                         <h3>실행 설정</h3>
                         <dl>
-                            <div>
+                            <div v-if="cloudflare?.settings?.usageModel">
                                 <dt>사용 모델</dt>
-                                <dd>{{ cloudflare?.settings?.usageModel || '확인 불가' }}</dd>
+                                <dd>{{ cloudflare.settings.usageModel }}</dd>
                             </div>
-                            <div>
+                            <div v-if="hasValue(cloudflare?.settings?.cpuMs)">
                                 <dt>CPU 제한</dt>
                                 <dd>{{ formatMetric(cloudflare?.settings?.cpuMs, ' ms') }}</dd>
                             </div>
-                            <div>
+                            <div v-if="hasValue(cloudflare?.settings?.subrequests)">
                                 <dt>서브요청 제한</dt>
                                 <dd>{{ formatMetric(cloudflare?.settings?.subrequests) }}</dd>
                             </div>
@@ -294,7 +309,7 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                     </div>
                 </div>
 
-                <div v-if="cloudflare?.seriesComplete !== false" class="detail-block invocation-block">
+                <div v-if="cloudflare?.seriesComplete !== null && cloudflare?.seriesComplete !== false" class="detail-block invocation-block">
                     <h3>시간별 운영 이력</h3>
                     <div v-if="cloudflare?.series?.length" class="table-scroll">
                         <table>
@@ -310,7 +325,7 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
                             <tbody>
                                 <tr v-for="row in cloudflare.series" :key="`${row.datetime}-${row.status}`">
                                     <td>{{ formatTime(row.datetime) }}</td>
-                                    <td>{{ row.status }}</td>
+                                    <td>{{ statusLabel(row.status) }}</td>
                                     <td>{{ formatMetric(row.requests) }}</td>
                                     <td>{{ formatMetric(row.errors) }}</td>
                                     <td>{{ formatMetric(row.subrequests) }}</td>
@@ -339,6 +354,10 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
 
 .usage-page {
     width: 100%;
+    display: grid;
+    gap: 1rem;
+    padding: 1.5rem;
+    background: var(--surface-ground);
 }
 
 .page-header {
@@ -346,13 +365,12 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
     align-items: flex-end;
     justify-content: space-between;
     gap: 1.5rem;
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--surface-border);
+    padding: 0.25rem 0 0.5rem;
 }
 
 .page-header h1 {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: clamp(1.5rem, 2vw, 1.875rem);
     font-weight: 700;
 }
 
@@ -390,7 +408,7 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
     align-items: center;
     justify-content: flex-end;
     gap: 0.5rem;
-    padding: 0.8rem 1.5rem 0;
+    padding: 0;
     color: var(--text-color-secondary);
     font-size: 0.875rem;
 }
@@ -399,12 +417,9 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
     width: 100%;
     padding: 1.5rem;
     background: var(--surface-card);
-    border-top: 1px solid var(--surface-border);
-    border-bottom: 1px solid var(--surface-border);
-}
-
-.provider-section:last-child {
-    border-bottom: 0;
+    border: 1px solid var(--surface-border);
+    border-radius: 12px;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--text-color) 6%, transparent);
 }
 
 .section-heading {
@@ -433,7 +448,10 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
     flex-wrap: wrap;
     gap: 0.6rem 1.25rem;
     margin-bottom: 1rem;
-    padding: 0.75rem 0;
+    padding: 0.75rem 0.875rem;
+    background: color-mix(in srgb, var(--yellow-500) 8%, var(--surface-card));
+    border: 1px solid color-mix(in srgb, var(--yellow-500) 24%, var(--surface-border));
+    border-radius: 8px;
     color: var(--text-color-secondary);
     font-size: 0.875rem;
 }
@@ -459,7 +477,7 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
     padding: 1rem;
     background: var(--surface-ground);
     border: 1px solid var(--surface-border);
-    border-radius: 6px;
+    border-radius: 10px;
 }
 
 .metric-tile span {
@@ -470,6 +488,8 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
 .metric-tile strong {
     font-size: 1.35rem;
     font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
 }
 
 .database-metric {
@@ -521,6 +541,16 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
     font-size: 0.8rem;
 }
 
+.provider-empty {
+    margin: 0;
+    padding: 1.25rem;
+    background: var(--surface-ground);
+    border: 1px dashed var(--surface-border);
+    border-radius: 10px;
+    color: var(--text-color-secondary);
+    text-align: center;
+}
+
 .detail-limit {
     margin: 1rem 0 0;
     padding: 0.8rem 0;
@@ -544,6 +574,8 @@ onBeforeUnmount(() => clearTimeout(refreshTimer));
 .table-scroll {
     max-width: 100%;
     overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-gutter: stable;
 }
 
 table {
@@ -582,6 +614,11 @@ td {
 }
 
 @media (max-width: 760px) {
+    .usage-page {
+        gap: 0.75rem;
+        padding: 1rem;
+    }
+
     .page-header {
         align-items: stretch;
         flex-direction: column;
@@ -591,18 +628,61 @@ td {
         justify-content: space-between;
     }
 
+    .page-actions :deep(.p-selectbutton) {
+        flex: 1;
+    }
+
+    .page-actions :deep(.p-togglebutton) {
+        min-height: 44px;
+        flex: 1;
+    }
+
+    .page-actions :deep(.p-button) {
+        width: 44px;
+        height: 44px;
+        flex: 0 0 44px;
+    }
+
     .details-grid {
         grid-template-columns: minmax(0, 1fr);
     }
 
     .provider-section,
     .page-header {
-        padding: 1.1rem;
+        padding: 1rem;
     }
 
     .generated-time {
         justify-content: flex-start;
-        padding-inline: 1.1rem;
+    }
+
+    .metric-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .detail-block dl div {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .detail-block dd {
+        text-align: left;
+    }
+
+    th,
+    td {
+        padding: 0.75rem 0.625rem;
+    }
+}
+
+@media (max-width: 390px) {
+    .usage-page {
+        padding-inline: 0.75rem;
+    }
+
+    .provider-section {
+        border-radius: 10px;
     }
 }
 </style>

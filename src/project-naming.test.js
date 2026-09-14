@@ -40,12 +40,14 @@ describe('NEXERP project naming', () => {
         expect(freshMachineGuide).toContain('cd nexerp');
     });
 
-    it('preserves dashboard configuration and requires every Supabase Worker binding', () => {
+    it('preserves dashboard configuration and requires every infrastructure Worker binding', () => {
         const workerConfig = JSON.parse(readProjectFile('wrangler.jsonc'));
 
         expect(workerConfig.keep_vars).toBe(true);
-        expect(workerConfig.secrets?.required).toEqual(expect.arrayContaining(['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_MANAGEMENT_TOKEN']));
-        expect(workerConfig.secrets.required).toHaveLength(4);
+        expect(workerConfig.secrets?.required).toEqual(
+            expect.arrayContaining(['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_MANAGEMENT_TOKEN', 'CLOUDFLARE_API_TOKEN'])
+        );
+        expect(workerConfig.secrets.required).toHaveLength(5);
     });
 
     it.each(independentlyBrandedFiles)('uses the NEXERP brand in %s', (path) => {

@@ -62,7 +62,7 @@ describe('InfrastructureUsage', () => {
         expect(diskDetail?.text()).toContain('768 MB');
     });
 
-    it('keeps database metrics unavailable when RPC fails even if disk usage is available', async () => {
+    it('omits database metrics when RPC fails instead of rendering unavailable placeholders', async () => {
         getInfrastructureUsage.mockResolvedValue(
             usage(
                 provider('partial', {
@@ -75,12 +75,12 @@ describe('InfrastructureUsage', () => {
         const wrapper = mountView();
         await flushPromises();
         const metrics = wrapper.findAll('[aria-labelledby="supabase-heading"] .metric-tile');
-        expect(metrics[0].text()).toContain('확인 불가 / 500 MB');
-        expect(metrics[1].text()).toContain('확인 불가');
-        expect(metrics[0].text()).not.toContain('768 MB');
+        expect(metrics.every((metric) => !metric.text().includes('데이터베이스 크기'))).toBe(true);
+        expect(metrics.every((metric) => !metric.text().includes('사용률'))).toBe(true);
+        expect(wrapper.text()).not.toContain('확인 불가');
     });
 
-    it('renders partial and unconfigured providers with null metrics as unavailable', async () => {
+    it('renders provider guidance without null metric placeholders', async () => {
         getInfrastructureUsage.mockResolvedValue(
             usage(
                 provider('partial', { issues: ['metric_unavailable'], project: null, services: [], usage: null, disk: null }),
@@ -92,8 +92,8 @@ describe('InfrastructureUsage', () => {
 
         expect(wrapper.text()).toContain('일부 확인');
         expect(wrapper.text()).toContain('설정 필요');
-        expect(wrapper.text()).toContain('확인 불가');
-        expect(wrapper.text()).toContain('조회된 호출 내역이 없습니다.');
+        expect(wrapper.text()).not.toContain('확인 불가');
+        expect(wrapper.text()).toContain('Cloudflare API 토큰을 연결하면');
         expect(wrapper.text()).not.toContain('metric_unavailable');
         expect(getInfrastructureUsage).toHaveBeenCalledWith('24h');
     });
@@ -142,10 +142,10 @@ describe('InfrastructureUsage', () => {
         expect(wrapper.text()).toContain('2.5%');
         expect(wrapper.text()).toContain('CPU P50');
         expect(wrapper.text()).toContain('1.25 ms');
-        expect(wrapper.text()).toContain('응답 바이트');
-        expect(wrapper.text()).toContain('제공 안 됨');
+        expect(wrapper.text()).not.toContain('응답 바이트');
+        expect(wrapper.text()).not.toContain('제공 안 됨');
         expect(wrapper.text()).toContain('상태별 호출');
-        expect(wrapper.text()).toContain('exceededResources');
+        expect(wrapper.text()).toContain('리소스 초과');
         expect(wrapper.text()).toContain('시간별 운영 이력');
         expect(wrapper.text()).toContain('standard');
         expect(wrapper.text()).toContain('샘플링 기반 운영 지표');

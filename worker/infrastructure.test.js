@@ -274,14 +274,13 @@ describe('administrator infrastructure usage API', () => {
                     disk: { sizeBytes: 1000, availableBytes: 400, usedBytes: 600, provisionedSizeGb: 8, iops: 3000, throughputMibps: 125, type: 'gp3' }
                 },
                 cloudflare: {
-                    state: 'partial',
-                    issues: ['metric_unavailable'],
+                    state: 'ok',
+                    issues: [],
                     requests: 160,
                     errors: 30,
                     errorRate: 18.75,
                     subrequests: 70,
                     cpuTimeUs: { p50: 2500, p99: 12750 },
-                    responseBytes: null,
                     seriesComplete: true,
                     byStatus: [
                         { status: 'success', requests: 14, errors: 1, subrequests: 6 },
@@ -411,7 +410,6 @@ describe('administrator infrastructure usage API', () => {
             errorRate: null,
             subrequests: null,
             cpuTimeUs: { p50: null, p99: null },
-            responseBytes: null,
             seriesComplete: null,
             byStatus: null,
             settings: null,
@@ -480,8 +478,8 @@ describe('administrator infrastructure usage API', () => {
         const { app } = createApp({ fetchImpl });
         const valid = await (await app.fetch(request(), baseEnv)).json();
 
-        expect(valid.providers.cloudflare.state).toBe('partial');
-        expect(valid.providers.cloudflare.issues).toEqual(['metric_unavailable']);
+        expect(valid.providers.cloudflare.state).toBe('ok');
+        expect(valid.providers.cloudflare.issues).toEqual([]);
         expect(valid.providers.cloudflare.byStatus.map(({ status }) => status)).toEqual(statuses);
         expect(valid.providers.cloudflare.series.map(({ status }) => status)).toEqual(statuses);
 
@@ -539,7 +537,7 @@ describe('administrator infrastructure usage API', () => {
         expect(body.providers.cloudflare.byStatus).toBeNull();
         expect(body.providers.cloudflare.series).toEqual([]);
         expect(body.providers.cloudflare.cpuTimeUs).toEqual({ p50: 2500, p99: 12750 });
-        expect(body.providers.cloudflare.responseBytes).toBeNull();
+        expect(body.providers.cloudflare).not.toHaveProperty('responseBytes');
     });
 
     it('keeps analytics available when allowlisted script settings are malformed', async () => {
@@ -637,7 +635,6 @@ describe('administrator infrastructure usage API', () => {
             errorRate: null,
             subrequests: null,
             cpuTimeUs: { p50: null, p99: null },
-            responseBytes: null,
             seriesComplete: null,
             byStatus: null,
             settings: { usageModel: 'standard', cpuMs: 50, subrequests: 1000 },

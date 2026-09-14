@@ -304,16 +304,15 @@ function normalizeCloudflareAnalytics(value) {
     const series = [...hourly.values()].sort((left, right) => left.datetime.localeCompare(right.datetime) || statusOrder.get(left.status) - statusOrder.get(right.status));
     const byStatus = [...statuses.values()].sort((left, right) => statusOrder.get(left.status) - statusOrder.get(right.status));
     const seriesComplete = seriesRows.length < CLOUDFLARE_SERIES_LIMIT;
-    const issues = ['metric_unavailable'];
+    const issues = seriesRows.length >= CLOUDFLARE_SERIES_LIMIT ? ['metric_unavailable'] : [];
     return {
         state: issues.length ? 'partial' : 'ok',
         issues,
         requests: totalValues[0],
         errors: totalValues[1],
-        errorRate: totalValues[0] === 0 ? null : (totalValues[1] / totalValues[0]) * 100,
+        errorRate: totalValues[0] === 0 ? 0 : (totalValues[1] / totalValues[0]) * 100,
         subrequests: totalValues[2],
         cpuTimeUs: { p50: cpuValues[0], p99: cpuValues[1] },
-        responseBytes: null,
         seriesComplete,
         byStatus: seriesComplete ? byStatus : null,
         series: seriesComplete ? series : []
@@ -339,7 +338,6 @@ const emptyCloudflare = () => ({
     errorRate: null,
     subrequests: null,
     cpuTimeUs: { p50: null, p99: null },
-    responseBytes: null,
     seriesComplete: null,
     byStatus: null,
     settings: null,
@@ -397,7 +395,6 @@ async function collectCloudflare(env, window, fetchImpl, timeoutMs) {
               errorRate: analytics.errorRate,
               subrequests: analytics.subrequests,
               cpuTimeUs: analytics.cpuTimeUs,
-              responseBytes: analytics.responseBytes,
               seriesComplete: analytics.seriesComplete,
               byStatus: analytics.byStatus,
               series: analytics.series
