@@ -1,5 +1,6 @@
 <script setup>
-import { formatWon, statusSeverity } from '@/data/erp';
+import { formatWon } from '@/data/erp';
+import { ORDER_STATUS, statusLabel, statusSeverity } from '@/data/status';
 import { useLayout } from '@/layout/composables/layout';
 import { onMounted, ref, watch } from 'vue';
 
@@ -26,11 +27,11 @@ const summaryCards = [
 ];
 
 const financeRows = [
-    { account: '외상매출금', partner: '세림유통', reference: 'AR-260911-032', dueDate: '2026-09-18', amount: 8420000, status: '승인 완료' },
-    { account: '외상매입금', partner: '대한소재', reference: 'AP-260911-021', dueDate: '2026-09-15', amount: 18400000, status: '승인 대기' },
-    { account: '미수금', partner: '한빛테크', reference: 'AR-260910-087', dueDate: '2026-09-12', amount: 3180000, status: '납기 지연' },
-    { account: '운반비', partner: '부산로지스', reference: 'JV-260910-114', dueDate: '2026-09-20', amount: 2650000, status: '검토 중' },
-    { account: '제품매출', partner: '미래상사', reference: 'AR-260909-076', dueDate: '2026-09-22', amount: 12700000, status: '승인 완료' }
+    { account: '외상매출금', partner: '세림유통', reference: 'AR-260911-032', dueDate: '2026-09-18', amount: 8420000, status: ORDER_STATUS.APPROVED },
+    { account: '외상매입금', partner: '대한소재', reference: 'AP-260911-021', dueDate: '2026-09-15', amount: 18400000, status: ORDER_STATUS.PENDING_APPROVAL },
+    { account: '미수금', partner: '한빛테크', reference: 'AR-260910-087', dueDate: '2026-09-12', amount: 3180000, status: ORDER_STATUS.OVERDUE },
+    { account: '운반비', partner: '부산로지스', reference: 'JV-260910-114', dueDate: '2026-09-20', amount: 2650000, status: ORDER_STATUS.IN_REVIEW },
+    { account: '제품매출', partner: '미래상사', reference: 'AR-260909-076', dueDate: '2026-09-22', amount: 12700000, status: ORDER_STATUS.APPROVED }
 ];
 
 function configureChart() {
@@ -149,7 +150,7 @@ onMounted(configureChart);
                             >
                         </Column>
                         <Column field="status" header="상태">
-                            <template #body="slotProps"><Tag :value="slotProps.data.status" :severity="statusSeverity(slotProps.data.status)" /></template>
+                            <template #body="slotProps"><Tag :value="statusLabel(slotProps.data.status)" :severity="statusSeverity(slotProps.data.status)" /></template>
                         </Column>
                     </DataTable>
                 </div>

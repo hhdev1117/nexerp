@@ -1,5 +1,6 @@
 <script setup>
-import { formatWon, statusSeverity, validateOrderDraft } from '@/data/erp';
+import { formatWon, validateOrderDraft } from '@/data/erp';
+import { ORDER_STATUS, statusLabel, statusOptions, statusSeverity } from '@/data/status';
 import { useErpStore } from '@/stores/erp';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
@@ -7,13 +8,14 @@ import { computed, nextTick, ref } from 'vue';
 
 const confirm = useConfirm();
 const toast = useToast();
-const { orders, addOrder, deleteOrder } = useErpStore();
+const { orders, loading, error, addOrder, deleteOrder } = useErpStore();
 const keyword = ref('');
 const selectedStatus = ref(null);
 const orderDialog = ref(false);
 const submitted = ref(false);
+const saving = ref(false);
 
-const statusOptions = ['승인 대기', '검토 중', '승인 완료', '출고 대기', '납기 지연', '보류'];
+const orderStatusOptions = statusOptions('order');
 const ownerOptions = ['김서준', '박지민', '이현우', '최유진'];
 
 const emptyOrder = () => ({
@@ -22,7 +24,7 @@ const emptyOrder = () => ({
     orderDate: '2026-09-11',
     dueDate: '2026-09-18',
     amount: null,
-    status: statusOptions[0]
+    status: ORDER_STATUS.PENDING_APPROVAL
 });
 
 const draft = ref(emptyOrder());
@@ -33,7 +35,7 @@ const filteredOrders = computed(() => {
 
     return orders.value.filter((order) => {
         const matchesStatus = !selectedStatus.value || order.status === selectedStatus.value;
-        const matchesKeyword = !query || [order.number, order.customer, order.owner].some((value) => value.toLocaleLowerCase('ko-KR').includes(query));
+        const matchesKeyword = !query || [order.number, order.customer, order.owner, statusLabel(order.status)].some((value) => String(value).toLocaleLowerCase('ko-KR').includes(query));
         return matchesStatus && matchesKeyword;
     });
 });
@@ -59,9 +61,16 @@ async function saveOrder() {
         return;
     }
 
-    const created = addOrder(draft.value);
-    orderDialog.value = false;
-    toast.add({ severity: 'success', summary: '수주 등록 완료', detail: `${created.customer} 수주가 등록되었습니다.`, life: 3000 });
+    saving.value = true;
+    try {
+        const created = await addOrder(draft.value);
+        orderDialog.value = false;
+        toast.add({ severity: 'success', summary: '수주 등록 완료', detail: `${created.customer} 수주가 등록되었습니다.`, life: 3000 });
+    } catch {
+        toast.add({ severity: 'error', summary: '수주 등록 실패', detail: '수주를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.', life: 3200 });
+    } finally {
+        saving.value = false;
+    }
 }
 
 function confirmDelete(order) {
@@ -71,9 +80,13 @@ function confirmDelete(order) {
         icon: 'pi pi-exclamation-triangle',
         rejectProps: { label: '취소', severity: 'secondary', outlined: true },
         acceptProps: { label: '삭제', severity: 'danger' },
-        accept: () => {
-            deleteOrder(order.id);
-            toast.add({ severity: 'success', summary: '삭제 완료', detail: `${order.number} 수주가 삭제되었습니다.`, life: 3000 });
+        accept: async () => {
+            try {
+                await deleteOrder(order.id);
+                toast.add({ severity: 'success', summary: '삭제 완료', detail: `${order.number} 수주가 삭제되었습니다.`, life: 3000 });
+            } catch {
+                toast.add({ severity: 'error', summary: '삭제 실패', detail: '수주를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.', life: 3200 });
+            }
         }
     });
 }
@@ -89,6 +102,8 @@ function confirmDelete(order) {
             <Button label="신규 수주" icon="pi pi-plus" @click="openNewOrder" />
         </div>
 
+        <Message v-if="error" severity="error" :closable="false" class="mb-6">{{ error }}</Message>
+
         <div class="card">
             <div class="flex flex-col gap-3 mb-6 lg:flex-row lg:items-center lg:justify-between">
                 <div class="flex flex-col gap-3 sm:flex-row">
@@ -96,7 +111,7 @@ function confirmDelete(order) {
                         <InputIcon class="pi pi-search" />
                         <InputText v-model="keyword" placeholder="수주번호, 거래처, 담당자 검색" aria-label="수주 검색" class="w-full sm:w-80" />
                     </IconField>
-                    <Select v-model="selectedStatus" :options="statusOptions" placeholder="전체 상태" aria-label="수주 상태 필터" showClear class="w-full sm:w-44" />
+                    <Select v-model="selectedStatus" :options="orderStatusOptions" optionLabel="label" optionValue="value" placeholder="전체 상태" aria-label="수주 상태 필터" showClear class="w-full sm:w-44" />
                 </div>
                 <div class="text-sm text-muted-color">
                     총 <strong class="text-color">{{ filteredOrders.length }}</strong
@@ -107,6 +122,7 @@ function confirmDelete(order) {
             <DataTable
                 :value="filteredOrders"
                 dataKey="id"
+                :loading="loading"
                 paginator
                 :rows="5"
                 :rowsPerPageOptions="[5, 10, 20]"
@@ -134,7 +150,7 @@ function confirmDelete(order) {
                 </Column>
                 <Column field="status" header="상태" sortable>
                     <template #body="slotProps">
-                        <Tag :value="slotProps.data.status" :severity="statusSeverity(slotProps.data.status)" />
+                        <Tag :value="statusLabel(slotProps.data.status)" :severity="statusSeverity(slotProps.data.status)" />
                     </template>
                 </Column>
                 <Column header="작업" :exportable="false" frozen alignFrozen="right" style="width: 6rem">
@@ -158,7 +174,7 @@ function confirmDelete(order) {
                 </div>
                 <div class="col-span-12 sm:col-span-6">
                     <label id="order-status-label" for="order-status" class="block mb-2 font-medium">상태</label>
-                    <Select inputId="order-status" v-model="draft.status" :options="statusOptions" aria-labelledby="order-status-label" fluid />
+                    <Select inputId="order-status" v-model="draft.status" :options="orderStatusOptions" optionLabel="label" optionValue="value" aria-labelledby="order-status-label" fluid />
                 </div>
                 <div class="col-span-12 sm:col-span-6">
                     <label for="order-date" class="block mb-2 font-medium">수주일</label>
@@ -189,7 +205,7 @@ function confirmDelete(order) {
             </div>
             <template #footer>
                 <Button label="취소" icon="pi pi-times" text severity="secondary" @click="orderDialog = false" />
-                <Button label="등록" icon="pi pi-check" @click="saveOrder" />
+                <Button label="등록" icon="pi pi-check" :loading="saving" @click="saveOrder" />
             </template>
         </Dialog>
 

@@ -1,12 +1,14 @@
 <script setup>
-import { formatWon, statusSeverity } from '@/data/erp';
+import { formatWon } from '@/data/erp';
+import { statusLabel, statusSeverity } from '@/data/status';
 import { useErpStore } from '@/stores/erp';
 import { FilterMatchMode } from '@primevue/core/api';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 const router = useRouter();
 const { recentOrders } = useErpStore();
+const rows = computed(() => recentOrders.value.map((order) => ({ ...order, statusLabel: statusLabel(order.status) })));
 const filters = ref({
     global: { value: null, matchMode: FilterMatchMode.CONTAINS }
 });
@@ -33,11 +35,11 @@ function openOrders() {
 
         <DataTable
             v-model:filters="filters"
-            :value="recentOrders"
+            :value="rows"
             :rows="5"
             :paginator="true"
             paginatorTemplate="PrevPageLink PageLinks NextPageLink"
-            :globalFilterFields="['number', 'customer', 'owner', 'status']"
+            :globalFilterFields="['number', 'customer', 'owner', 'statusLabel']"
             responsiveLayout="scroll"
             :tableProps="{ 'aria-label': '최근 수주 목록' }"
         >
@@ -51,9 +53,9 @@ function openOrders() {
                 <template #body="slotProps">{{ formatWon(slotProps.data.amount) }}</template>
             </Column>
             <Column field="dueDate" header="납기일" :sortable="true" style="min-width: 7.5rem"></Column>
-            <Column field="status" header="상태" :sortable="true" style="min-width: 7rem">
+            <Column field="statusLabel" header="상태" :sortable="true" style="min-width: 7rem">
                 <template #body="slotProps">
-                    <Tag :value="slotProps.data.status" :severity="statusSeverity(slotProps.data.status)" />
+                    <Tag :value="slotProps.data.statusLabel" :severity="statusSeverity(slotProps.data.status)" />
                 </template>
             </Column>
             <Column header="보기" style="width: 4rem">

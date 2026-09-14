@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { erpMenu, filterMenuByAccess, flattenMenuRoutes, formatWon, getDashboardSnapshot, getMenuParentPath, getModuleDefinition, nextOrderNumber, orderRows, statusSeverity, validateOrderDraft } from './erp';
+import { APPROVAL_DECISION_ROLES, canDecideApprovals, erpMenu, filterMenuByAccess, flattenMenuRoutes, formatWon, getDashboardSnapshot, getMenuParentPath, getModuleDefinition, nextOrderNumber, orderRows, validateOrderDraft } from './erp';
 
 const expectedMenuKeys = [
     'approvals',
@@ -107,9 +107,16 @@ describe('ERP template contract', () => {
 
     it('provides display helpers and module metadata for operational screens', () => {
         expect(formatWon(534200000)).toBe('₩534.2M');
-        expect(statusSeverity('승인 완료')).toBe('success');
-        expect(statusSeverity('납기 지연')).toBe('danger');
         expect(getModuleDefinition('/sales/orders').title).toBe('수주 관리');
+    });
+
+    it('limits approval decisions to approvers and administrators', () => {
+        expect(APPROVAL_DECISION_ROLES).toEqual(['admin', 'approver']);
+        expect(Object.isFrozen(APPROVAL_DECISION_ROLES)).toBe(true);
+        expect(canDecideApprovals('admin')).toBe(true);
+        expect(canDecideApprovals('approver')).toBe(true);
+        expect(canDecideApprovals('user')).toBe(false);
+        expect(canDecideApprovals(undefined)).toBe(false);
     });
 
     it('restores the correct expandable menu parent from the current route', () => {

@@ -1,5 +1,6 @@
 <script setup>
 import { inventoryRows } from '@/data/erp';
+import { STOCK_STATUS, statusLabel } from '@/data/status';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -13,15 +14,15 @@ const items = [
 ];
 
 const stockItems = computed(() => {
-    const priority = { 긴급: 0, 부족: 1, 정상: 2 };
+    const priority = { [STOCK_STATUS.CRITICAL]: 0, [STOCK_STATUS.LOW]: 1, [STOCK_STATUS.NORMAL]: 2 };
 
     return inventoryRows.map((item) => ({ ...item, ratio: Math.min(100, Math.round((item.stock / item.safety) * 100)) })).sort((a, b) => priority[a.status] - priority[b.status]);
 });
 
 const statusClasses = {
-    긴급: { bar: 'bg-red-500', text: 'text-red-700 dark:text-red-400' },
-    부족: { bar: 'bg-orange-500', text: 'text-orange-700 dark:text-orange-400' },
-    정상: { bar: 'bg-primary', text: 'text-primary' }
+    [STOCK_STATUS.CRITICAL]: { bar: 'bg-red-500', text: 'text-red-700 dark:text-red-400' },
+    [STOCK_STATUS.LOW]: { bar: 'bg-orange-500', text: 'text-orange-700 dark:text-orange-400' },
+    [STOCK_STATUS.NORMAL]: { bar: 'bg-primary', text: 'text-primary' }
 };
 
 function toggleMenu(event) {
@@ -52,7 +53,7 @@ function toggleMenu(event) {
                     <div class="bg-surface-300 dark:bg-surface-500 rounded-border overflow-hidden w-32 lg:w-24" style="height: 8px">
                         <div class="h-full transition-all duration-300" :class="statusClasses[item.status].bar" :style="{ width: `${item.ratio}%` }" aria-hidden="true"></div>
                     </div>
-                    <span class="ml-3 min-w-10 text-sm font-medium" :class="statusClasses[item.status].text">{{ item.status }}</span>
+                    <span class="ml-3 min-w-10 text-sm font-medium" :class="statusClasses[item.status].text">{{ statusLabel(item.status) }}</span>
                     <span class="ml-4 min-w-24 text-right font-medium" :class="statusClasses[item.status].text">{{ item.stock }} / {{ item.safety }} {{ item.unit }}</span>
                 </div>
             </li>

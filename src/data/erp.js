@@ -1,3 +1,5 @@
+import { APPROVAL_STATUS, ORDER_STATUS, STOCK_STATUS } from './status';
+
 const makeItem = (menuKey, label, icon, to, description) => ({ menuKey, label, icon, to, description });
 
 export const erpMenu = [
@@ -154,21 +156,11 @@ export function formatWon(value) {
     return `₩${value.toLocaleString('ko-KR')}`;
 }
 
-export function statusSeverity(status) {
-    const map = {
-        '승인 완료': 'success',
-        완료: 'success',
-        정상: 'success',
-        '검토 중': 'info',
-        진행중: 'info',
-        '승인 대기': 'warn',
-        '출고 대기': 'warn',
-        부족: 'warn',
-        보류: 'secondary',
-        '납기 지연': 'danger',
-        긴급: 'danger'
-    };
-    return map[status] || 'secondary';
+// Only these application roles may approve or reject a request. Menu permissions decide who can view the inbox.
+export const APPROVAL_DECISION_ROLES = Object.freeze(['admin', 'approver']);
+
+export function canDecideApprovals(role) {
+    return APPROVAL_DECISION_ROLES.includes(role);
 }
 
 export function validateOrderDraft(order = {}) {
@@ -219,26 +211,26 @@ export function getDashboardSnapshot({ company = '전체 회사', site = '전체
 }
 
 export const orderRows = [
-    { id: 1, number: 'SO-260911-042', customer: '세림유통', owner: '김서준', orderDate: '2026-09-11', dueDate: '2026-09-18', amount: 8420000, status: '승인 완료' },
-    { id: 2, number: 'SO-260911-041', customer: '한빛테크', owner: '박지민', orderDate: '2026-09-11', dueDate: '2026-09-16', amount: 3180000, status: '검토 중' },
-    { id: 3, number: 'SO-260910-038', customer: '미래상사', owner: '이현우', orderDate: '2026-09-10', dueDate: '2026-09-15', amount: 12700000, status: '출고 대기' },
-    { id: 4, number: 'SO-260910-036', customer: '정우산업', owner: '최유진', orderDate: '2026-09-10', dueDate: '2026-09-12', amount: 1950000, status: '납기 지연' },
-    { id: 5, number: 'SO-260909-031', customer: '다온솔루션', owner: '김서준', orderDate: '2026-09-09', dueDate: '2026-09-20', amount: 6240000, status: '승인 대기' },
-    { id: 6, number: 'SO-260909-029', customer: '가온전자', owner: '박지민', orderDate: '2026-09-09', dueDate: '2026-09-19', amount: 4560000, status: '승인 완료' },
-    { id: 7, number: 'SO-260908-026', customer: '태산기공', owner: '이현우', orderDate: '2026-09-08', dueDate: '2026-09-17', amount: 9880000, status: '검토 중' },
-    { id: 8, number: 'SO-260908-024', customer: '새롬물산', owner: '최유진', orderDate: '2026-09-08', dueDate: '2026-09-14', amount: 2730000, status: '보류' }
+    { id: 1, number: 'SO-260911-042', customer: '세림유통', owner: '김서준', orderDate: '2026-09-11', dueDate: '2026-09-18', amount: 8420000, status: ORDER_STATUS.APPROVED },
+    { id: 2, number: 'SO-260911-041', customer: '한빛테크', owner: '박지민', orderDate: '2026-09-11', dueDate: '2026-09-16', amount: 3180000, status: ORDER_STATUS.IN_REVIEW },
+    { id: 3, number: 'SO-260910-038', customer: '미래상사', owner: '이현우', orderDate: '2026-09-10', dueDate: '2026-09-15', amount: 12700000, status: ORDER_STATUS.AWAITING_SHIPMENT },
+    { id: 4, number: 'SO-260910-036', customer: '정우산업', owner: '최유진', orderDate: '2026-09-10', dueDate: '2026-09-12', amount: 1950000, status: ORDER_STATUS.OVERDUE },
+    { id: 5, number: 'SO-260909-031', customer: '다온솔루션', owner: '김서준', orderDate: '2026-09-09', dueDate: '2026-09-20', amount: 6240000, status: ORDER_STATUS.PENDING_APPROVAL },
+    { id: 6, number: 'SO-260909-029', customer: '가온전자', owner: '박지민', orderDate: '2026-09-09', dueDate: '2026-09-19', amount: 4560000, status: ORDER_STATUS.APPROVED },
+    { id: 7, number: 'SO-260908-026', customer: '태산기공', owner: '이현우', orderDate: '2026-09-08', dueDate: '2026-09-17', amount: 9880000, status: ORDER_STATUS.IN_REVIEW },
+    { id: 8, number: 'SO-260908-024', customer: '새롬물산', owner: '최유진', orderDate: '2026-09-08', dueDate: '2026-09-14', amount: 2730000, status: ORDER_STATUS.ON_HOLD }
 ];
 
 export const inventoryRows = [
-    { code: 'RM-AL-001', name: '알루미늄 시트 2T', warehouse: '인천 원자재창고', stock: 84, safety: 120, unit: 'EA', status: '부족' },
-    { code: 'RM-ST-014', name: '스테인리스 파이프', warehouse: '인천 원자재창고', stock: 214, safety: 180, unit: 'EA', status: '정상' },
-    { code: 'FG-MD-220', name: '모터 드라이브 220V', warehouse: '부산 완제품창고', stock: 12, safety: 32, unit: 'EA', status: '긴급' },
-    { code: 'PK-BX-008', name: '수출 포장 박스 L', warehouse: '부산 부자재창고', stock: 460, safety: 300, unit: 'EA', status: '정상' },
-    { code: 'FG-CT-450', name: '제어반 CT-450', warehouse: '인천 완제품창고', stock: 27, safety: 24, unit: 'EA', status: '정상' }
+    { code: 'RM-AL-001', name: '알루미늄 시트 2T', warehouse: '인천 원자재창고', stock: 84, safety: 120, unit: 'EA', status: STOCK_STATUS.LOW },
+    { code: 'RM-ST-014', name: '스테인리스 파이프', warehouse: '인천 원자재창고', stock: 214, safety: 180, unit: 'EA', status: STOCK_STATUS.NORMAL },
+    { code: 'FG-MD-220', name: '모터 드라이브 220V', warehouse: '부산 완제품창고', stock: 12, safety: 32, unit: 'EA', status: STOCK_STATUS.CRITICAL },
+    { code: 'PK-BX-008', name: '수출 포장 박스 L', warehouse: '부산 부자재창고', stock: 460, safety: 300, unit: 'EA', status: STOCK_STATUS.NORMAL },
+    { code: 'FG-CT-450', name: '제어반 CT-450', warehouse: '인천 완제품창고', stock: 27, safety: 24, unit: 'EA', status: STOCK_STATUS.NORMAL }
 ];
 
 export const approvalRows = [
-    { id: 'AP-260911-18', type: '구매 발주', title: '인천공장 원자재 긴급 발주', requester: '오민재', requestedAt: '2026-09-11 10:24', amount: 18400000, status: '승인 대기' },
-    { id: 'AP-260911-17', type: '매출 할인', title: '세림유통 특별 할인율 적용', requester: '김서준', requestedAt: '2026-09-11 09:48', amount: 8420000, status: '검토 중' },
-    { id: 'AP-260910-52', type: '비용 전표', title: '부산 물류센터 운송비 정산', requester: '윤하늘', requestedAt: '2026-09-10 17:12', amount: 2650000, status: '승인 대기' }
+    { id: 'AP-260911-18', type: '구매 발주', title: '인천공장 원자재 긴급 발주', requester: '오민재', requestedAt: '2026-09-11 10:24', amount: 18400000, status: APPROVAL_STATUS.PENDING },
+    { id: 'AP-260911-17', type: '매출 할인', title: '세림유통 특별 할인율 적용', requester: '김서준', requestedAt: '2026-09-11 09:48', amount: 8420000, status: APPROVAL_STATUS.IN_REVIEW },
+    { id: 'AP-260910-52', type: '비용 전표', title: '부산 물류센터 운송비 정산', requester: '윤하늘', requestedAt: '2026-09-10 17:12', amount: 2650000, status: APPROVAL_STATUS.PENDING }
 ];

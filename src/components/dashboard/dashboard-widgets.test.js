@@ -16,7 +16,8 @@ describe('dashboard notification interactions', () => {
         expect(recentSalesSource).toContain('<h2');
         expect(notificationSource).toContain('<h2');
         expect(bestSellingSource).toContain('<h2');
-        expect(bestSellingSource).toContain('{{ item.status }}');
+        expect(bestSellingSource).toContain('{{ statusLabel(item.status) }}');
+        expect(bestSellingSource).toContain("from '@/data/status'");
         expect(bestSellingSource).toContain('aria-hidden="true"');
         expect(bestSellingSource).toContain("text: 'text-red-700 dark:text-red-400'");
         expect(bestSellingSource).toContain("text: 'text-orange-700 dark:text-orange-400'");

@@ -71,10 +71,10 @@ beforeEach(() => {
     });
 });
 
-afterEach(() => {
+afterEach(async () => {
     while (mountedWrappers.length) mountedWrappers.pop().unmount();
     document.body.innerHTML = '';
-    useErpStore().resetDemoState();
+    await useErpStore().resetDemoState();
 
     const { layoutConfig, layoutState } = useLayout();
     layoutConfig.menuMode = 'static';

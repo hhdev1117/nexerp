@@ -1,5 +1,6 @@
 <script setup>
-import { formatWon, statusSeverity } from '@/data/erp';
+import { formatWon } from '@/data/erp';
+import { statusLabel, statusSeverity } from '@/data/status';
 import { useErpStore } from '@/stores/erp';
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -52,7 +53,7 @@ function toggleMenu(event) {
                     <div class="min-w-0 flex-1">
                         <div class="flex flex-wrap items-center gap-2">
                             <span class="text-surface-900 dark:text-surface-0 font-medium">{{ approval.title }}</span>
-                            <Tag :value="approval.status" :severity="statusSeverity(approval.status)" />
+                            <Tag :value="statusLabel(approval.status)" :severity="statusSeverity(approval.status)" />
                         </div>
                         <div class="mt-1 text-sm text-muted-color">{{ approval.requester }} · {{ approval.type }} · {{ formatWon(approval.amount) }}</div>
                         <div class="mt-1 text-xs text-muted-color">{{ approval.requestedAt }}</div>

@@ -1,6 +1,11 @@
 import { createDemoErpRepository } from './demoErpRepository';
 
-const requiredMethods = ['listOrders', 'listApprovals', 'listGenericRecords'];
+// Every ERP data source must implement this asynchronous contract. Reads return plain arrays;
+// writes return the persisted record so callers never guess server-assigned fields.
+export const ERP_REPOSITORY_METHODS = Object.freeze(['listOrders', 'createOrder', 'updateOrder', 'deleteOrder', 'listApprovals', 'updateApprovalStatus', 'listGenericRecords', 'createGenericRecord']);
+
+const describeMethods = (methods) => `${methods.slice(0, -1).join(', ')}, and ${methods.at(-1)}`;
+
 let currentRepository = createDemoErpRepository();
 
 export function getErpRepository() {
@@ -8,8 +13,8 @@ export function getErpRepository() {
 }
 
 export function setErpRepository(repository) {
-    if (!repository || requiredMethods.some((method) => typeof repository[method] !== 'function')) {
-        throw new TypeError('ERP repository must implement listOrders, listApprovals, and listGenericRecords.');
+    if (!repository || ERP_REPOSITORY_METHODS.some((method) => typeof repository[method] !== 'function')) {
+        throw new TypeError(`ERP repository must implement ${describeMethods(ERP_REPOSITORY_METHODS)}.`);
     }
 
     currentRepository = repository;

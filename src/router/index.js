@@ -62,15 +62,12 @@ const router = createRouter({
         {
             path: '/',
             component: AppLayout,
-            children: [
-                ...erpRoutes,
-                { path: '/settings/security', name: 'settings-security', component: () => import('@/views/admin/SecuritySettings.vue'), meta: { title: '2단계 인증 관리' } }
-            ]
+            children: [...erpRoutes, { path: '/settings/security', name: 'settings-security', component: () => import('@/views/admin/SecuritySettings.vue'), meta: { title: '2단계 인증 관리' } }]
         },
         {
             path: '/:pathMatch(.*)*',
             name: 'notfound',
-            component: () => import('@/views/pages/NotFound.vue')
+            component: () => import('@/views/NotFound.vue')
         }
     ]
 });

@@ -1,23 +1,24 @@
 <script setup>
-import { inventoryRows, statusSeverity } from '@/data/erp';
+import { inventoryRows } from '@/data/erp';
+import { STOCK_STATUS, statusLabel, statusOptions, statusSeverity } from '@/data/status';
 import { computed, ref } from 'vue';
 
 const keyword = ref('');
 const selectedStatus = ref(null);
-const statusOptions = ['정상', '부족', '긴급'];
+const stockStatusOptions = statusOptions('stock');
 
 const filteredRows = computed(() => {
     const query = keyword.value.trim().toLocaleLowerCase('ko-KR');
 
     return inventoryRows.filter((item) => {
         const matchesStatus = !selectedStatus.value || item.status === selectedStatus.value;
-        const matchesKeyword = !query || [item.code, item.name, item.warehouse].some((value) => value.toLocaleLowerCase('ko-KR').includes(query));
+        const matchesKeyword = !query || [item.code, item.name, item.warehouse, statusLabel(item.status)].some((value) => value.toLocaleLowerCase('ko-KR').includes(query));
         return matchesStatus && matchesKeyword;
     });
 });
 
 const totalStock = computed(() => inventoryRows.reduce((sum, item) => sum + item.stock, 0));
-const riskCount = computed(() => inventoryRows.filter((item) => item.status !== '정상').length);
+const riskCount = computed(() => inventoryRows.filter((item) => item.status !== STOCK_STATUS.NORMAL).length);
 const warehouseCount = computed(() => new Set(inventoryRows.map((item) => item.warehouse)).size);
 
 function stockRatio(item) {
@@ -81,7 +82,7 @@ function stockRatio(item) {
                         <InputIcon class="pi pi-search" />
                         <InputText v-model="keyword" placeholder="품목코드, 품목명, 창고 검색" aria-label="재고 검색" class="w-full sm:w-80" />
                     </IconField>
-                    <Select v-model="selectedStatus" :options="statusOptions" placeholder="전체 상태" aria-label="재고 상태 필터" showClear class="w-full sm:w-40" />
+                    <Select v-model="selectedStatus" :options="stockStatusOptions" optionLabel="label" optionValue="value" placeholder="전체 상태" aria-label="재고 상태 필터" showClear class="w-full sm:w-40" />
                 </div>
                 <div class="text-sm text-muted-color">조회 결과 {{ filteredRows.length }}건</div>
             </div>
@@ -110,7 +111,7 @@ function stockRatio(item) {
                     </template>
                 </Column>
                 <Column field="status" header="상태" sortable>
-                    <template #body="slotProps"><Tag :value="slotProps.data.status" :severity="statusSeverity(slotProps.data.status)" /></template>
+                    <template #body="slotProps"><Tag :value="statusLabel(slotProps.data.status)" :severity="statusSeverity(slotProps.data.status)" /></template>
                 </Column>
             </DataTable>
         </div>

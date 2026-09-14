@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -17,7 +17,8 @@ const operationalFiles = [
     'docs/superpowers/specs/2026-09-12-admin-access-nexerp-design.md'
 ];
 
-const independentlyBrandedFiles = ['index.html', 'src/layout/AppFooter.vue', 'src/components/landing/TopbarWidget.vue', 'src/components/landing/FooterWidget.vue', 'src/views/pages/Documentation.vue'];
+const independentlyBrandedFiles = ['index.html', 'src/layout/AppFooter.vue', 'src/views/NotFound.vue'];
+const removedTemplateLeftovers = ['src/views/pages', 'src/views/uikit', 'src/views/utilities', 'src/components/landing', 'src/components/BlockViewer.vue', 'src/components/FloatingConfigurator.vue', 'src/service', 'src/assets/demo', 'public/demo'];
 
 describe('NEXERP project naming', () => {
     it('uses the canonical service slug in deployable metadata', () => {
@@ -43,9 +44,7 @@ describe('NEXERP project naming', () => {
         const workerConfig = JSON.parse(readProjectFile('wrangler.jsonc'));
 
         expect(workerConfig.keep_vars).toBe(true);
-        expect(workerConfig.secrets?.required).toEqual(
-            expect.arrayContaining(['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_MANAGEMENT_TOKEN'])
-        );
+        expect(workerConfig.secrets?.required).toEqual(expect.arrayContaining(['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_MANAGEMENT_TOKEN']));
         expect(workerConfig.secrets.required).toHaveLength(4);
     });
 
@@ -58,5 +57,13 @@ describe('NEXERP project naming', () => {
 
     it.each(operationalFiles)('does not retain a legacy operational slug in %s', (path) => {
         expect(readProjectFile(path)).not.toMatch(/nxe-erp|nxe-erd|nex-erp|sakai-vue/i);
+    });
+
+    it.each(removedTemplateLeftovers)('does not ship the Sakai template leftover %s', (path) => {
+        expect(existsSync(resolve(process.cwd(), path))).toBe(false);
+    });
+
+    it('does not import the demo stylesheet into the global styles', () => {
+        expect(readProjectFile('src/assets/styles.scss')).not.toContain('assets/demo');
     });
 });
