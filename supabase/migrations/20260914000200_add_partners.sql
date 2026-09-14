@@ -115,7 +115,7 @@ set allowed_menu_keys = pg_catalog.array_remove(
         pg_catalog.array_remove(
             case
                 when grants.role is not null
-                     and not ('master.partners' = any (permissions.allowed_menu_keys))
+                     and not coalesce('master.partners' = any (permissions.allowed_menu_keys), false)
                     then pg_catalog.array_append(permissions.allowed_menu_keys, 'master.partners')
                 else permissions.allowed_menu_keys
             end,

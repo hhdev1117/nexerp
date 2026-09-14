@@ -78,6 +78,7 @@ describe('partners migration contract', () => {
         expect(migration).toMatch(/unnest\s*\(\s*permissions\.allowed_menu_keys\s*\)[\s\S]*in\s*\(\s*'sales\.customers'\s*,\s*'purchasing\.vendors'\s*,\s*'master\.partners'\s*\)/i);
         expect(migration).toMatch(/on\s+conflict\s+do\s+nothing/i);
         expect(migration).toMatch(/array_append[\s\S]*allowed_menu_keys[\s\S]*'master\.partners'/i);
+        expect(migration).toMatch(/not\s+coalesce\s*\(\s*'master\.partners'\s*=\s*any\s*\(\s*permissions\.allowed_menu_keys\s*\)\s*,\s*false\s*\)/i);
         expect(migration).toMatch(/(?:pg_catalog\.)?array_remove\s*\(\s*(?:pg_catalog\.)?array_remove\s*\([\s\S]*?'sales\.customers'[\s\S]*?'purchasing\.vendors'/i);
         expect(migration).not.toMatch(/delete\s+from\s+public\.role_menu_permissions[\s\S]*master\.partners/i);
     });
