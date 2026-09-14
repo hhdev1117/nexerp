@@ -153,7 +153,7 @@ describe('company and site management screen', () => {
         setValue('#company-name', '중복 회사');
         await submitForm('#company-form');
 
-        expect(harness.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: '이미 사용 중인 코드 또는 사업자등록번호입니다.' }));
+        expect(harness.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: '이미 사용 중인 코드입니다.' }));
         expect(document.querySelector('#company-form')).not.toBeNull();
         expect(harness.store.companies.value).toHaveLength(2);
     });
