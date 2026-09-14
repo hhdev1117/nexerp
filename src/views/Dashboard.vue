@@ -5,16 +5,38 @@ import RecentSalesWidget from '@/components/dashboard/RecentSalesWidget.vue';
 import RevenueStreamWidget from '@/components/dashboard/RevenueStreamWidget.vue';
 import StatsWidget from '@/components/dashboard/StatsWidget.vue';
 import { getDashboardSnapshot } from '@/data/erp';
-import { computed, reactive } from 'vue';
+import { useMasterStore } from '@/stores/master';
+import { computed, reactive, watch } from 'vue';
 
-const companies = ['전체 회사', '넥서스 제조', '넥서스 유통'];
-const sites = ['전체 사업장', '서울 본사', '인천 공장', '부산 물류센터'];
+const ALL_COMPANIES = '전체 회사';
+const ALL_SITES = '전체 사업장';
 const periods = ['이번 주', '이번 달', '이번 분기'];
 
+const masterStore = useMasterStore();
+masterStore.ensureLoaded();
+
 const filters = reactive({
-    company: '전체 회사',
-    site: '전체 사업장',
+    company: ALL_COMPANIES,
+    site: ALL_SITES,
     period: '이번 달'
+});
+
+// Filter options come from the registered companies and sites, so the dashboard follows the master data.
+const companies = computed(() => [ALL_COMPANIES, ...masterStore.activeCompanies.value.map((company) => company.name)]);
+const sites = computed(() => {
+    const company = masterStore.activeCompanies.value.find((item) => item.name === filters.company);
+    const visibleSites = company ? masterStore.sitesFor(company.id) : masterStore.sites.value;
+    return [ALL_SITES, ...visibleSites.filter((site) => site.isActive).map((site) => site.name)];
+});
+
+watch(
+    () => filters.company,
+    () => {
+        filters.site = ALL_SITES;
+    }
+);
+watch(companies, (options) => {
+    if (!options.includes(filters.company)) filters.company = ALL_COMPANIES;
 });
 
 const snapshot = computed(() => getDashboardSnapshot(filters));

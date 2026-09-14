@@ -21,6 +21,8 @@ describe('ERP router', () => {
         expect(router.resolve('/inventory/stock').name).toBe('inventory-stock');
         expect(router.resolve('/approvals').name).toBe('approvals');
         expect(router.resolve('/finance/summary').name).toBe('finance-summary');
+        expect(routerSource).toContain("'/settings/company': () => import('@/views/master/CompanySites.vue')");
+        expect(router.resolve('/settings/company').name).toBe('settings-company');
     });
 
     it('uses dedicated administrator screens instead of the generic module', () => {

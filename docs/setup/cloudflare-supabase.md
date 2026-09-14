@@ -31,6 +31,8 @@ npx supabase db push
 
 The migrations create `profiles`, the `admin`/`approver`/`user` role type, account and menu-permission RPCs, signup triggers, explicit grants, and RLS policies. New accounts always begin with the `user` role until an authorized administrator assigns another role.
 
+They also create the `companies` and `sites` master tables. Any active, MFA-verified user can read them; only administrators can insert or update rows, and nothing can be deleted: deactivate a company or site instead. Deactivating a company automatically deactivates its sites. Register the first company and its sites from the `회사 · 사업장` screen after the administrator signs in.
+
 After the intended first administrator has created an account, replace the placeholder below with that account's exact, already-known email. Run this read-only preflight in an authorized Supabase SQL Editor and confirm that it returns exactly one active profile with the expected identity:
 
 ```sql

@@ -10,4 +10,11 @@ describe('dashboard filters', () => {
         expect(source).toContain('<Select inputId="dashboard-site"');
         expect(source).toContain('<Select inputId="dashboard-period"');
     });
+
+    it('builds company and site filters from registered master data', () => {
+        expect(source).toContain("from '@/stores/master'");
+        expect(source).toContain('masterStore.activeCompanies.value');
+        expect(source).toContain('masterStore.sitesFor(company.id)');
+        expect(source).not.toMatch(/\[\s*'전체 회사'\s*,\s*'넥서스/);
+    });
 });
