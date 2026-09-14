@@ -57,8 +57,7 @@ const createPartnerDraft = (partner = null) => ({
     representative: partner?.representative ?? '',
     email: partner?.email ?? '',
     phone: partner?.phone ?? '',
-    address: partner?.address ?? '',
-    isActive: partner ? partner.isActive === true : true
+    address: partner?.address ?? ''
 });
 
 const partnerDraft = ref(createPartnerDraft());
@@ -108,7 +107,7 @@ const notify = (severity, summary, detail) => toast.add({ severity, summary, det
 const failureDetail = (cause) => MASTER_ERROR_MESSAGES[cause?.code] || MASTER_ERROR_MESSAGES.master_save_failed;
 const activeLabel = (partner) => (partner.isActive ? '활성' : '비활성');
 
-const partnerPayload = (draft) => ({
+const partnerEditPayload = (draft) => ({
     companyId: normalizeText(draft.companyId),
     code: normalizeCode(draft.code),
     name: normalizeText(draft.name),
@@ -118,9 +117,9 @@ const partnerPayload = (draft) => ({
     representative: normalizeText(draft.representative),
     email: normalizeText(draft.email),
     phone: normalizeText(draft.phone),
-    address: normalizeText(draft.address),
-    isActive: draft.isActive === true
+    address: normalizeText(draft.address)
 });
+const partnerCreatePayload = (draft) => ({ ...partnerEditPayload(draft), isActive: true });
 
 const errorMessage = (field) => (submitted.value && validation.value.errors[field] ? PARTNER_MESSAGES[field] : '');
 
@@ -139,6 +138,7 @@ async function focusFirstError() {
 }
 
 function openCreatePartner() {
+    if (saving.value || changingId.value !== null) return;
     partnerMode.value = 'create';
     editingPartner.value = null;
     partnerDraft.value = createPartnerDraft();
@@ -147,6 +147,7 @@ function openCreatePartner() {
 }
 
 function openEditPartner(partner) {
+    if (saving.value || changingId.value !== null) return;
     partnerMode.value = 'edit';
     editingPartner.value = partner;
     partnerDraft.value = createPartnerDraft(partner);
@@ -155,19 +156,22 @@ function openEditPartner(partner) {
 }
 
 async function savePartner() {
+    if (saving.value) return;
     submitted.value = true;
     if (!validation.value.isValid) {
         await focusFirstError();
         return;
     }
 
+    const operationMode = partnerMode.value;
+    const editingId = editingPartner.value?.id;
+    const payload = operationMode === 'create' ? partnerCreatePayload(partnerDraft.value) : partnerEditPayload(partnerDraft.value);
     saving.value = true;
     try {
-        const payload = partnerPayload(partnerDraft.value);
-        const saved = partnerMode.value === 'create' ? await createPartner(payload) : await updatePartner(editingPartner.value.id, payload);
+        const saved = operationMode === 'create' ? await createPartner(payload) : await updatePartner(editingId, payload);
         partnerDialog.value = false;
         selectedCompanyId.value = saved.companyId;
-        notify('success', partnerMode.value === 'create' ? '거래처 등록 완료' : '거래처 수정 완료', `${saved.name} 거래처 정보가 저장되었습니다.`);
+        notify('success', operationMode === 'create' ? '거래처 등록 완료' : '거래처 수정 완료', `${saved.name} 거래처 정보가 저장되었습니다.`);
     } catch (cause) {
         notify('error', '거래처 저장 실패', failureDetail(cause));
     } finally {
@@ -176,6 +180,7 @@ async function savePartner() {
 }
 
 function togglePartnerActive(partner) {
+    if (saving.value || changingId.value !== null) return;
     const activating = !partner.isActive;
     confirm.require({
         group: 'master',
@@ -197,6 +202,11 @@ function togglePartnerActive(partner) {
         }
     });
 }
+
+function setDialogVisible(visible) {
+    if (!visible && saving.value) return;
+    partnerDialog.value = visible;
+}
 </script>
 
 <template>
@@ -206,7 +216,7 @@ function togglePartnerActive(partner) {
                 <h1 class="text-2xl font-semibold text-surface-900 dark:text-surface-0">거래처 관리</h1>
                 <div class="mt-1 text-muted-color">회사별 고객과 공급업체 정보를 한 곳에서 관리합니다.</div>
             </div>
-            <Button v-if="canManage" label="거래처 등록" icon="pi pi-plus" @click="openCreatePartner" />
+            <Button v-if="canManage" label="거래처 등록" icon="pi pi-plus" :disabled="saving || changingId !== null" @click="openCreatePartner" />
         </div>
 
         <Message v-if="error" severity="error" :closable="false" class="mb-6" role="alert">{{ error }}</Message>
@@ -220,7 +230,7 @@ function togglePartnerActive(partner) {
                 <h2 id="partner-list-title" class="text-xl font-semibold">거래처 목록</h2>
                 <div class="grid grid-cols-12 gap-3">
                     <div class="col-span-12 md:col-span-6 xl:col-span-3">
-                        <label for="partner-company-filter" class="block mb-2 text-sm font-medium">회사</label>
+                        <label id="partner-company-filter-label" for="partner-company-filter" class="block mb-2 text-sm font-medium">회사</label>
                         <Select
                             v-model="selectedCompanyId"
                             inputId="partner-company-filter"
@@ -228,7 +238,8 @@ function togglePartnerActive(partner) {
                             optionLabel="label"
                             optionValue="value"
                             placeholder="회사를 선택하세요"
-                            aria-describedby="partner-company-filter-help"
+                            ariaLabelledby="partner-company-filter-label"
+                            :pt="{ label: { 'aria-describedby': 'partner-company-filter-help' } }"
                             fluid
                         />
                         <small id="partner-company-filter-help" class="sr-only">조회할 회사를 선택합니다.</small>
@@ -242,12 +253,12 @@ function togglePartnerActive(partner) {
                         <small id="partner-keyword-help" class="sr-only">코드, 거래처명 또는 사업자등록번호로 검색합니다.</small>
                     </div>
                     <div class="col-span-6 md:col-span-6 xl:col-span-3">
-                        <label for="partner-role-filter" class="block mb-2 text-sm font-medium">역할</label>
-                        <Select v-model="selectedRole" inputId="partner-role-filter" :options="roleOptions" optionLabel="label" optionValue="value" fluid />
+                        <label id="partner-role-filter-label" for="partner-role-filter" class="block mb-2 text-sm font-medium">역할</label>
+                        <Select v-model="selectedRole" inputId="partner-role-filter" :options="roleOptions" optionLabel="label" optionValue="value" ariaLabelledby="partner-role-filter-label" fluid />
                     </div>
                     <div class="col-span-6 md:col-span-6 xl:col-span-2">
-                        <label for="partner-status-filter" class="block mb-2 text-sm font-medium">상태</label>
-                        <Select v-model="selectedStatus" inputId="partner-status-filter" :options="statusOptions" optionLabel="label" optionValue="value" fluid />
+                        <label id="partner-status-filter-label" for="partner-status-filter" class="block mb-2 text-sm font-medium">상태</label>
+                        <Select v-model="selectedStatus" inputId="partner-status-filter" :options="statusOptions" optionLabel="label" optionValue="value" ariaLabelledby="partner-status-filter-label" fluid />
                     </div>
                 </div>
             </div>
@@ -296,6 +307,7 @@ function togglePartnerActive(partner) {
                                 text
                                 rounded
                                 size="small"
+                                :disabled="saving || changingId !== null"
                                 :aria-label="`${slotProps.data.name} 거래처 수정`"
                                 :title="`${slotProps.data.name} 거래처 수정`"
                                 @click="openEditPartner(slotProps.data)"
@@ -307,7 +319,7 @@ function togglePartnerActive(partner) {
                                 size="small"
                                 :severity="slotProps.data.isActive ? 'danger' : 'secondary'"
                                 :loading="changingId === slotProps.data.id"
-                                :disabled="changingId !== null"
+                                :disabled="saving || changingId !== null"
                                 :aria-label="`${slotProps.data.name} 거래처 ${slotProps.data.isActive ? '비활성화' : '활성화'}`"
                                 :title="`${slotProps.data.name} 거래처 ${slotProps.data.isActive ? '비활성화' : '활성화'}`"
                                 @click="togglePartnerActive(slotProps.data)"
@@ -318,10 +330,20 @@ function togglePartnerActive(partner) {
             </DataTable>
         </section>
 
-        <Dialog v-model:visible="partnerDialog" modal :header="dialogTitle" :style="{ width: '44rem' }" :breakpoints="{ '768px': '94vw' }">
+        <Dialog
+            :visible="partnerDialog"
+            modal
+            :header="dialogTitle"
+            :style="{ width: '44rem' }"
+            :breakpoints="{ '768px': '94vw' }"
+            :closable="!saving"
+            :closeOnEscape="!saving"
+            :dismissableMask="!saving"
+            @update:visible="setDialogVisible"
+        >
             <form id="partner-form" class="grid grid-cols-12 gap-4" novalidate :aria-busy="saving" @submit.prevent="savePartner">
                 <div class="col-span-12 md:col-span-6">
-                    <label for="partner-company" class="block mb-2 font-medium">회사</label>
+                    <label id="partner-company-label" for="partner-company" class="block mb-2 font-medium">회사</label>
                     <Select
                         v-model="partnerDraft.companyId"
                         inputId="partner-company"
@@ -329,7 +351,8 @@ function togglePartnerActive(partner) {
                         optionLabel="label"
                         optionValue="value"
                         placeholder="회사를 선택하세요"
-                        aria-describedby="partner-company-error"
+                        ariaLabelledby="partner-company-label"
+                        :pt="{ label: { 'aria-describedby': errorMessage('companyId') ? 'partner-company-error' : undefined } }"
                         :invalid="submitted && validation.errors.companyId"
                         :disabled="saving"
                         fluid

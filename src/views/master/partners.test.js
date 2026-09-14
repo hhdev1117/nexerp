@@ -21,6 +21,14 @@ vi.mock('primevue/useconfirm', () => ({ useConfirm: () => ({ require: harness.co
 
 const wrappers = [];
 
+const deferred = () => {
+    let resolve;
+    const promise = new Promise((next) => {
+        resolve = next;
+    });
+    return { promise, resolve };
+};
+
 const mountScreen = async () => {
     const wrapper = mount(Partners, { attachTo: document.body, global: { plugins: [PrimeVue] } });
     wrappers.push(wrapper);
@@ -164,6 +172,30 @@ describe('partner management screen', () => {
         expect(wrapper.text()).not.toContain('sentinel');
     });
 
+    it('associates every select combobox with its visible label and company error', async () => {
+        const wrapper = await mountScreen();
+
+        for (const [inputId, labelId] of [
+            ['partner-company-filter', 'partner-company-filter-label'],
+            ['partner-role-filter', 'partner-role-filter-label'],
+            ['partner-status-filter', 'partner-status-filter-label']
+        ]) {
+            const combobox = document.querySelector(`#${inputId}[role="combobox"]`);
+            expect(combobox).not.toBeNull();
+            expect(combobox.getAttribute('aria-labelledby')).toBe(labelId);
+            expect(document.getElementById(labelId)?.textContent.trim()).not.toBe('');
+        }
+
+        await openCreate(wrapper);
+        await submitForm();
+
+        const company = document.querySelector('#partner-company[role="combobox"]');
+        expect(company.getAttribute('aria-labelledby')).toBe('partner-company-label');
+        expect(company.getAttribute('aria-describedby')).toBe('partner-company-error');
+        expect(company.getAttribute('aria-invalid')).toBe('true');
+        expect(document.getElementById('partner-company-error')?.textContent).toContain('회사를 선택해 주세요.');
+    });
+
     it('shows every validation message and focuses the company field', async () => {
         const wrapper = await mountScreen();
         await openCreate(wrapper);
@@ -224,10 +256,18 @@ describe('partner management screen', () => {
         setText('#partner-name', ' 미래 종합상사 ');
         await submitForm();
 
-        expect(updatePartner).toHaveBeenCalledWith(
-            'partner-nxd-dual',
-            expect.objectContaining({ companyId: 'company-nxd', code: 'DUAL-001', name: '미래 종합상사', isCustomer: true, isVendor: true })
-        );
+        expect(updatePartner).toHaveBeenCalledWith('partner-nxd-dual', {
+            companyId: 'company-nxd',
+            code: 'DUAL-001',
+            name: '미래 종합상사',
+            businessNumber: '3018800003',
+            isCustomer: true,
+            isVendor: true,
+            representative: '정지훈',
+            email: 'office@mirae.example',
+            phone: '051-333-4444',
+            address: '부산광역시 강서구'
+        });
         expect(harness.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: '거래처 수정 완료' }));
 
         await wrapper.find('[aria-label="미래 종합상사 거래처 비활성화"]').trigger('click');
@@ -240,6 +280,49 @@ describe('partner management screen', () => {
         expect(harness.confirmRequire).toHaveBeenLastCalledWith(expect.objectContaining({ header: '거래처 활성화' }));
         expect(updatePartner).toHaveBeenCalledWith('partner-nxd-dual', { isActive: true });
         expect(harness.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: '상태 변경 완료' }));
+    });
+
+    it('keeps a pending save bound to its original dialog and blocks competing actions', async () => {
+        const pending = deferred();
+        const createPartner = vi.spyOn(harness.store, 'createPartner').mockReturnValueOnce(pending.promise);
+        const updatePartner = vi.spyOn(harness.store, 'updatePartner');
+        const wrapper = await mountScreen();
+        await openCreate(wrapper);
+        await fillRequiredPartner(wrapper);
+
+        await submitForm();
+
+        const dialog = wrapper.findComponent({ name: 'Dialog' });
+        expect(dialog.props('header')).toBe('거래처 등록');
+        expect(dialog.props('closable')).toBe(false);
+        expect(dialog.props('closeOnEscape')).toBe(false);
+        expect(dialog.props('dismissableMask')).toBe(false);
+        expect(document.querySelector('#partner-form')?.getAttribute('aria-busy')).toBe('true');
+        expect(findButton(wrapper, '거래처 등록').attributes('disabled')).toBeDefined();
+
+        const edit = wrapper.find('[aria-label="미래 상사 거래처 수정"]');
+        const status = wrapper.find('[aria-label="미래 상사 거래처 비활성화"]');
+        expect(edit.attributes('disabled')).toBeDefined();
+        expect(status.attributes('disabled')).toBeDefined();
+        await submitForm();
+        await edit.trigger('click');
+        await status.trigger('click');
+        expect(createPartner).toHaveBeenCalledTimes(1);
+        expect(document.querySelector('#partner-code').value).toBe('NEW-001');
+        expect(harness.confirmRequire).not.toHaveBeenCalled();
+
+        pending.resolve({
+            id: 'partner-new',
+            companyId: 'company-nxm',
+            code: 'NEW-001',
+            name: '새 거래처',
+            isActive: true
+        });
+        await flushPromises();
+
+        expect(document.querySelector('#partner-form')).toBeNull();
+        expect(harness.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: '거래처 등록 완료', detail: '새 거래처 거래처 정보가 저장되었습니다.' }));
+        expect(updatePartner).not.toHaveBeenCalled();
     });
 
     it('shows repository-safe save errors and retains the form for correction', async () => {
