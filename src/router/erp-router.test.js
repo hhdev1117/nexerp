@@ -23,6 +23,8 @@ describe('ERP router', () => {
         expect(router.resolve('/finance/summary').name).toBe('finance-summary');
         expect(routerSource).toContain("'/settings/company': () => import('@/views/master/CompanySites.vue')");
         expect(router.resolve('/settings/company').name).toBe('settings-company');
+        expect(routerSource).toContain("'/master/partners': () => import('@/views/master/Partners.vue')");
+        expect(router.resolve('/master/partners').name).toBe('master-partners');
     });
 
     it('uses dedicated administrator screens instead of the generic module', () => {
