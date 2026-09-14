@@ -716,6 +716,18 @@ describe('Supabase auth store', () => {
         expect(store.loading.value).toBe(false);
     });
 
+    it.each(['approver@example.com', 'Approver01@nexerp.internal'])('does not reauthenticate a password change with untrusted session email %s', async (email) => {
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email } };
+        const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.');
+
+        expect(fixture.client.auth.signInWithPassword).not.toHaveBeenCalled();
+        expect(fixture.client.auth.updateUser).not.toHaveBeenCalled();
+    });
+
     it.each([
         ['', 'Replacement-Password-2!', '현재 비밀번호를 입력해 주세요.'],
         ['Current-Password-1!', '', '새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.'],
@@ -724,7 +736,7 @@ describe('Supabase auth store', () => {
         ['Current-Password-1!', 'x'.repeat(129), '새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.'],
         ['Same-Password-1!', 'Same-Password-1!', '새 비밀번호는 현재 비밀번호와 다르게 입력해 주세요.']
     ])('rejects invalid password input without calling Supabase', async (currentPassword, newPassword, message) => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
         const store = createAuthStore({ client: fixture.client, configured: true });
         await store.initialize();
@@ -763,7 +775,7 @@ describe('Supabase auth store', () => {
     });
 
     it('redacts invalid current-password details and does not update the user', async () => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const raw = new Error('Invalid login credentials password=sentinel-secret');
         raw.status = 400;
         const fixture = createClient({
@@ -782,7 +794,7 @@ describe('Supabase auth store', () => {
     });
 
     it('rejects a reauthenticated identity mismatch before updating the password', async () => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({
             session,
             profiles: { 'user-1': { data: approverProfile, error: null } },
@@ -797,7 +809,7 @@ describe('Supabase auth store', () => {
     });
 
     it('redacts password-update failures behind a stable message', async () => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({
             session,
             profiles: { 'user-1': { data: approverProfile, error: null } },

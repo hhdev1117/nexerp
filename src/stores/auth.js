@@ -69,6 +69,13 @@ const publicUser = (authUser) => {
 
 const publicSession = (authSession) => (authSession ? { ...authSession, user: publicUser(authSession.user) } : null);
 
+const trustedInternalEmail = (authUser) => {
+    const email = authUser?.email;
+    if (typeof email !== 'string' || !email.endsWith(INTERNAL_EMAIL_SUFFIX)) return null;
+    const loginId = email.slice(0, -INTERNAL_EMAIL_SUFFIX.length);
+    return loginIdToInternalEmail(loginId) === email ? email : null;
+};
+
 export function createAuthStore({ client, configured, locks = typeof window === 'undefined' ? null : window.navigator?.locks }) {
     const session = ref(null);
     const user = ref(null);
@@ -151,8 +158,9 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         const identityChanged = previousUser?.id !== nextUser?.id || authSessionKey(previousSession) !== authSessionKey(nextSession);
         if (identityChanged) clearMfaState();
         const keepRecoverableFailure = Boolean(nextUser && user.value?.id === nextUser.id && profileLoadFailed.value);
-        if (typeof nextUser?.email === 'string' && nextUser.email.endsWith(INTERNAL_EMAIL_SUFFIX)) reauthenticationEmail = nextUser.email;
-        else if (!nextUser || previousUser?.id !== nextUser.id) reauthenticationEmail = null;
+        const nextInternalEmail = trustedInternalEmail(nextUser);
+        if (nextInternalEmail) reauthenticationEmail = nextInternalEmail;
+        else if (!nextUser || previousUser?.id !== nextUser.id || nextUser.email !== undefined) reauthenticationEmail = null;
         session.value = publicSession(nextSession);
         user.value = publicUser(nextUser);
         profile.value = null;
@@ -727,11 +735,12 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         };
 
         if (!isConfigured) fail(NOT_CONFIGURED_MESSAGE);
-        if (!session.value || !user.value?.id || !(reauthenticationEmail || user.value?.email?.trim()) || session.value.user?.id !== user.value.id) {
+        if (!session.value || !user.value?.id || session.value.user?.id !== user.value.id) {
             fail('로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.');
         }
         if (!profile.value) fail(MISSING_PROFILE_MESSAGE);
         if (!profile.value.is_active) fail(INACTIVE_PROFILE_MESSAGE);
+        if (!reauthenticationEmail) fail('로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.');
         if (typeof currentPassword !== 'string' || !currentPassword.trim()) fail('현재 비밀번호를 입력해 주세요.');
         if (typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 128 || !newPassword.trim()) {
             fail('새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.');
@@ -739,7 +748,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         if (currentPassword === newPassword) fail('새 비밀번호는 현재 비밀번호와 다르게 입력해 주세요.');
 
         const currentUserId = user.value.id;
-        const email = reauthenticationEmail || user.value.email?.trim();
+        const email = reauthenticationEmail;
         beginOperation();
         error.value = null;
         try {
