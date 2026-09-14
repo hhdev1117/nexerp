@@ -1,4 +1,4 @@
-import { MASTER_CODE_PATTERN, SITE_TYPE, normalizeBusinessNumber, normalizeCode } from '@/data/master';
+import { MASTER_CODE_PATTERN, SITE_TYPE, normalizeBusinessNumber, normalizeCode, normalizeText } from '@/data/master';
 import { masterError } from './errors';
 
 export const demoCompanies = Object.freeze([
@@ -75,6 +75,8 @@ const withoutIdentity = (fields) => {
 };
 
 const PARTNER_WRITABLE_FIELDS = Object.freeze(['companyId', 'code', 'name', 'businessNumber', 'isCustomer', 'isVendor', 'representative', 'email', 'phone', 'address', 'isActive']);
+const PARTNER_TEXT_FIELDS = Object.freeze(['companyId', 'name', 'representative', 'email', 'phone', 'address']);
+const PARTNER_BOOLEAN_FIELDS = Object.freeze(['isCustomer', 'isVendor', 'isActive']);
 const partnerFields = (values) => Object.fromEntries(PARTNER_WRITABLE_FIELDS.filter((key) => values?.[key] !== undefined).map((key) => [key, values[key]]));
 const BUSINESS_NUMBER_PATTERN = /^\d{10}$/;
 
@@ -120,7 +122,10 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
 
     const assertPartner = (partner) => {
         assertCode(partner.code);
-        if (typeof partner.name !== 'string' || !partner.name.trim()) throw masterError('invalid_value');
+        if (typeof partner.companyId !== 'string' || !partner.companyId) throw masterError('invalid_value');
+        if (PARTNER_TEXT_FIELDS.some((key) => typeof partner[key] !== 'string')) throw masterError('invalid_value');
+        if (!partner.name) throw masterError('invalid_value');
+        if (PARTNER_BOOLEAN_FIELDS.some((key) => typeof partner[key] !== 'boolean')) throw masterError('invalid_value');
         if (!partner.isCustomer && !partner.isVendor) throw masterError('invalid_value');
         if (partner.businessNumber && !BUSINESS_NUMBER_PATTERN.test(partner.businessNumber)) throw masterError('invalid_value');
 
@@ -132,7 +137,16 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
     const normalizePartnerFields = (values) => {
         const fields = partnerFields(values);
         if (fields.code !== undefined) fields.code = normalizeCode(fields.code);
+        for (const key of PARTNER_TEXT_FIELDS) {
+            if (fields[key] === undefined) continue;
+            if (typeof fields[key] !== 'string') throw masterError('invalid_value');
+            fields[key] = normalizeText(fields[key]);
+        }
+        for (const key of PARTNER_BOOLEAN_FIELDS) {
+            if (fields[key] !== undefined && typeof fields[key] !== 'boolean') throw masterError('invalid_value');
+        }
         if (fields.businessNumber !== undefined) {
+            if (fields.businessNumber !== null && typeof fields.businessNumber !== 'string') throw masterError('invalid_value');
             const hasValue = fields.businessNumber !== null && String(fields.businessNumber).trim() !== '';
             fields.businessNumber = normalizeBusinessNumber(fields.businessNumber);
             if (hasValue && !fields.businessNumber) throw masterError('invalid_value');

@@ -42,17 +42,19 @@ const partner = {
     updatedAt: '2026-09-14T01:00:00.000Z'
 };
 
-const makeClient = ({ list = { data: [companyRow], error: null }, single = { data: companyRow, error: null } } = {}) => {
+const makeClient = ({ list = { data: [companyRow], error: null }, single = { data: companyRow, error: null }, preflight = { data: { id: 'p-1' }, error: null } } = {}) => {
     const singleFn = vi.fn().mockResolvedValue(single);
     const writeSelect = vi.fn(() => ({ single: singleFn }));
     const order = vi.fn().mockResolvedValue(list);
-    const select = vi.fn(() => ({ order }));
+    const maybeSingle = vi.fn().mockResolvedValue(preflight);
+    const readEq = vi.fn(() => ({ maybeSingle }));
+    const select = vi.fn(() => ({ order, eq: readEq }));
     const insert = vi.fn(() => ({ select: writeSelect }));
     const eq = vi.fn(() => ({ select: writeSelect }));
     const update = vi.fn(() => ({ eq }));
     const from = vi.fn(() => ({ select, insert, update }));
 
-    return { client: { from }, from, select, order, insert, update, eq, writeSelect, single: singleFn };
+    return { client: { from }, from, select, order, readEq, maybeSingle, insert, update, eq, writeSelect, single: singleFn };
 };
 
 describe('Supabase master repository', () => {
@@ -128,15 +130,15 @@ describe('Supabase master repository', () => {
         await expect(
             repository.createPartner({
                 companyId: 'c-1',
-                code: 'CUS-001',
-                name: '서울 유통',
-                businessNumber: '1018800001',
+                code: ' cus-001 ',
+                name: ' 서울 유통 ',
+                businessNumber: '101-88-00001',
                 isCustomer: true,
                 isVendor: false,
-                representative: '이민수',
-                email: 'sales@example.com',
-                phone: '02-1111-2222',
-                address: '서울',
+                representative: ' 이민수 ',
+                email: ' sales@example.com ',
+                phone: ' 02-1111-2222 ',
+                address: ' 서울 ',
                 isActive: true,
                 id: 'ignored',
                 createdAt: 'ignored',
@@ -171,6 +173,37 @@ describe('Supabase master repository', () => {
         expect(fixture.update).toHaveBeenCalledWith({ name: '서울 제일유통', is_vendor: true });
         expect(fixture.eq).toHaveBeenCalledWith('id', 'p-1');
         expect(fixture.writeSelect).toHaveBeenCalledWith(PARTNER_FIELDS);
+    });
+
+    it('normalizes supplied partner text and maps a blank business number to null', async () => {
+        const fixture = makeClient({ single: { data: { ...partnerRow, business_number: null, email: 'billing@example.com' }, error: null } });
+        const repository = createSupabaseMasterRepository(fixture.client);
+
+        await expect(repository.updatePartner('p-1', { businessNumber: '   ', email: ' billing@example.com ', phone: undefined })).resolves.toEqual({
+            ...partner,
+            businessNumber: null,
+            email: 'billing@example.com'
+        });
+        expect(fixture.update).toHaveBeenCalledWith({ business_number: null, email: 'billing@example.com' });
+    });
+
+    it('maps an RLS-filtered update of a readable partner to admin_required', async () => {
+        const denied = { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' };
+        const fixture = makeClient({ preflight: { data: { id: 'p-1' }, error: null }, single: { data: null, error: denied } });
+        const repository = createSupabaseMasterRepository(fixture.client);
+
+        await expect(repository.updatePartner('p-1', { name: '권한 없음' })).rejects.toMatchObject({ code: 'admin_required' });
+        expect(fixture.select).toHaveBeenCalledWith('id');
+        expect(fixture.readEq).toHaveBeenCalledWith('id', 'p-1');
+        expect(fixture.maybeSingle).toHaveBeenCalledOnce();
+    });
+
+    it('returns not_found without writing when the partner ID does not exist', async () => {
+        const fixture = makeClient({ preflight: { data: null, error: null } });
+        const repository = createSupabaseMasterRepository(fixture.client);
+
+        await expect(repository.updatePartner('missing', { name: '없음' })).rejects.toMatchObject({ code: 'not_found' });
+        expect(fixture.update).not.toHaveBeenCalled();
     });
 
     it.each([

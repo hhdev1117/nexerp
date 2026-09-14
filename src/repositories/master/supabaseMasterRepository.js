@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { normalizeBusinessNumber, normalizeCode, normalizeText } from '@/data/master';
 import { MasterRepositoryError, masterError } from './errors';
 
 const COMPANY_FIELDS = 'id, code, name, business_number, representative, address, is_active, created_at, updated_at';
@@ -20,6 +21,7 @@ const partnerColumns = Object.freeze({
     address: 'address',
     isActive: 'is_active'
 });
+const partnerTextFields = Object.freeze(['companyId', 'name', 'representative', 'email', 'phone', 'address']);
 
 const toCompany = (row) => ({
     id: row.id,
@@ -61,6 +63,24 @@ const toPartner = (row) => ({
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null
 });
+
+const normalizePartnerValues = (values) => {
+    const normalized = { ...values };
+    if (values?.code !== undefined && typeof values.code === 'string') normalized.code = normalizeCode(values.code);
+    for (const key of partnerTextFields) {
+        if (typeof values?.[key] === 'string') normalized[key] = normalizeText(values[key]);
+    }
+    if (values?.businessNumber !== undefined) {
+        if (values.businessNumber === null || (typeof values.businessNumber === 'string' && !values.businessNumber.trim())) {
+            normalized.businessNumber = null;
+        } else {
+            const businessNumber = normalizeBusinessNumber(values.businessNumber);
+            if (!businessNumber) throw masterError('invalid_value');
+            normalized.businessNumber = businessNumber;
+        }
+    }
+    return normalized;
+};
 
 // Only keys the caller supplied become columns, so partial updates never overwrite other fields.
 const toRow = (columns, values) => Object.fromEntries(Object.entries(columns).filter(([key]) => values?.[key] !== undefined).map(([key, column]) => [column, values[key]]));
@@ -116,6 +136,22 @@ export function createSupabaseMasterRepository(client = getSupabaseClient()) {
             (data) => map(data)
         );
 
+    const updatePartner = async (id, changes) => {
+        const existing = await run(
+            'save',
+            () => client.from('partners').select('id').eq('id', id).maybeSingle(),
+            (data) => data
+        );
+        if (!existing) throw masterError('not_found');
+
+        try {
+            return await update('partners', PARTNER_FIELDS, id, toRow(partnerColumns, normalizePartnerValues(changes)), toPartner);
+        } catch (error) {
+            if (error instanceof MasterRepositoryError && error.code === 'not_found') throw masterError('admin_required');
+            throw error;
+        }
+    };
+
     return {
         listCompanies: () => list('companies', COMPANY_FIELDS, toCompany),
         createCompany: (draft) => insert('companies', COMPANY_FIELDS, toRow(companyColumns, draft), toCompany),
@@ -124,7 +160,7 @@ export function createSupabaseMasterRepository(client = getSupabaseClient()) {
         createSite: (draft) => insert('sites', SITE_FIELDS, toRow(siteColumns, draft), toSite),
         updateSite: (id, changes) => update('sites', SITE_FIELDS, id, toRow(siteColumns, changes), toSite),
         listPartners: () => list('partners', PARTNER_FIELDS, toPartner),
-        createPartner: (draft) => insert('partners', PARTNER_FIELDS, toRow(partnerColumns, draft), toPartner),
-        updatePartner: (id, changes) => update('partners', PARTNER_FIELDS, id, toRow(partnerColumns, changes), toPartner)
+        createPartner: async (draft) => insert('partners', PARTNER_FIELDS, toRow(partnerColumns, normalizePartnerValues(draft)), toPartner),
+        updatePartner
     };
 }

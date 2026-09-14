@@ -198,4 +198,31 @@ describe('demo master repository', () => {
         expect((await repository.listPartners()).find((partner) => partner.id === updated.id).name).toBe('수정 공급사');
         await expect(repository.updatePartner('missing', { name: '없음' })).rejects.toMatchObject({ code: 'not_found' });
     });
+
+    it('rejects non-boolean roles and null non-null text fields on create and update', async () => {
+        const repository = createDemoMasterRepository();
+
+        await expect(repository.createPartner(partnerDraft({ representative: null }))).rejects.toMatchObject({ code: 'invalid_value' });
+        await expect(repository.createPartner(partnerDraft({ isVendor: 'true' }))).rejects.toMatchObject({ code: 'invalid_value' });
+        await expect(repository.updatePartner('partner-nxm-vendor', { isCustomer: null })).rejects.toMatchObject({ code: 'invalid_value' });
+        await expect(repository.updatePartner('partner-nxm-vendor', { email: null })).rejects.toMatchObject({ code: 'invalid_value' });
+    });
+
+    it('normalizes partner text fields on create and update', async () => {
+        const repository = createDemoMasterRepository();
+
+        const created = await repository.createPartner(
+            partnerDraft({ name: ' 넥서스 거래처 ', representative: ' 박서연 ', email: ' partner@nexerp.test ', phone: ' 02-1234-5678 ', address: ' 대전광역시 유성구 ' })
+        );
+        expect(created).toMatchObject({
+            name: '넥서스 거래처',
+            representative: '박서연',
+            email: 'partner@nexerp.test',
+            phone: '02-1234-5678',
+            address: '대전광역시 유성구'
+        });
+
+        const updated = await repository.updatePartner(created.id, { name: ' 수정 거래처 ', email: ' updated@nexerp.test ' });
+        expect(updated).toMatchObject({ name: '수정 거래처', email: 'updated@nexerp.test' });
+    });
 });
