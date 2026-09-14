@@ -74,7 +74,7 @@ export function createHrStore({ repository = createHrRepository() } = {}) {
         correctEmployee: (employeeId, revision, document, reason) => mutate('correctEmployee', 'update', [employeeId, revision, document, reason]),
         createEmployee: (document, reason) => mutate('createEmployee', 'create', [document, reason]),
         recordAction: (employeeId, revision, document) => mutate('recordAction', 'update', [employeeId, revision, document]),
-        cancelAction: (employeeId, actionId, revision, reason) => mutate('cancelAction', 'update', [employeeId, actionId, revision, reason])
+        cancelAction: (employeeId, actionId, revision, reason) => mutate('cancelAction', 'cancel', [employeeId, actionId, revision, reason])
     };
 }
 

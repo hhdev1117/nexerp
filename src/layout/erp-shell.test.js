@@ -435,3 +435,15 @@ it('hides the HR ledger until published permissions are available', async () => 
     expect(wrapper.text()).toContain('직원 · 인사발령');
     expect(wrapper.text()).not.toContain('수주 관리');
 });
+
+it('hides presentation-only menu keys without changing runtime route permission', async () => {
+    runtimeStore.context.value = { mode: 'active', hiddenMenuKeys: ['hr.core'] };
+    runtimeStore.canAccess.mockImplementation((key) => key === 'hr.core');
+    const wrapper = mount(AppMenu, { global: { stubs: { RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } });
+    wrappers.push(wrapper);
+    expect(wrapper.text()).not.toContain('직원 · 인사발령');
+    expect(runtimeStore.canAccess('hr.core')).toBe(true);
+    runtimeStore.context.value = { mode: 'active', hiddenMenuKeys: [] };
+    await nextTick();
+    expect(wrapper.text()).toContain('직원 · 인사발령');
+});

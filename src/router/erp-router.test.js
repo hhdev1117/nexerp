@@ -63,3 +63,8 @@ describe('ERP router', () => {
         expect(routerSource).not.toContain('Sakai ERP');
     });
 });
+
+it('keeps HR module management as an administrator recovery route', () => {
+    expect(router.resolve('/settings/hr-modules').meta).toMatchObject({ menuKey: 'settings.hr-modules', roles: ['admin'], fixedAccess: true });
+    expect(routerSource).toContain("'/settings/hr-modules': () => import('@/views/admin/HRModules.vue')");
+});

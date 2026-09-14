@@ -16,7 +16,7 @@ beforeEach(() => {
     mocks.auth = { user: ref({ id: 'user' }) };
     mocks.runtime = { context: ref({ companyId: 'company', mode: 'active' }), refresh: vi.fn().mockResolvedValue(true) };
     mocks.hr = {
-        directory: ref({ employees: [employee], permissions: { create: true, update: true }, sites: [], accounts: [], total: 1, page: 1, pageSize: 25 }),
+        directory: ref({ employees: [employee], permissions: { create: true, update: true, cancel: true }, sites: [], accounts: [], total: 1, page: 1, pageSize: 25 }),
         loading: ref(false),
         saving: ref(false),
         error: ref(null),
@@ -230,4 +230,29 @@ it('refreshes access after correction while audit history is still pending', asy
     expect(mocks.runtime.refresh).toHaveBeenCalledWith('user', 'company');
     resolveHistory([]);
     await flushPromises();
+});
+it('shows draining guidance and permits cancellation independently of update', async () => {
+    mocks.hr.directory.value.moduleState = 'draining';
+    mocks.hr.directory.value.permissions = { create: false, update: false, cancel: true };
+    mocks.hr.directory.value.employees = [{ ...employee, actions: [{ id: 'future', type: 'transfer', effectiveDate: '2099-01-01', cancelled: false }] }];
+    const w = setup();
+    expect(w.get('[data-testid="module-state-banner"]').text()).toContain('진행 건 정리');
+    await w.get('[data-testid="employee-detail"]').trigger('click');
+    expect(w.find('[data-testid="action"]').exists()).toBe(false);
+    await w
+        .findAll('button')
+        .find((b) => b.text() === '발령 취소')
+        .trigger('click');
+    await w.get('#action-reason').setValue('종료 전 정리');
+    await w.get('#impact-confirm').setValue(true);
+    await w.get('[data-testid="save-action"]').trigger('submit');
+    await flushPromises();
+    expect(mocks.hr.cancelAction).toHaveBeenCalledWith('employee', 'future', 3, '종료 전 정리');
+});
+it('never uses update as a fallback for cancellation', async () => {
+    mocks.hr.directory.value.employees = [{ ...employee, actions: [{ id: 'future', type: 'transfer', effectiveDate: '2099-01-01', cancelled: false }] }];
+    delete mocks.hr.directory.value.permissions.cancel;
+    const w = setup();
+    await w.get('[data-testid="employee-detail"]').trigger('click');
+    expect(w.findAll('button').some((b) => b.text() === '발령 취소')).toBe(false);
 });

@@ -103,6 +103,7 @@ export const erpMenu = [
                     makeItem('settings.accounts', '계정 관리', 'pi pi-fw pi-users', '/settings/accounts', 'ERP 사용자 계정을 관리합니다.'),
                     makeItem('settings.menu-permissions', '메뉴 권한 관리', 'pi pi-fw pi-shield', '/settings/menu-permissions', '역할별 메뉴 접근 권한을 관리합니다.'),
                     makeItem('settings.enterprise-access', '전사 권한관리', 'pi pi-fw pi-lock', '/settings/enterprise-access', '권한등급과 직급·직책 연결을 관리합니다.'),
+                    makeItem('settings.hr-modules', '인사 모듈 사용 설정', 'pi pi-fw pi-sliders-h', '/settings/hr-modules', '회사별 인사 기능의 사용 상태와 메뉴 표시를 설정합니다.'),
                     makeItem('settings.infrastructure-usage', '인프라 사용량', 'pi pi-fw pi-server', '/settings/infrastructure-usage', '서비스 상태와 호출량을 확인합니다.'),
                     makeItem('settings.audit', '감사 로그', 'pi pi-fw pi-history', '/settings/audit', '주요 변경과 접근 이력을 조회합니다.')
                 ]

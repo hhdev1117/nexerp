@@ -43,7 +43,7 @@ describe('HR repository', () => {
         const rpc = vi.fn().mockResolvedValue({ data: directory(), error: null });
         const result = await createHrRepository({ rpc }).loadDirectory(company);
         expect(rpc).toHaveBeenCalledWith('hr_directory', { target_company: company, search_text: '', page_number: 1 });
-        expect(result.permissions).toEqual({ create: false, update: false });
+        expect(result.permissions).toEqual({ create: false, update: false, cancel: false });
     });
     it.each([null, {}, { ...directory(), permissions: { create: 'true', update: false } }, { ...directory(), employees: [{ id, companyId: id }] }, { ...directory(), total: -1 }])('rejects malformed directory %j', async (data) => {
         await expect(createHrRepository({ rpc: async () => ({ data }) }).loadDirectory(company)).rejects.toThrow();
@@ -126,4 +126,18 @@ it('preserves nonempty legacy whitespace codes and department parent codes', asy
     ];
     const repo = createHrRepository({ rpc: async () => ({ data: { items, canManage: true } }) });
     expect((await repo.loadReferences(company)).items).toEqual(items);
+});
+
+it('defaults legacy module state and cancellation safely, and validates explicit fields', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: directory() });
+    const repo = createHrRepository({ rpc });
+    expect(await repo.loadDirectory(company)).toMatchObject({ moduleState: 'enabled', permissions: { cancel: false } });
+    for (const moduleState of ['enabled', 'draining', 'read_only', 'disabled']) {
+        rpc.mockResolvedValue({ data: { ...directory(), moduleState, permissions: { create: false, update: false, cancel: true } } });
+        expect(await repo.loadDirectory(company)).toMatchObject({ moduleState, permissions: { cancel: true } });
+    }
+    for (const patch of [{ moduleState: null }, { moduleState: 'unknown' }, { permissions: { create: false, update: false, cancel: null } }]) {
+        rpc.mockResolvedValue({ data: { ...directory(), ...patch } });
+        await expect(repo.loadDirectory(company)).rejects.toThrow();
+    }
 });

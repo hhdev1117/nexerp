@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createHrStore } from './hr';
-const directory = (name) => ({ employees: [{ name }], permissions: { create: true, update: true }, total: 1, page: 1, pageSize: 25, sites: [], accounts: [] });
+const directory = (name) => ({ employees: [{ name }], permissions: { create: true, update: true, cancel: true }, total: 1, page: 1, pageSize: 25, sites: [], accounts: [] });
 const deferred = () => {
     let resolve;
     const promise = new Promise((r) => {
@@ -86,4 +86,19 @@ it('acknowledges corrections even when refresh fails, preserving safe empty stat
     expect(repository.correctEmployee).toHaveBeenCalledWith('A', 'employee', 2, { name: 'Lee', hireDate: '2026-01-01' }, 'fix');
     expect(store.directory.value).toBeNull();
     expect(store.error.value).not.toContain('private');
+});
+
+it('uses the separate cancellation grant in draining and denies missing or false grants', async () => {
+    const data = directory('A');
+    data.permissions = { create: false, update: false, cancel: true };
+    const repository = { loadDirectory: async () => data, cancelAction: vi.fn().mockResolvedValue(null) };
+    const store = createHrStore({ repository });
+    await store.load('A');
+    expect(await store.cancelAction('employee', 'action', 4, 'reason')).toBe(true);
+    for (const cancel of [false, undefined]) {
+        data.permissions = { create: true, update: true, cancel };
+        await store.load('A');
+        expect(await store.cancelAction('employee', 'action', 4, 'reason')).toBe(false);
+    }
+    expect(repository.cancelAction).toHaveBeenCalledTimes(1);
 });

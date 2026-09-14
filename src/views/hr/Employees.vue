@@ -40,6 +40,7 @@ const hr = useHrStore();
 const auth = useAuthStore();
 const runtime = useEnterpriseRuntimeStore();
 const { directory, loading, saving, error } = hr;
+const moduleState = computed(() => directory.value?.moduleState || 'enabled');
 const company = computed(() => (runtime.context.value?.mode === 'active' ? runtime.context.value.companyId : null));
 const search = ref('');
 const selectedId = ref(null);
@@ -140,7 +141,7 @@ async function save() {
     let success = false;
     if (dialog.value === 'register' && directory.value?.permissions.create) {
         success = await hr.createEmployee({ ...draft.value, profileId: draft.value.profileId.trim() || null, siteId: draft.value.siteId || null }, reason.value.trim());
-    } else if (directory.value?.permissions.update && selected.value) {
+    } else if (selected.value && (dialog.value === 'cancel' ? directory.value?.permissions.cancel : directory.value?.permissions.update)) {
         const employee = selected.value;
         success =
             dialog.value === 'correct'
@@ -162,6 +163,13 @@ async function save() {
 <template>
     <section class="hr-page" aria-labelledby="hr-title">
         <div class="card">
+            <p v-if="moduleState === 'draining' || moduleState === 'read_only'" data-testid="module-state-banner" role="status" class="hr-note">
+                {{
+                    moduleState === 'draining'
+                        ? '진행 건 정리 중입니다. 신규 등록과 변경은 중단되며, 권한이 있으면 예정 발령을 취소할 수 있습니다. 기존 예정 발령은 적용됩니다.'
+                        : '읽기 전용 상태입니다. 인사 정보를 조회할 수 있지만 등록·변경·취소는 할 수 없습니다.'
+                }}
+            </p>
             <div class="hr-heading">
                 <div>
                     <h1 id="hr-title" class="text-2xl font-semibold">직원 명부</h1>
@@ -244,7 +252,7 @@ async function save() {
                         <p v-if="item.type === 'transfer'">{{ siteName(item.siteId) }} / {{ referenceName('department', item.department) }} / {{ referenceName('grade', item.grade) }} / {{ referenceName('position', item.position) }}</p>
                         <p>{{ item.reason }}</p>
                     </div>
-                    <Button v-if="directory.permissions.update && !item.cancelled && latest?.id === item.id && item.effectiveDate > today()" label="발령 취소" severity="secondary" :disabled="saving" @click="cancel(item)" />
+                    <Button v-if="directory.permissions.cancel && !item.cancelled && latest?.id === item.id && item.effectiveDate > today()" label="발령 취소" severity="secondary" :disabled="saving" @click="cancel(item)" />
                 </li>
             </ol>
         </div>
@@ -363,7 +371,9 @@ async function save() {
     background: var(--surface-card);
     min-height: 44px;
 }
-.hr-page > .card { min-width: 0; }
+.hr-page > .card {
+    min-width: 0;
+}
 .hr-table {
     overflow-x: auto;
 }

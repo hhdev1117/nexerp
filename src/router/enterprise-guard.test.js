@@ -42,3 +42,15 @@ it('allows HR navigation only with the published menu grant', async () => {
     const { guard } = fixture('active', ['hr.core']);
     expect(await guard({ meta: { menuKey: 'hr.core', publishedAccessRequired: true }, fullPath: '/hr/employees' })).toBe(true);
 });
+
+it('keeps direct HR routes available when only sidebar visibility is disabled', async () => {
+    const { guard, runtime } = fixture('active', ['hr.core']);
+    runtime.context.value.hiddenMenuKeys = ['hr.core'];
+    expect(await guard({ meta: { menuKey: 'hr.core', publishedAccessRequired: true }, fullPath: '/hr/employees' })).toBe(true);
+});
+
+it('requires the administrator role for HR module recovery despite HR grants', async () => {
+    const { guard, auth } = fixture('active', ['hr.core', 'settings.hr-modules']);
+    auth.hasRole = () => false;
+    expect(await guard({ meta: { menuKey: 'settings.hr-modules', roles: ['admin'], fixedAccess: true }, fullPath: '/settings/hr-modules' })).toEqual({ name: 'access-denied' });
+});

@@ -6,7 +6,7 @@ describe('enterprise runtime repository', () => {
     it('uses server identity and precise RPC arguments', async () => {
         const rpc = vi.fn().mockResolvedValue({ data: context, error: null });
         const repository = createEnterpriseRuntimeRepository({ rpc });
-        expect(await repository.loadContext('a')).toEqual(context);
+        expect(await repository.loadContext('a')).toEqual({ ...context, hiddenMenuKeys: [] });
         expect(rpc).toHaveBeenCalledWith('enterprise_access_context', { target_company: 'a' });
         const publication = { revision: 2, draftRevision: 3, active: true };
         rpc.mockResolvedValue({ data: publication });
@@ -20,19 +20,33 @@ describe('enterprise runtime repository', () => {
         expect(await repository.listAdminCompanies()).toEqual(context.companies);
         expect(rpc).toHaveBeenLastCalledWith('enterprise_access_companies', {});
     });
-    it.each([null, {}, { ...context, mode: 'unknown' }, { ...context, revision: -1 }, { ...context, menuKeys: [true] }, { ...context, companyId: 'b' }, { ...context, companies: [{ id: 'a' }] }, { ...context, mode: 'legacy' }])('rejects malformed context %j', async (data) => {
-        await expect(createEnterpriseRuntimeRepository({ rpc: async () => ({ data }) }).loadContext()).rejects.toThrow();
-    });
+    it.each([null, {}, { ...context, mode: 'unknown' }, { ...context, revision: -1 }, { ...context, menuKeys: [true] }, { ...context, companyId: 'b' }, { ...context, companies: [{ id: 'a' }] }, { ...context, mode: 'legacy' }])(
+        'rejects malformed context %j',
+        async (data) => {
+            await expect(createEnterpriseRuntimeRepository({ rpc: async () => ({ data }) }).loadContext()).rejects.toThrow();
+        }
+    );
     it.each(['PGRST202', '42501', '40001', 'network'])('sanitizes failures without legacy fallback (%s)', async (code) => {
-        await expect(createEnterpriseRuntimeRepository({ rpc: async () => { throw { code, message: 'secret SQL payload' }; } }).loadContext()).rejects.not.toThrow('secret');
+        await expect(
+            createEnterpriseRuntimeRepository({
+                rpc: async () => {
+                    throw { code, message: 'secret SQL payload' };
+                }
+            }).loadContext()
+        ).rejects.not.toThrow('secret');
     });
     it('accepts explicit legacy and empty active contexts', async () => {
         for (const mode of ['legacy', 'active']) {
             const data = { mode, companyId: null, companies: [], menuKeys: [], companyActions: [], siteActions: [], revision: 0 };
-            expect(await createEnterpriseRuntimeRepository({ rpc: async () => ({ data }) }).loadContext()).toEqual(data);
+            expect(await createEnterpriseRuntimeRepository({ rpc: async () => ({ data }) }).loadContext()).toEqual({ ...data, hiddenMenuKeys: [] });
         }
     });
-    it.each([{ ...context, companyActions: undefined }, { ...context, siteActions: undefined }, { ...context, companyActions: ['delete'] }, { ...context, siteActions: [{ id: 's', actions: [null] }] }])('rejects malformed active action grants %j', async (data) => {
+    it.each([
+        { ...context, companyActions: undefined },
+        { ...context, siteActions: undefined },
+        { ...context, companyActions: ['delete'] },
+        { ...context, siteActions: [{ id: 's', actions: [null] }] }
+    ])('rejects malformed active action grants %j', async (data) => {
         await expect(createEnterpriseRuntimeRepository({ rpc: async () => ({ data }) }).loadContext()).rejects.toThrow();
     });
     it.each([null, {}, { revision: 1, draftRevision: null, active: 'yes' }])('rejects malformed publication %j', async (data) => {
@@ -49,4 +63,16 @@ describe('enterprise runtime repository', () => {
         expect(rpc).toHaveBeenCalledWith('enterprise_access_sites', { target_company: 'a' });
         await expect(repo.listAdminSites('b')).rejects.toThrow();
     });
+});
+
+it('normalizes old hidden menus and rejects visibility outside authorized menus', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: context });
+    const repo = createEnterpriseRuntimeRepository({ rpc });
+    expect((await repo.loadContext()).hiddenMenuKeys).toEqual([]);
+    rpc.mockResolvedValue({ data: { ...context, hiddenMenuKeys: ['company'] } });
+    expect((await repo.loadContext()).hiddenMenuKeys).toEqual(['company']);
+    for (const hiddenMenuKeys of [null, 'company', [false], ['hr'], ['company', 'company']]) {
+        rpc.mockResolvedValue({ data: { ...context, hiddenMenuKeys } });
+        await expect(repo.loadContext()).rejects.toThrow();
+    }
 });

@@ -37,6 +37,7 @@ const expectedMenuKeys = [
     'settings.audit',
     'settings.company',
     'settings.enterprise-access',
+    'settings.hr-modules',
     'settings.infrastructure-usage',
     'settings.menu-permissions'
 ];

@@ -23,7 +23,7 @@ async function navigateAllowed() {
         return;
     }
     if (runtime.canAccess(route.meta.menuKey)) return;
-    const next = destinations.find((item) => runtime.canAccess(item.menuKey));
+    const next = destinations.find((item) => runtime.canAccess(item.menuKey) && !context.hiddenMenuKeys?.includes(item.menuKey));
     await router.replace(next?.to || (auth.profile.value?.role === 'admin' ? '/settings/enterprise-access' : '/auth/access-denied'));
 }
 async function changeCompany(event) {

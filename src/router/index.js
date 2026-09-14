@@ -17,6 +17,7 @@ const dedicatedViews = {
     '/settings/accounts': () => import('@/views/admin/AccountManagement.vue'),
     '/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue'),
     '/settings/enterprise-access': () => import('@/views/admin/EnterpriseAccess.vue'),
+    '/settings/hr-modules': () => import('@/views/admin/HRModules.vue'),
     '/settings/infrastructure-usage': () => import('@/views/admin/InfrastructureUsage.vue')
 };
 
@@ -32,7 +33,7 @@ const erpRoutes = flattenMenuRoutes(erpMenu).map((item) => ({
         icon: item.icon,
         menuKey: item.menuKey,
         ...(item.menuKey === 'hr.core' ? { publishedAccessRequired: true } : {}),
-        ...(['/settings/accounts', '/settings/menu-permissions', '/settings/infrastructure-usage', '/settings/enterprise-access'].includes(item.to) ? { roles: ['admin'], fixedAccess: true } : {})
+        ...(['/settings/accounts', '/settings/menu-permissions', '/settings/infrastructure-usage', '/settings/enterprise-access', '/settings/hr-modules'].includes(item.to) ? { roles: ['admin'], fixedAccess: true } : {})
     }
 }));
 

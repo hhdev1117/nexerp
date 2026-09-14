@@ -34,6 +34,8 @@ const validDirectory = (data, company) =>
     data.pageSize === 25 &&
     typeof data.permissions?.create === 'boolean' &&
     typeof data.permissions?.update === 'boolean' &&
+    (data.permissions.cancel === undefined || typeof data.permissions.cancel === 'boolean') &&
+    (data.moduleState === undefined || ['enabled', 'draining', 'read_only', 'disabled'].includes(data.moduleState)) &&
     Array.isArray(data.accounts) &&
     data.accounts.every((account) => account && uuid(account.id) && text(account.name)) &&
     Array.isArray(data.sites) &&
@@ -64,7 +66,10 @@ export function createHrRepository(client = getSupabaseClient()) {
         correctEmployee: (companyId, employeeId, revision, document, reason) =>
             request('hr_correct_employee', { target_company: companyId, target_employee: employeeId, expected_revision: revision, correction_document: document, change_reason: reason }, (data) => data === null),
         loadCorrections: (companyId, employeeId) => request('hr_employee_corrections', { target_company: companyId, target_employee: employeeId }, (data) => Array.isArray(data) && data.every(correction)),
-        loadDirectory: (companyId, search = '', page = 1) => request('hr_directory', { target_company: companyId, search_text: search, page_number: page }, (data) => validDirectory(data, companyId)),
+        loadDirectory: async (companyId, search = '', page = 1) => {
+            const data = await request('hr_directory', { target_company: companyId, search_text: search, page_number: page }, (data) => validDirectory(data, companyId));
+            return { ...data, moduleState: data.moduleState ?? 'enabled', permissions: { ...data.permissions, cancel: data.permissions.cancel ?? false } };
+        },
         createEmployee: (companyId, document, reason) => request('hr_create_employee', { target_company: companyId, employee_document: document, change_reason: reason }, uuid),
         recordAction: (companyId, employeeId, revision, document) => request('hr_record_personnel_action', { target_company: companyId, target_employee: employeeId, expected_revision: revision, action_document: document }, uuid),
         cancelAction: (companyId, employeeId, actionId, revision, reason) =>
