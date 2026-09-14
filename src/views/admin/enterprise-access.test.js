@@ -5,6 +5,9 @@ import { ref } from 'vue';
 import EnterpriseAccess from './EnterpriseAccess.vue';
 
 const repo = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
+vi.mock('@/repositories/access/enterpriseRuntimeRepository', () => ({ createEnterpriseRuntimeRepository: () => ({ listAdminCompanies: async () => [{ id: 'company-a', name: '테스트 회사' }], listAdminSites: async () => [], loadPublication: async () => ({ active: false, revision: 0, draftRevision: null }) }) }));
+vi.mock('@/stores/enterpriseRuntime', () => ({ useEnterpriseRuntimeStore: () => ({ context: ref(null), refresh: vi.fn() }) }));
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: ref({ id: 'admin' }) }) }));
 vi.mock('@/services/adminApi', () => ({ useAdminApi: () => ({ listAccounts: async () => [{ id: 'actor-a', displayName: '김대리', email: 'test@gmail.com', isActive: true }] }) }));
 vi.mock('@/repositories/access/enterpriseAccessRepository', () => ({ createEnterpriseAccessRepository: () => repo }));
 vi.mock('@/stores/master', () => ({ useMasterStore: () => ({ activeCompanies: ref([{ id: 'company-a', name: '테스트 회사' }]), ensureLoaded: async () => {}, error: ref(null) }) }));

@@ -1,6 +1,7 @@
 import { erpMenu, flattenMenuRoutes } from '@/data/erp';
 import AppLayout from '@/layout/AppLayout.vue';
 import { useAccessStore } from '@/stores/access';
+import { useEnterpriseRuntimeStore } from '@/stores/enterpriseRuntime';
 import { useAuthStore } from '@/stores/auth';
 import { createRouter, createWebHistory } from 'vue-router';
 import { createAuthGuard } from './authGuard';
@@ -74,7 +75,7 @@ const router = createRouter({
     ]
 });
 
-router.beforeEach(createAuthGuard(useAuthStore(), useAccessStore()));
+router.beforeEach(createAuthGuard(useAuthStore(), useAccessStore(), useEnterpriseRuntimeStore()));
 
 router.afterEach((to) => {
     document.title = to.meta.title ? `${to.meta.title} | NEXERP` : 'NEXERP';

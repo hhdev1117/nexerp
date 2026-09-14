@@ -4,7 +4,7 @@ export const safeLocalRedirect = (value) => {
     return path === '/auth/login' || path === '/auth/mfa' ? '/' : value;
 };
 
-export const createAuthGuard = (authStore, accessStore) => async (to) => {
+export const createAuthGuard = (authStore, accessStore, runtimeStore = null) => async (to) => {
     try {
         await authStore.initialize();
         if (typeof authStore.waitForIdentity === 'function') await authStore.waitForIdentity();
@@ -18,6 +18,7 @@ export const createAuthGuard = (authStore, accessStore) => async (to) => {
 
     const authenticated = Boolean(authStore.user.value);
     const active = authenticated && Boolean(authStore.profile.value?.is_active);
+    if (!active) runtimeStore?.reset();
     const authenticatedUserId = authStore.user.value?.id;
     const isSameActiveIdentity = () => authStore.user.value?.id === authenticatedUserId && Boolean(authStore.profile.value?.is_active);
 
@@ -59,6 +60,16 @@ export const createAuthGuard = (authStore, accessStore) => async (to) => {
     if (isMfaRoute) return mfaResult?.status === 'ready' ? safeLocalRedirect(to.query?.redirect) : true;
     if (mfaResult?.status !== 'ready') return { name: 'mfa', query: { redirect: safeLocalRedirect(to.fullPath) } };
     if (to.meta.roles && !authStore.hasRole(to.meta.roles)) return { name: 'access-denied' };
+    if (runtimeStore && to.meta.menuKey && !to.meta.fixedAccess) {
+        try {
+            await runtimeStore.refresh(authenticatedUserId, runtimeStore.context.value?.companyId || null);
+        } catch {
+            return { name: 'access-denied' };
+        }
+        if (!isSameActiveIdentity() || !runtimeStore.context.value) return { name: 'access-denied' };
+        if (runtimeStore.context.value.mode === 'active') return runtimeStore.canAccess(to.meta.menuKey) ? true : { name: 'access-denied' };
+        if (runtimeStore.context.value.mode !== 'legacy') return { name: 'access-denied' };
+    }
     if (to.meta.menuKey && !to.meta.fixedAccess) {
         if (!accessStore) return { name: 'access-denied' };
 

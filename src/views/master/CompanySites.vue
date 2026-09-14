@@ -2,6 +2,7 @@
 import { companyPayload, createCompanyDraft, createSiteDraft, formatBusinessNumber, sitePayload, siteTypeLabel, siteTypeOptions, validateCompanyDraft, validateSiteDraft } from '@/data/master';
 import { MASTER_ERROR_MESSAGES } from '@/repositories/master/errors';
 import { useAuthStore } from '@/stores/auth';
+import { useEnterpriseRuntimeStore } from '@/stores/enterpriseRuntime';
 import { useMasterStore } from '@/stores/master';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
@@ -11,11 +12,26 @@ const READ_ONLY_MESSAGE = '회사와 사업장 등록 및 수정은 관리자 �
 
 const authStore = useAuthStore();
 const masterStore = useMasterStore();
+const runtime = useEnterpriseRuntimeStore();
 const confirm = useConfirm();
 const toast = useToast();
 const { companies, sites, siteCountByCompany, loading, error, ensureLoaded, createCompany, updateCompany, createSite, updateSite } = masterStore;
 
-const canManage = computed(() => authStore.hasRole(['admin']));
+const canCreateCompany = computed(() => authStore.hasRole(['admin']));
+const legacy = computed(() => runtime.context.value?.mode === 'legacy');
+const contextReady = ref(false);
+const permittedCompanies = computed(() => (!contextReady.value || !runtime.context.value ? [] : companies.value.filter((company) => legacy.value || company.id === runtime.context.value.companyId)));
+const selectableCompanies = computed(() => {
+    if (permittedCompanies.value.length || legacy.value || !contextReady.value) return permittedCompanies.value;
+    const context = runtime.context.value;
+    if (!context?.siteActions.some((site) => site.actions.includes('read'))) return [];
+    const company = context.companies.find((company) => company.id === context.companyId);
+    return company ? [{ id: company.id, name: company.name, isActive: true }] : [];
+});
+const canEditCompany = (company) => Boolean(company && contextReady.value && (legacy.value ? canCreateCompany.value : runtime.context.value?.companyId === company.id && runtime.canCompanyAction('update')));
+const canEditSite = (site) => Boolean(site && contextReady.value && (legacy.value ? canCreateCompany.value : runtime.context.value?.companyId === site.companyId && runtime.canSiteAction(site.id, 'update')));
+const canCreateSite = computed(() => Boolean(selectedCompany.value && contextReady.value && (legacy.value ? canCreateCompany.value : selectedCompany.value.id === runtime.context.value?.companyId && runtime.canCompanyAction('create'))));
+const canManage = computed(() => canCreateCompany.value || canCreateSite.value || permittedCompanies.value.some(canEditCompany) || selectedCompanySites.value.some(canEditSite));
 const keyword = ref('');
 const selectedCompany = ref(null);
 const saving = ref(false);
@@ -38,15 +54,42 @@ const siteDialogTitle = computed(() => (siteMode.value === 'create' ? '사업장
 
 const filteredCompanies = computed(() => {
     const query = keyword.value.trim().toLocaleLowerCase('ko-KR');
-    return companies.value.filter((company) => !query || [company.code, company.name, company.representative, formatBusinessNumber(company.businessNumber)].some((value) => String(value || '').toLocaleLowerCase('ko-KR').includes(query)));
+    return permittedCompanies.value.filter(
+        (company) =>
+            !query ||
+            [company.code, company.name, company.representative, formatBusinessNumber(company.businessNumber)].some((value) =>
+                String(value || '')
+                    .toLocaleLowerCase('ko-KR')
+                    .includes(query)
+            )
+    );
 });
-const selectedCompanySites = computed(() => (selectedCompany.value ? sites.value.filter((site) => site.companyId === selectedCompany.value.id) : []));
-const companyOptions = computed(() => companies.value.filter((company) => company.isActive || company.id === siteDraft.value.companyId).map((company) => ({ label: `${company.code} · ${company.name}`, value: company.id })));
+const selectedCompanySites = computed(() => (selectedCompany.value && selectableCompanies.value.some((company) => company.id === selectedCompany.value.id) ? sites.value.filter((site) => site.companyId === selectedCompany.value.id) : []));
+const companyOptions = computed(() =>
+    selectableCompanies.value.filter((company) => company.isActive || company.id === siteDraft.value.companyId).map((company) => ({ label: company.code ? `${company.code} · ${company.name}` : company.name, value: company.id }))
+);
 
-ensureLoaded();
+let contextSequence = 0;
+watch(
+    runtime.context,
+    async (context) => {
+        const sequence = ++contextSequence;
+        contextReady.value = false;
+        selectedCompany.value = null;
+        companyDialog.value = false;
+        siteDialog.value = false;
+        editingCompany.value = null;
+        editingSite.value = null;
+        if (!context) return;
+        if (context.mode === 'legacy') await ensureLoaded();
+        else await masterStore.reload();
+        if (sequence === contextSequence) contextReady.value = !error.value;
+    },
+    { immediate: true, flush: 'sync' }
+);
 
 watch(
-    companies,
+    selectableCompanies,
     (rows) => {
         const currentId = selectedCompany.value?.id;
         selectedCompany.value = rows.find((company) => company.id === currentId) || rows[0] || null;
@@ -65,6 +108,7 @@ async function focusFirstError(prefix, fields, errors) {
 }
 
 function openCreateCompany() {
+    if (!canCreateCompany.value) return;
     companyMode.value = 'create';
     editingCompany.value = null;
     companyDraft.value = createCompanyDraft();
@@ -73,6 +117,7 @@ function openCreateCompany() {
 }
 
 function openEditCompany(company) {
+    if (!canEditCompany(company)) return;
     companyMode.value = 'edit';
     editingCompany.value = company;
     companyDraft.value = createCompanyDraft(company);
@@ -81,6 +126,7 @@ function openEditCompany(company) {
 }
 
 async function saveCompany() {
+    if (companyMode.value === 'create' ? !canCreateCompany.value : !canEditCompany(editingCompany.value)) return;
     companySubmitted.value = true;
     if (Object.keys(companyErrors.value).length) {
         await focusFirstError('company', ['code', 'name', 'businessNumber'], companyErrors.value);
@@ -92,7 +138,7 @@ async function saveCompany() {
         const payload = companyPayload(companyDraft.value);
         const saved = companyMode.value === 'create' ? await createCompany(payload) : await updateCompany(editingCompany.value.id, payload);
         companyDialog.value = false;
-        selectedCompany.value = saved;
+        selectedCompany.value = permittedCompanies.value.find((company) => company.id === saved.id) || selectedCompany.value;
         notify('success', companyMode.value === 'create' ? '회사 등록 완료' : '회사 수정 완료', `${saved.name} 회사 정보가 저장되었습니다.`);
     } catch (cause) {
         notify('error', '회사 저장 실패', failureDetail(cause));
@@ -102,6 +148,7 @@ async function saveCompany() {
 }
 
 function toggleCompanyActive(company) {
+    if (!canEditCompany(company)) return;
     const activating = !company.isActive;
     confirm.require({
         group: 'master',
@@ -111,6 +158,7 @@ function toggleCompanyActive(company) {
         rejectProps: { label: '취소', severity: 'secondary', outlined: true },
         acceptProps: { label: activating ? '활성화' : '비활성화', severity: activating ? 'primary' : 'danger' },
         accept: async () => {
+            if (!canEditCompany(company)) return;
             try {
                 await updateCompany(company.id, { isActive: activating });
                 notify('success', '상태 변경 완료', `${company.name} 회사가 ${activating ? '활성화' : '비활성화'}되었습니다.`);
@@ -122,7 +170,7 @@ function toggleCompanyActive(company) {
 }
 
 function openCreateSite() {
-    if (!selectedCompany.value) return;
+    if (!canCreateSite.value) return;
     siteMode.value = 'create';
     editingSite.value = null;
     siteDraft.value = createSiteDraft(null, selectedCompany.value.id);
@@ -131,6 +179,7 @@ function openCreateSite() {
 }
 
 function openEditSite(site) {
+    if (!canEditSite(site)) return;
     siteMode.value = 'edit';
     editingSite.value = site;
     siteDraft.value = createSiteDraft(site);
@@ -139,6 +188,8 @@ function openEditSite(site) {
 }
 
 async function saveSite() {
+    if (siteMode.value === 'create' ? !canCreateSite.value : !canEditSite(editingSite.value)) return;
+    if (!legacy.value && siteDraft.value.companyId !== runtime.context.value?.companyId) return;
     siteSubmitted.value = true;
     if (Object.keys(siteErrors.value).length) {
         await focusFirstError('site', ['companyId', 'code', 'name', 'siteType'], siteErrors.value);
@@ -150,7 +201,7 @@ async function saveSite() {
         const payload = sitePayload(siteDraft.value);
         const saved = siteMode.value === 'create' ? await createSite(payload) : await updateSite(editingSite.value.id, payload);
         siteDialog.value = false;
-        selectedCompany.value = companies.value.find((company) => company.id === saved.companyId) || selectedCompany.value;
+        selectedCompany.value = permittedCompanies.value.find((company) => company.id === saved.companyId) || selectedCompany.value;
         notify('success', siteMode.value === 'create' ? '사업장 등록 완료' : '사업장 수정 완료', `${saved.name} 사업장 정보가 저장되었습니다.`);
     } catch (cause) {
         notify('error', '사업장 저장 실패', failureDetail(cause));
@@ -160,6 +211,7 @@ async function saveSite() {
 }
 
 function toggleSiteActive(site) {
+    if (!canEditSite(site)) return;
     const activating = !site.isActive;
     confirm.require({
         group: 'master',
@@ -169,6 +221,7 @@ function toggleSiteActive(site) {
         rejectProps: { label: '취소', severity: 'secondary', outlined: true },
         acceptProps: { label: activating ? '활성화' : '비활성화', severity: activating ? 'primary' : 'danger' },
         accept: async () => {
+            if (!canEditSite(site)) return;
             try {
                 await updateSite(site.id, { isActive: activating });
                 notify('success', '상태 변경 완료', `${site.name} 사업장이 ${activating ? '활성화' : '비활성화'}되었습니다.`);
@@ -188,13 +241,13 @@ function toggleSiteActive(site) {
                 <div class="mt-1 text-muted-color">여러 회사와 각 회사의 사업장을 등록하고 관리합니다. 삭제 대신 비활성화로 이력을 보존합니다.</div>
             </div>
             <div v-if="canManage" class="flex flex-wrap gap-2">
-                <Button label="회사 등록" icon="pi pi-plus" @click="openCreateCompany" />
-                <Button label="사업장 등록" icon="pi pi-plus" severity="secondary" outlined :disabled="!selectedCompany" @click="openCreateSite" />
+                <Button v-if="canCreateCompany" label="회사 등록" icon="pi pi-plus" @click="openCreateCompany" />
+                <Button v-if="canCreateSite" label="사업장 등록" icon="pi pi-plus" severity="secondary" outlined :disabled="!selectedCompany" @click="openCreateSite" />
             </div>
         </div>
 
         <Message v-if="error" severity="error" :closable="false" class="mb-6">{{ error }}</Message>
-        <Message v-if="!canManage" severity="info" :closable="false" class="mb-6">{{ READ_ONLY_MESSAGE }}</Message>
+        <Message v-if="!canManage" severity="info" :closable="false" class="mb-6">{{ legacy ? READ_ONLY_MESSAGE : '현재 회사에서 부여된 권한으로 조회할 수 있습니다. 등록 및 수정 권한은 관리자에게 문의하세요.' }}</Message>
 
         <div class="grid grid-cols-12 gap-6">
             <div class="col-span-12 xl:col-span-7">
@@ -220,7 +273,7 @@ function toggleSiteActive(site) {
                         stripedRows
                         scrollable
                     >
-                        <template #empty>등록된 회사가 없습니다.</template>
+                        <template #empty>{{ !legacy && selectedCompany ? '회사 상세 정보 조회 권한이 없습니다. 허용된 사업장은 오른쪽에서 관리할 수 있습니다.' : '등록된 회사가 없습니다.' }}</template>
                         <Column field="code" header="코드" sortable>
                             <template #body="slotProps"
                                 ><span class="font-medium text-primary">{{ slotProps.data.code }}</span></template
@@ -237,9 +290,9 @@ function toggleSiteActive(site) {
                         <Column field="isActive" header="상태" sortable>
                             <template #body="slotProps"><Tag :value="activeLabel(slotProps.data)" :severity="slotProps.data.isActive ? 'success' : 'secondary'" /></template>
                         </Column>
-                        <Column v-if="canManage" header="작업" frozen alignFrozen="right" style="width: 7rem">
+                        <Column v-if="permittedCompanies.some(canEditCompany)" header="작업" frozen alignFrozen="right" style="width: 7rem">
                             <template #body="slotProps">
-                                <div class="flex gap-1">
+                                <div v-if="canEditCompany(slotProps.data)" class="flex gap-1">
                                     <Button icon="pi pi-pencil" text rounded :aria-label="`${slotProps.data.name} 회사 수정`" :title="`${slotProps.data.name} 회사 수정`" @click.stop="openEditCompany(slotProps.data)" />
                                     <Button
                                         :icon="slotProps.data.isActive ? 'pi pi-lock' : 'pi pi-lock-open'"
@@ -278,9 +331,9 @@ function toggleSiteActive(site) {
                         <Column field="isActive" header="상태" sortable>
                             <template #body="slotProps"><Tag :value="activeLabel(slotProps.data)" :severity="slotProps.data.isActive ? 'success' : 'secondary'" /></template>
                         </Column>
-                        <Column v-if="canManage" header="작업" frozen alignFrozen="right" style="width: 7rem">
+                        <Column v-if="selectedCompanySites.some(canEditSite)" header="작업" frozen alignFrozen="right" style="width: 7rem">
                             <template #body="slotProps">
-                                <div class="flex gap-1">
+                                <div v-if="canEditSite(slotProps.data)" class="flex gap-1">
                                     <Button icon="pi pi-pencil" text rounded :aria-label="`${slotProps.data.name} 사업장 수정`" :title="`${slotProps.data.name} 사업장 수정`" @click="openEditSite(slotProps.data)" />
                                     <Button
                                         :icon="slotProps.data.isActive ? 'pi pi-lock' : 'pi pi-lock-open'"
@@ -303,7 +356,18 @@ function toggleSiteActive(site) {
             <form id="company-form" class="grid grid-cols-12 gap-4" novalidate @submit.prevent="saveCompany">
                 <div class="col-span-12 sm:col-span-5">
                     <label for="company-code" class="block mb-2 font-medium">회사 코드</label>
-                    <InputText id="company-code" v-model="companyDraft.code" fluid required :disabled="companyMode === 'edit'" autofocus aria-describedby="company-code-error" :invalid="companySubmitted && Boolean(companyErrors.code)" placeholder="예: NXM" class="uppercase" />
+                    <InputText
+                        id="company-code"
+                        v-model="companyDraft.code"
+                        fluid
+                        required
+                        :disabled="companyMode === 'edit'"
+                        autofocus
+                        aria-describedby="company-code-error"
+                        :invalid="companySubmitted && Boolean(companyErrors.code)"
+                        placeholder="예: NXM"
+                        class="uppercase"
+                    />
                     <small v-if="companySubmitted && companyErrors.code" id="company-code-error" class="text-red-700 dark:text-red-400" role="alert">{{ companyErrors.code }}</small>
                 </div>
                 <div class="col-span-12 sm:col-span-7">
@@ -313,7 +377,15 @@ function toggleSiteActive(site) {
                 </div>
                 <div class="col-span-12 sm:col-span-6">
                     <label for="company-businessNumber" class="block mb-2 font-medium">사업자등록번호</label>
-                    <InputText id="company-businessNumber" v-model="companyDraft.businessNumber" fluid inputmode="numeric" aria-describedby="company-businessNumber-error" :invalid="companySubmitted && Boolean(companyErrors.businessNumber)" placeholder="000-00-00000" />
+                    <InputText
+                        id="company-businessNumber"
+                        v-model="companyDraft.businessNumber"
+                        fluid
+                        inputmode="numeric"
+                        aria-describedby="company-businessNumber-error"
+                        :invalid="companySubmitted && Boolean(companyErrors.businessNumber)"
+                        placeholder="000-00-00000"
+                    />
                     <small v-if="companySubmitted && companyErrors.businessNumber" id="company-businessNumber-error" class="text-red-700 dark:text-red-400" role="alert">{{ companyErrors.businessNumber }}</small>
                 </div>
                 <div class="col-span-12 sm:col-span-6">
@@ -339,12 +411,33 @@ function toggleSiteActive(site) {
             <form id="site-form" class="grid grid-cols-12 gap-4" novalidate @submit.prevent="saveSite">
                 <div class="col-span-12">
                     <label id="site-companyId-label" for="site-companyId" class="block mb-2 font-medium">소속 회사</label>
-                    <Select inputId="site-companyId" v-model="siteDraft.companyId" :options="companyOptions" optionLabel="label" optionValue="value" aria-labelledby="site-companyId-label" placeholder="회사를 선택하세요" fluid :invalid="siteSubmitted && Boolean(siteErrors.companyId)" />
+                    <Select
+                        inputId="site-companyId"
+                        v-model="siteDraft.companyId"
+                        :options="companyOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        aria-labelledby="site-companyId-label"
+                        placeholder="회사를 선택하세요"
+                        fluid
+                        :invalid="siteSubmitted && Boolean(siteErrors.companyId)"
+                    />
                     <small v-if="siteSubmitted && siteErrors.companyId" id="site-companyId-error" class="text-red-700 dark:text-red-400" role="alert">{{ siteErrors.companyId }}</small>
                 </div>
                 <div class="col-span-12 sm:col-span-5">
                     <label for="site-code" class="block mb-2 font-medium">사업장 코드</label>
-                    <InputText id="site-code" v-model="siteDraft.code" fluid required :disabled="siteMode === 'edit'" autofocus aria-describedby="site-code-error" :invalid="siteSubmitted && Boolean(siteErrors.code)" placeholder="예: ICN" class="uppercase" />
+                    <InputText
+                        id="site-code"
+                        v-model="siteDraft.code"
+                        fluid
+                        required
+                        :disabled="siteMode === 'edit'"
+                        autofocus
+                        aria-describedby="site-code-error"
+                        :invalid="siteSubmitted && Boolean(siteErrors.code)"
+                        placeholder="예: ICN"
+                        class="uppercase"
+                    />
                     <small v-if="siteSubmitted && siteErrors.code" id="site-code-error" class="text-red-700 dark:text-red-400" role="alert">{{ siteErrors.code }}</small>
                 </div>
                 <div class="col-span-12 sm:col-span-7">
@@ -354,7 +447,16 @@ function toggleSiteActive(site) {
                 </div>
                 <div class="col-span-12 sm:col-span-5">
                     <label id="site-siteType-label" for="site-siteType" class="block mb-2 font-medium">유형</label>
-                    <Select inputId="site-siteType" v-model="siteDraft.siteType" :options="siteTypeOptions" optionLabel="label" optionValue="value" aria-labelledby="site-siteType-label" fluid :invalid="siteSubmitted && Boolean(siteErrors.siteType)" />
+                    <Select
+                        inputId="site-siteType"
+                        v-model="siteDraft.siteType"
+                        :options="siteTypeOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        aria-labelledby="site-siteType-label"
+                        fluid
+                        :invalid="siteSubmitted && Boolean(siteErrors.siteType)"
+                    />
                     <small v-if="siteSubmitted && siteErrors.siteType" id="site-siteType-error" class="text-red-700 dark:text-red-400" role="alert">{{ siteErrors.siteType }}</small>
                 </div>
                 <div class="col-span-12 sm:col-span-7">

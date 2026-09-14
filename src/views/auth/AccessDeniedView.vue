@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import CompanyAccessSelector from '@/layout/CompanyAccessSelector.vue';
 
 const authStore = useAuthStore();
 const route = useRoute();
@@ -60,6 +61,7 @@ const signOut = async () => {
 <template>
     <main class="auth-shell">
         <section class="auth-panel" aria-labelledby="access-title">
+            <CompanyAccessSelector v-if="authStore.profile.value?.is_active" />
             <span class="status-icon" aria-hidden="true"><i :class="recoverableProfileFailure ? 'pi pi-refresh' : 'pi pi-lock'"></i></span>
             <p class="brand">NEXERP</p>
             <h1 id="access-title">{{ recoverableProfileFailure ? '권한 정보를 불러오지 못했습니다' : '접근 권한이 없습니다' }}</h1>

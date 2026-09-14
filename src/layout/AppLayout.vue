@@ -5,9 +5,21 @@ import { useRoute } from 'vue-router';
 import AppFooter from './AppFooter.vue';
 import AppSidebar from './AppSidebar.vue';
 import AppTopbar from './AppTopbar.vue';
+import CompanyAccessSelector from './CompanyAccessSelector.vue';
+import { useEnterpriseRuntimeStore } from '@/stores/enterpriseRuntime';
+import { useAuthStore } from '@/stores/auth';
 
 const { layoutConfig, layoutState, hideMobileMenu, isDesktop } = useLayout();
 const route = useRoute();
+const runtime = useEnterpriseRuntimeStore();
+const auth = useAuthStore();
+const contentAllowed = computed(() => {
+    if (route.meta.fixedAccess && auth.profile.value?.role === 'admin' && auth.profile.value?.is_active) return true;
+    if (runtime.loading.value || !runtime.context.value) return false;
+    if (runtime.context.value.mode === 'legacy') return true;
+    return !route.meta.menuKey || runtime.canAccess(route.meta.menuKey);
+});
+const contentKey = computed(() => `${auth.user.value?.id}:${route.meta.fixedAccess ? 'system' : runtime.context.value?.companyId || 'legacy'}`);
 let previousFocusedElement = null;
 let previousOverlayFocusedElement = null;
 let desktopOverlayLifecycleActive = false;
@@ -151,7 +163,9 @@ onBeforeUnmount(() => {
         <AppSidebar />
         <div class="layout-main-container" :inert="layoutState.mobileMenuActive ? true : undefined" :aria-hidden="layoutState.mobileMenuActive ? 'true' : undefined">
             <main class="layout-main">
-                <router-view />
+                <CompanyAccessSelector />
+                <router-view v-if="contentAllowed" :key="contentKey" />
+                <p v-else role="status">회사 권한을 확인한 후 업무 화면을 표시합니다.</p>
             </main>
             <AppFooter />
         </div>

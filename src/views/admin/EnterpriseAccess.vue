@@ -4,12 +4,20 @@ import { onBeforeRouteLeave } from 'vue-router';
 import { erpMenu, flattenMenuRoutes } from '@/data/erp';
 import { ACTIONS, createDefaultPolicy, explainAccess, resolveLevel, validatePolicy } from '@/data/enterpriseAccess';
 import { createEnterpriseAccessRepository } from '@/repositories/access/enterpriseAccessRepository';
-import { useMasterStore } from '@/stores/master';
+import { createEnterpriseRuntimeRepository } from '@/repositories/access/enterpriseRuntimeRepository';
+import { useEnterpriseRuntimeStore } from '@/stores/enterpriseRuntime';
+import { useAuthStore } from '@/stores/auth';
 import { useAdminApi } from '@/services/adminApi';
 import AccessPermissionGrid from './access/AccessPermissionGrid.vue';
 import AccessPeopleEditor from './access/AccessPeopleEditor.vue';
+import AccessPublication from './access/AccessPublication.vue';
 
-const master = useMasterStore();
+const runtimeRepository = createEnterpriseRuntimeRepository();
+const runtime = useEnterpriseRuntimeStore();
+const auth = useAuthStore();
+const adminCompanies = ref([]);
+const adminSites = ref([]);
+const catalogError = ref('');
 const repository = createEnterpriseAccessRepository();
 const adminApi = useAdminApi();
 const accounts = ref([]);
@@ -96,12 +104,14 @@ async function loadPolicy() {
     targetId.value = '';
     loading.value = false;
     conflict.value = false;
+    adminSites.value = [];
     if (!companyId.value) return;
     loading.value = true;
     try {
-        const row = await repository.load(companyId.value);
+        const [row, sites] = await Promise.all([repository.load(companyId.value), runtimeRepository.listAdminSites(companyId.value)]);
         if (sequence !== loadSequence) return;
         policy.value = row.policy || createDefaultPolicy(resources);
+        adminSites.value = sites;
         baseline.value = JSON.stringify(policy.value);
         revision.value = row.revision;
         reason.value = '';
@@ -155,7 +165,7 @@ async function save() {
         baseline.value = JSON.stringify(row.policy);
         reviewing.value = false;
         reason.value = '';
-        notice.value = `권한 설정 버전 ${row.revision}을 저장했습니다. 기존 업무 권한은 아직 전환되지 않았습니다.`;
+        notice.value = `권한 초안 버전 ${row.revision}을 저장했습니다. 실제 적용은 아래 적용 관리에서 진행합니다.`;
     } catch (cause) {
         conflict.value = cause.code === 'revision_conflict';
         error.value = cause.message || '저장하지 못했습니다. 편집 내용은 유지됩니다.';
@@ -201,7 +211,7 @@ watch(
 );
 onBeforeRouteLeave(() => canLeave());
 onMounted(() => {
-    master.ensureLoaded();
+    loadCatalog();
     loadAccounts();
     window.addEventListener('beforeunload', beforeUnload);
 });
@@ -209,6 +219,15 @@ onBeforeUnmount(() => {
     ++loadSequence;
     window.removeEventListener('beforeunload', beforeUnload);
 });
+async function loadCatalog() {
+    catalogError.value = '';
+    try { adminCompanies.value = await runtimeRepository.listAdminCompanies(); }
+    catch { catalogError.value = '회사 목록을 불러오지 못했습니다. 권한 데이터베이스 적용 상태와 인증을 확인해 주세요.'; }
+}
+async function publicationChanged() {
+    await runtime.refresh(auth.user.value?.id, runtime.context.value?.companyId || companyId.value);
+    notice.value = '적용 정책을 변경했습니다. 사용자 접근은 서버에서 최신 정책으로 확인합니다.';
+}
 </script>
 
 <template>
@@ -223,12 +242,12 @@ onBeforeUnmount(() => {
                 <label for="access-company">관리할 회사</label
                 ><select id="access-company" :value="companyId" :disabled="saving" @change="changeCompany">
                     <option value="">회사를 선택해 주세요</option>
-                    <option v-for="company in master.activeCompanies.value" :key="company.id" :value="company.id">{{ company.name }}</option>
+                    <option v-for="company in adminCompanies" :key="company.id" :value="company.id">{{ company.name }}</option>
                 </select>
             </div>
         </header>
-        <p class="access-banner"><strong>권한 전환 준비</strong> 이 화면은 새 권한 정책을 저장·검토합니다. 기존 업무 권한은 모듈별 전환 검증 후 적용합니다.</p>
-        <p v-if="master.error.value" role="alert">{{ master.error.value }}</p>
+        <p class="access-banner"><strong>초안과 실제 적용 분리</strong> 설정을 저장한 뒤 적용 관리에서 검토·적용합니다. 적용 전에는 기존 업무 권한을 사용하고, 적용 후에는 메뉴와 회사·사업장 데이터 접근에 새 정책을 사용합니다.</p>
+        <p v-if="catalogError" role="alert">{{ catalogError }} <button type="button" @click="loadCatalog">회사 목록 다시 불러오기</button></p>
         <div v-if="error" role="alert" class="access-error">{{ error }} <button v-if="!policy" type="button" @click="loadPolicy">다시 불러오기</button></div>
         <button v-if="conflict" type="button" @click="reloadAfterConflict">내 변경을 취소하고 최신 설정 불러오기</button>
         <p v-if="notice" role="status" class="access-banner">{{ notice }}</p>
@@ -291,7 +310,7 @@ onBeforeUnmount(() => {
                         <button type="button" :aria-label="`${mapping.code || index + 1} 연결 제거`" @click="policy.mappings.splice(index, 1)">제거</button>
                     </div>
                 </section>
-                <section v-show="tab === 2" id="access-panel-2" role="tabpanel" aria-labelledby="access-tab-2"><p v-if="accountsError" role="alert">{{ accountsError }} <button type="button" @click="loadAccounts">사용자 다시 불러오기</button></p><AccessPeopleEditor v-model="policy" :resources="resources" :accounts="accounts" :sites="master.sitesFor ? master.sitesFor(companyId) : []" /></section>
+                <section v-show="tab === 2" id="access-panel-2" role="tabpanel" aria-labelledby="access-tab-2"><p v-if="accountsError" role="alert">{{ accountsError }} <button type="button" @click="loadAccounts">사용자 다시 불러오기</button></p><AccessPeopleEditor v-model="policy" :resources="resources" :accounts="accounts" :sites="adminSites" /></section>
                 <section v-show="tab === 3" id="access-panel-3" role="tabpanel" aria-labelledby="access-tab-3">
                     <h2>최종 권한 확인</h2>
                     <p class="access-help">편집 중인 정책에서 선택한 사용자의 자료 접근을 계산합니다. 계정 활성·AAL2·모듈 사용을 가정한 미리보기입니다. 문서별 배정·하위 조직·결재 상태는 포함하지 않으며 실제 로그인 권한을 변경하지 않습니다.</p>
@@ -313,7 +332,7 @@ onBeforeUnmount(() => {
             </fieldset>
             <section v-if="reviewing" class="access-review" aria-label="변경 영향 확인">
                 <h2>변경 내용 확인</h2>
-                <p>새 설정의 저장 내용입니다. 기존 업무 권한에는 아직 적용되지 않습니다.</p>
+                <p>초안의 저장 내용입니다. 이 단계에서는 실제 적용 정책을 변경하지 않습니다.</p>
                 <ul>
                     <li v-for="change in changes" :key="change.label">{{ change.label }} 변경 · 항목 {{ change.before }} → {{ change.after }}개</li>
                 </ul>
@@ -327,6 +346,7 @@ onBeforeUnmount(() => {
                 <div><button type="button" :disabled="!dirty || saving" @click="reset">되돌리기</button><button type="button" class="primary" :disabled="(!dirty && revision !== 0) || saving" @click="review">변경 내용 확인</button></div>
             </footer>
         </section>
+        <AccessPublication v-if="policy && companyId" :company-id="companyId" :draft-revision="revision" :dirty="Boolean(dirty) || saving" @changed="publicationChanged" />
     </main>
 </template>
 

@@ -24,6 +24,8 @@ const accessStore = {
 
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => authStore }));
 vi.mock('@/stores/access', () => ({ useAccessStore: () => accessStore }));
+const runtimeStore = { context: ref({ mode: 'legacy' }), canAccess: vi.fn(() => false) };
+vi.mock('@/stores/enterpriseRuntime', () => ({ useEnterpriseRuntimeStore: () => runtimeStore }));
 vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: toastAdd }) }));
 
 const readSource = (...segments) => readFileSync(resolve(process.cwd(), ...segments), 'utf8');
@@ -70,6 +72,8 @@ const submitPasswordForm = async () => {
 };
 
 beforeEach(() => {
+    runtimeStore.context.value = { mode: 'legacy' };
+    runtimeStore.canAccess.mockReset().mockReturnValue(false);
     Object.defineProperty(window, 'matchMedia', {
         configurable: true,
         value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
