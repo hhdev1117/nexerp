@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MASTER_MESSAGES, SITE_TYPE, companyPayload, createCompanyDraft, createSiteDraft, formatBusinessNumber, normalizeBusinessNumber, normalizeCode, sitePayload, siteTypeLabel, siteTypeOptions, validateCompanyDraft, validateSiteDraft } from './master';
+import { MASTER_MESSAGES, SITE_TYPE, companyPayload, createCompanyDraft, createSiteDraft, formatBusinessNumber, normalizeBusinessNumber, normalizeCode, sitePayload, siteTypeLabel, siteTypeOptions, validateCompanyDraft, validatePartnerDraft, validateSiteDraft } from './master';
 
 describe('company master rules', () => {
     it('normalizes codes and business registration numbers', () => {
@@ -42,6 +42,39 @@ describe('company master rules', () => {
             isActive: false
         });
         expect(createCompanyDraft()).toEqual({ code: '', name: '', businessNumber: '', representative: '', address: '', isActive: true });
+    });
+});
+
+describe('partner master rules', () => {
+    it('flags every invalid required field and malformed optional field', () => {
+        expect(
+            validatePartnerDraft({
+                companyId: ' ',
+                code: 'partner_1',
+                name: ' ',
+                isCustomer: false,
+                isVendor: false,
+                businessNumber: '120-88-1234',
+                email: 'billing @example.com'
+            })
+        ).toEqual({
+            errors: {
+                companyId: true,
+                code: true,
+                name: true,
+                roles: true,
+                businessNumber: true,
+                email: true
+            },
+            isValid: false
+        });
+    });
+
+    it('accepts a normalized code, either partner role, and empty optional fields', () => {
+        expect(validatePartnerDraft({ companyId: 'company-1', code: ' partner-1 ', name: ' 넥서스 ', isCustomer: true, isVendor: false, businessNumber: '', email: '' })).toEqual({
+            errors: { companyId: false, code: false, name: false, roles: false, businessNumber: false, email: false },
+            isValid: true
+        });
     });
 });
 

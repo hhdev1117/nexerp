@@ -17,8 +17,7 @@ export const erpMenu = [
                 path: '/sales',
                 items: [
                     makeItem('sales.quotes', '견적 관리', 'pi pi-fw pi-file-edit', '/sales/quotes', '고객 견적과 유효기간을 관리합니다.'),
-                    makeItem('sales.orders', '수주 관리', 'pi pi-fw pi-shopping-cart', '/sales/orders', '수주부터 출하 요청까지 관리합니다.'),
-                    makeItem('sales.customers', '거래처 관리', 'pi pi-fw pi-building', '/sales/customers', '고객사와 거래 조건을 관리합니다.')
+                    makeItem('sales.orders', '수주 관리', 'pi pi-fw pi-shopping-cart', '/sales/orders', '수주부터 출하 요청까지 관리합니다.')
                 ]
             },
             {
@@ -27,8 +26,7 @@ export const erpMenu = [
                 path: '/purchasing',
                 items: [
                     makeItem('purchasing.orders', '발주 관리', 'pi pi-fw pi-file-export', '/purchasing/orders', '구매 발주와 납기를 관리합니다.'),
-                    makeItem('purchasing.receipts', '입고 관리', 'pi pi-fw pi-sign-in', '/purchasing/receipts', '검수 및 입고 처리를 관리합니다.'),
-                    makeItem('purchasing.vendors', '공급업체 관리', 'pi pi-fw pi-truck', '/purchasing/vendors', '공급업체와 구매 조건을 관리합니다.')
+                    makeItem('purchasing.receipts', '입고 관리', 'pi pi-fw pi-sign-in', '/purchasing/receipts', '검수 및 입고 처리를 관리합니다.')
                 ]
             },
             {
@@ -89,7 +87,7 @@ export const erpMenu = [
                 path: '/master',
                 items: [
                     makeItem('master.items', '품목 기준정보', 'pi pi-fw pi-box', '/master/items', '전사 품목 기준정보를 관리합니다.'),
-                    makeItem('master.partners', '거래처 기준정보', 'pi pi-fw pi-building', '/master/partners', '고객과 공급처 기준정보를 관리합니다.'),
+                    makeItem('master.partners', '거래처 관리', 'pi pi-fw pi-building', '/master/partners', '고객과 공급처 기준정보를 관리합니다.'),
                     makeItem('master.accounts', '계정과목', 'pi pi-fw pi-list', '/master/accounts', '회계 계정 체계를 관리합니다.')
                 ]
             },

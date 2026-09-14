@@ -25,6 +25,7 @@ export function siteTypeLabel(code) {
 // Mirrors the database check constraints so users see the problem before a round trip.
 export const MASTER_CODE_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
 const BUSINESS_NUMBER_PATTERN = /^\d{10}$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const MASTER_MESSAGES = Object.freeze({
     code: '코드는 영문 대문자, 숫자, 하이픈으로 2자 이상 20자 이하여야 합니다.',
@@ -67,6 +68,21 @@ export function validateCompanyDraft(draft) {
     const businessNumber = normalizeBusinessNumber(draft?.businessNumber);
     if (businessNumber && !BUSINESS_NUMBER_PATTERN.test(businessNumber)) errors.businessNumber = MASTER_MESSAGES.businessNumber;
     return errors;
+}
+
+export function validatePartnerDraft(draft) {
+    const businessNumber = normalizeBusinessNumber(draft?.businessNumber);
+    const email = normalizeText(draft?.email);
+    const errors = {
+        companyId: !normalizeText(draft?.companyId),
+        code: !MASTER_CODE_PATTERN.test(normalizeCode(draft?.code)),
+        name: !normalizeText(draft?.name),
+        roles: draft?.isCustomer !== true && draft?.isVendor !== true,
+        businessNumber: Boolean(businessNumber && !BUSINESS_NUMBER_PATTERN.test(businessNumber)),
+        email: Boolean(email && !EMAIL_PATTERN.test(email))
+    };
+
+    return { errors, isValid: !Object.values(errors).some(Boolean) };
 }
 
 export function companyPayload(draft) {

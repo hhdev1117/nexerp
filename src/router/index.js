@@ -60,6 +60,8 @@ const router = createRouter({
             component: () => import('@/views/auth/AccessDeniedView.vue'),
             meta: { title: '접근 권한 없음' }
         },
+        { path: '/sales/customers', redirect: '/master/partners' },
+        { path: '/purchasing/vendors', redirect: '/master/partners' },
         {
             path: '/',
             component: AppLayout,

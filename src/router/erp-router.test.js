@@ -54,6 +54,13 @@ describe('ERP router', () => {
         }
     });
 
+    it('redirects legacy customer and vendor bookmarks to the partner master', () => {
+        const routes = router.getRoutes();
+
+        expect(routes.find((route) => route.path === '/sales/customers')?.redirect).toBe('/master/partners');
+        expect(routes.find((route) => route.path === '/purchasing/vendors')?.redirect).toBe('/master/partners');
+    });
+
     it('uses the canonical NEXERP browser title', () => {
         expect(routerSource).toContain('`${to.meta.title} | NEXERP`');
         expect(routerSource).toContain(" : 'NEXERP'");

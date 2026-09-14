@@ -24,12 +24,10 @@ const expectedMenuKeys = [
     'production.work-orders',
     'purchasing.orders',
     'purchasing.receipts',
-    'purchasing.vendors',
     'reports.finance',
     'reports.inventory',
     'reports.purchasing',
     'reports.sales',
-    'sales.customers',
     'sales.orders',
     'sales.quotes',
     'settings.accounts',
@@ -58,6 +56,15 @@ describe('ERP template contract', () => {
         expect(keys.every(Boolean)).toBe(true);
         expect(new Set(keys).size).toBe(keys.length);
         expect([...keys].sort()).toEqual(expectedMenuKeys);
+    });
+
+    it('exposes one canonical partner master destination', () => {
+        const routes = flattenMenuRoutes(erpMenu);
+        const partnerEntry = routes.find((item) => item.menuKey === 'master.partners');
+
+        expect(partnerEntry).toMatchObject({ label: '거래처 관리', to: '/master/partners' });
+        expect(routes.some((item) => item.menuKey === 'sales.customers')).toBe(false);
+        expect(routes.some((item) => item.menuKey === 'purchasing.vendors')).toBe(false);
     });
 
     it('recursively removes denied leaves and parents left without visible children', () => {
