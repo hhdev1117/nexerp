@@ -3,10 +3,10 @@ import { createHmac } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { createAuthStore } from './auth';
 
-const profileFields = 'id, email, display_name, department, role, is_active';
+const profileFields = 'id, login_id, display_name, department, role, is_active';
 const approverProfile = {
     id: 'user-1',
-    email: 'approver@nexerp.test',
+    login_id: 'approver01',
     display_name: 'Kim Approver',
     department: 'Finance',
     role: 'approver',
@@ -304,7 +304,7 @@ describe('Supabase auth store', () => {
         expect(store.session.value).toBeNull();
         expect(fixture.profileRequests).toHaveLength(0);
 
-        await store.signIn(sessionB.user.email, 'password');
+        await store.signIn('userb01', 'password');
         await fixture.emit('TOKEN_REFRESHED', sessionA2);
         expect(store.role.value).toBe('approver');
         expect(store.session.value).toEqual(sessionB);
@@ -371,7 +371,7 @@ describe('Supabase auth store', () => {
         });
         const store = createAuthStore({ client: fixture.client, configured: true });
 
-        await expect(store.signIn(malformedSession.user.email, 'password')).rejects.toThrow('로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        await expect(store.signIn('broken01', 'password')).rejects.toThrow('로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
         expect(store.session.value).toBeNull();
         expect(store.user.value).toBeNull();
         expect(store.profile.value).toBeNull();
@@ -420,7 +420,7 @@ describe('Supabase auth store', () => {
             expect(store.session.value).toEqual(currentSession);
             expect(store.role.value).toBe('approver');
         }
-        await store.signIn(sessionA2.user.email, 'password');
+        await store.signIn('usera02', 'password');
         await fixture.emit('TOKEN_REFRESHED', sessionA);
         expect(store.session.value).toEqual(sessionA);
         expect(store.role.value).toBe('approver');
@@ -441,7 +441,7 @@ describe('Supabase auth store', () => {
 
         const initialization = store.initialize();
         await vi.waitFor(() => expect(fixture.client.auth.getUser).toHaveBeenCalledOnce());
-        await store.signIn(sessionB.user.email, 'password');
+        await store.signIn('userb01', 'password');
         userLookup.resolve({ data: { user: null }, error: { code: 'bad_jwt' } });
         await initialization;
         await fixture.emit('TOKEN_REFRESHED', sessionB2);
@@ -559,7 +559,7 @@ describe('Supabase auth store', () => {
 
         const initialization = store.initialize();
         await vi.waitFor(() => expect(fixture.client.auth.getUser).toHaveBeenCalledOnce());
-        await store.signIn(sessionB.user.email, 'password');
+        await store.signIn('userb01', 'password');
         userLookup.resolve({ data: { user: null }, error: { code: 'session_not_found', status: 400 } });
         await initialization;
         await fixture.emit('TOKEN_REFRESHED', sessionA2);
@@ -585,7 +585,7 @@ describe('Supabase auth store', () => {
         const store = createAuthStore({ client: fixture.client, configured: true });
 
         await store.initialize();
-        await store.signIn('old@nexerp.test', 'password');
+        await store.signIn('olduser1', 'password');
         await fixture.emit('SIGNED_OUT', null);
         await fixture.emit('SIGNED_IN', revokedSession);
 
@@ -624,8 +624,8 @@ describe('Supabase auth store', () => {
         const fixture = createClient({ signInResult: { data: { session: null, user: null }, error: raw } });
         const store = createAuthStore({ client: fixture.client, configured: true });
 
-        await expect(store.signIn('user@nexerp.test', 'wrong')).rejects.toThrow('이메일 또는 비밀번호가 올바르지 않습니다.');
-        expect(store.error.value).toBe('이메일 또는 비밀번호가 올바르지 않습니다.');
+        await expect(store.signIn('user01', 'wrong')).rejects.toThrow('아이디 또는 비밀번호가 올바르지 않습니다.');
+        expect(store.error.value).toBe('아이디 또는 비밀번호가 올바르지 않습니다.');
         expect(store.error.value).not.toContain('secret');
     });
 
@@ -634,7 +634,7 @@ describe('Supabase auth store', () => {
         fixture.client.auth.signInWithPassword.mockRejectedValueOnce(new TypeError('Failed to fetch https://private.example?access_token=secret'));
         const store = createAuthStore({ client: fixture.client, configured: true });
 
-        await expect(store.signIn('user@nexerp.test', 'password')).rejects.toThrow('네트워크 연결을 확인한 후 다시 시도해 주세요.');
+        await expect(store.signIn('user01', 'password')).rejects.toThrow('네트워크 연결을 확인한 후 다시 시도해 주세요.');
         expect(store.error.value).toBe('네트워크 연결을 확인한 후 다시 시도해 주세요.');
         expect(store.error.value).not.toContain('secret');
     });
@@ -651,7 +651,7 @@ describe('Supabase auth store', () => {
         expect(fixture.client.auth.onAuthStateChange).toHaveBeenCalledOnce();
     });
 
-    it('signs in with email and password and loads the authenticated profile', async () => {
+    it('signs in with an exact login ID and loads the authenticated profile without exposing email in profile state', async () => {
         const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver@nexerp.test' } };
         const fixture = createClient({
             profiles: { 'user-1': { data: approverProfile, error: null } },
@@ -659,16 +659,45 @@ describe('Supabase auth store', () => {
         });
         const store = createAuthStore({ client: fixture.client, configured: true });
 
-        const result = await store.signIn('approver@nexerp.test', 'password');
+        const result = await store.signIn('approver01', 'password');
 
-        expect(fixture.client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'approver@nexerp.test', password: 'password' });
+        expect(fixture.client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'approver01@nexerp.internal', password: 'password' });
         expect(result).toEqual({ session, user: session.user });
         expect(store.profile.value).toEqual(approverProfile);
+        expect(store.profile.value.login_id).toBe('approver01');
+        expect(store.profile.value).not.toHaveProperty('email');
         expect(store.role.value).toBe('approver');
     });
 
+    it('keeps the internal auth email out of public session and user state after login', async () => {
+        const internalUser = { id: 'user-1', email: 'approver01@nexerp.internal' };
+        const internalSession = { access_token: 'internal-login-token', user: internalUser };
+        const fixture = createClient({
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            signInResult: { data: { session: internalSession, user: internalUser }, error: null }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+
+        const result = await store.signIn('approver01', 'password');
+
+        expect(result.user).not.toHaveProperty('email');
+        expect(result.session.user).not.toHaveProperty('email');
+        expect(store.user.value).not.toHaveProperty('email');
+        expect(store.session.value.user).not.toHaveProperty('email');
+    });
+
+    it.each(['Admin01', ' admin01', 'admin01 ', 'abc', 'admin@example.com'])('rejects invalid login ID %s without calling Supabase', async (loginId) => {
+        const fixture = createClient();
+        const store = createAuthStore({ client: fixture.client, configured: true });
+
+        await expect(store.signIn(loginId, 'password')).rejects.toThrow('아이디 또는 비밀번호가 올바르지 않습니다.');
+
+        expect(fixture.client.auth.signInWithPassword).not.toHaveBeenCalled();
+        expect(store.error.value).toBe('아이디 또는 비밀번호가 올바르지 않습니다.');
+    });
+
     it('reauthenticates the current active user before changing the password', async () => {
-        const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({
             session,
             profiles: { 'user-1': { data: approverProfile, error: null } },
@@ -680,7 +709,7 @@ describe('Supabase auth store', () => {
 
         await expect(store.changePassword('Current-Password-1!', 'Replacement-Password-2!')).resolves.toBeUndefined();
 
-        expect(fixture.client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'approver@nexerp.test', password: 'Current-Password-1!' });
+        expect(fixture.client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'approver01@nexerp.internal', password: 'Current-Password-1!' });
         expect(fixture.client.auth.updateUser).toHaveBeenCalledWith({ password: 'Replacement-Password-2!' });
         expect(fixture.client.auth.signInWithPassword.mock.invocationCallOrder[0]).toBeLessThan(fixture.client.auth.updateUser.mock.invocationCallOrder[0]);
         expect(store.error.value).toBeNull();
@@ -706,7 +735,7 @@ describe('Supabase auth store', () => {
         expect(fixture.client.auth.updateUser).not.toHaveBeenCalled();
     });
 
-    it('requires a configured active identity with a session and email', async () => {
+    it('requires a configured active identity with a session email and profile login ID', async () => {
         const unconfigured = createAuthStore({ client: null, configured: false });
         await expect(unconfigured.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('Supabase 연결 정보가 설정되지 않았습니다.');
 
@@ -722,6 +751,15 @@ describe('Supabase auth store', () => {
         const inactive = createAuthStore({ client: inactiveFixture.client, configured: true });
         await inactive.initialize();
         await expect(inactive.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('비활성화된 계정입니다. 관리자에게 문의해 주세요.');
+
+        const missingLoginIdFixture = createClient({
+            session: inactiveSession,
+            profiles: { 'user-1': { data: { ...approverProfile, login_id: null }, error: null } }
+        });
+        const missingLoginId = createAuthStore({ client: missingLoginIdFixture.client, configured: true });
+        await missingLoginId.initialize();
+        expect(missingLoginId.profile.value).toBeNull();
+        await expect(missingLoginId.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.');
     });
 
     it('redacts invalid current-password details and does not update the user', async () => {
@@ -967,7 +1005,7 @@ describe('Supabase auth store', () => {
         await store.initialize();
         let signedIn = false;
 
-        const signingIn = store.signIn('old@nexerp.test', 'password').then(() => {
+        const signingIn = store.signIn('olduser1', 'password').then(() => {
             signedIn = true;
         });
         await Promise.resolve();

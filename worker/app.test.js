@@ -193,7 +193,7 @@ describe('Cloudflare Worker app', () => {
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({
             id: 'user-1',
-            email: 'login@example.com',
+            loginId: 'staff01',
             displayName: '김서준',
             department: '영업팀',
             role: 'approver'
@@ -201,8 +201,17 @@ describe('Cloudflare Worker app', () => {
         expect(createSupabaseClient).toHaveBeenCalledWith({}, 'session-token');
         expect(fixture.getUser).toHaveBeenCalledWith('session-token');
         expect(fixture.from).toHaveBeenCalledWith('profiles');
-        expect(fixture.select).toHaveBeenCalledWith('id, email, display_name, department, role, is_active');
+        expect(fixture.select).toHaveBeenCalledWith('id, login_id, display_name, department, role, is_active');
         expect(fixture.eq).toHaveBeenCalledWith('id', 'user-1');
+    });
+
+    it.each([null, 'Staff01'])('forbids an active profile with invalid login ID %s', async (loginId) => {
+        const fixture = createSupabaseFixture({ profile: { ...activeProfile, login_id: loginId } });
+        const app = createWorkerApp({ createSupabaseClient: () => fixture.client });
+        const response = await app.fetch(new Request('https://erp.test/api/me', { headers: { Authorization: 'Bearer session-token' } }), {});
+
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({ error: { code: 'inactive_user', message: '비활성화된 사용자입니다.' } });
     });
 
     it('reports configured health without exposing values', async () => {
