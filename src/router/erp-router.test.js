@@ -26,6 +26,7 @@ describe('ERP router', () => {
     });
 
     it('uses dedicated administrator screens instead of the generic module', () => {
+        expect(router.resolve('/settings/enterprise-access').meta).toMatchObject({ roles: ['admin'], menuKey: 'settings.enterprise-access', fixedAccess: true });
         expect(routerSource).toContain("'/settings/accounts': () => import('@/views/admin/AccountManagement.vue')");
         expect(routerSource).toContain("'/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue')");
         expect(routerSource).toContain("'/settings/infrastructure-usage': () => import('@/views/admin/InfrastructureUsage.vue')");

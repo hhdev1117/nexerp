@@ -1,6 +1,6 @@
 const GMAIL_PATTERN = /^[^\s@]+@gmail\.com$/;
 const GMAIL_ERROR = 'Gmail 주소만 사용할 수 있습니다.';
-const FIXED_ADMIN_KEYS = new Set(['settings.accounts', 'settings.menu-permissions', 'settings.infrastructure-usage']);
+const FIXED_ADMIN_KEYS = new Set(['settings.accounts', 'settings.menu-permissions', 'settings.infrastructure-usage', 'settings.enterprise-access']);
 const TEMPORARY_PASSWORD_ERROR = '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.';
 
 const isValidTemporaryPassword = (password) => typeof password === 'string' && password.length >= 8 && password.length <= 128 && Boolean(password.trim());
