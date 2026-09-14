@@ -115,7 +115,7 @@ function temporaryPassword(value) {
 }
 
 function validateCreatePayload(body) {
-    const loginId = typeof body.loginId === 'string' ? body.loginId.trim().toLowerCase() : '';
+    const loginId = body.loginId;
     const email = loginIdToInternalEmail(loginId);
     if (!email) return { response: apiError(400, 'invalid_login_id', '로그인 ID 형식을 확인해 주세요.') };
 

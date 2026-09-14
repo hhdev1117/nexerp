@@ -153,7 +153,7 @@ function request(path, { method = 'GET', body, token = 'session-token' } = {}) {
 }
 
 const validCreateBody = {
-    loginId: ' Staff01 ',
+    loginId: 'staff01',
     temporaryPassword: 'Temporary-Password-1!',
     displayName: ' 새 직원 ',
     department: ' 운영팀 ',
@@ -233,6 +233,9 @@ describe('administrator account API', () => {
         ['missing login ID', { ...validCreateBody, loginId: undefined }, 'invalid_login_id', '로그인 ID 형식을 확인해 주세요.'],
         ['invalid login ID characters', { ...validCreateBody, loginId: 'staff@01' }, 'invalid_login_id', '로그인 ID 형식을 확인해 주세요.'],
         ['too-short login ID', { ...validCreateBody, loginId: 'ab' }, 'invalid_login_id', '로그인 ID 형식을 확인해 주세요.'],
+        ['uppercase login ID', { ...validCreateBody, loginId: 'STAFF01' }, 'invalid_login_id', '로그인 ID 형식을 확인해 주세요.'],
+        ['surrounding whitespace', { ...validCreateBody, loginId: ' staff01 ' }, 'invalid_login_id', '로그인 ID 형식을 확인해 주세요.'],
+        ['too-long login ID', { ...validCreateBody, loginId: 'a'.repeat(21) }, 'invalid_login_id', '로그인 ID 형식을 확인해 주세요.'],
         ['short password', { ...validCreateBody, temporaryPassword: 'short' }, 'invalid_temporary_password', '임시 비밀번호는 8자 이상이어야 합니다.'],
         ['blank name', { ...validCreateBody, displayName: '   ' }, 'invalid_display_name', '이름을 입력해 주세요.'],
         ['blank department', { ...validCreateBody, department: '   ' }, 'invalid_department', '부서를 입력해 주세요.'],
@@ -244,6 +247,24 @@ describe('administrator account API', () => {
         expect(response.status).toBe(400);
         expect(await response.json()).toEqual({ error: { code, message } });
         expect(createAdminClient).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['four characters', 'a123', 'a123@nexerp.internal'],
+        ['twenty characters', 'aaaaaaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaaaaaa@nexerp.internal']
+    ])('accepts a login ID with exactly %s', async (_label, loginId, internalEmail) => {
+        const adminFixture = createAdminClientFixture({ createdUser: { id: accountId, email: internalEmail } });
+        const { app } = createApp({ adminFixture });
+
+        const response = await app.fetch(request('/api/admin/accounts', { method: 'POST', body: { ...validCreateBody, loginId } }), {});
+
+        expect(response.status).toBe(201);
+        expect(adminFixture.createUser).toHaveBeenCalledWith({
+            email: internalEmail,
+            password: validCreateBody.temporaryPassword,
+            email_confirm: true,
+            app_metadata: { nexerp_provisioned: true, login_id: loginId }
+        });
     });
 
     it('returns a stable service error when the server-only secret is missing', async () => {
