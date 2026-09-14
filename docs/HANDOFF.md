@@ -1,18 +1,19 @@
 # NEXERP 인수인계 문서
 
-> 기준 시점: 2026-09-14, `main` 브랜치 커밋 `e7c3f0e`. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다. 작업 단위를 끝낼 때마다 "현재 상태"와 "다음 할 일"을 갱신하고 함께 커밋해 주세요.
+> 기준 시점: 2026-09-14, `main` 브랜치 커밋 `e7c3f0e` 구현 및 운영 적용 후. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다. 작업 단위를 끝낼 때마다 "현재 상태"와 "다음 할 일"을 갱신하고 함께 커밋해 주세요.
 
 ## 1. 한눈에 보기
 
 | 항목 | 상태 |
 |---|---|
 | 스택 | Vue 3 + PrimeVue 4 + Tailwind, Cloudflare Workers Static Assets, Supabase (Auth + Postgres + RLS), Vitest |
-| 최신 커밋 | `e7c3f0e feat: add multi-company and multi-site master data` (그 앞은 `42dce82 refactor: harden ERP workflows and remove demo assets`) |
-| 작업 트리 | clean. `origin/main` 푸시 여부는 `git log --oneline origin/main..main`으로 확인 |
+| 최신 구현 커밋 | `e7c3f0e feat: add multi-company and multi-site master data` (그 앞은 `42dce82 refactor: harden ERP workflows and remove demo assets`) |
+| 작업 트리 | 이 인수인계 갱신 커밋 후 clean. `origin/main`까지 동기화 |
 | 검증 | Vitest 45개 파일 602개 통과, ESLint 무결, `npm run build` 성공 |
-| 미적용 마이그레이션 | `supabase/migrations/20260914000100_add_companies_and_sites.sql` → 호스팅 프로젝트에 `npx supabase db push` 필요 |
+| 미적용 마이그레이션 | 없음. `20260914000100_add_companies_and_sites.sql`을 2026-09-14 호스팅 프로젝트에 적용하고 카탈로그 7항목을 검증함 |
 | 미실행 테스트 | pgTAP `supabase/tests/companies_sites_rls.test.sql` (35개 단언). 이 PC에 Docker가 없어 실행 불가 |
 | 확정된 결정 | 회사(company)와 사업장(site)은 여러 개 등록 가능. 모든 업무 테이블은 `company_id`를 갖는다 |
+| 운영 배포 | Cloudflare Worker 버전 `9d18679b-c4e0-495b-9a2d-6788a141d9f9`, `https://nexerp.merciful-chips.workers.dev` |
 
 ## 2. 현재 구현 상태
 
@@ -21,7 +22,7 @@
 | 인증 (이메일+비밀번호, 필수 TOTP, Gmail 전용 계정) | 완료, Supabase 영속 | `src/stores/auth.js`, `src/views/auth/*`, `worker/*` |
 | 역할 admin / approver / user, 역할별 메뉴 권한 | 완료, Supabase 영속 | `src/stores/access.js`, `supabase/migrations/20260912000100_*` |
 | 계정 관리, 메뉴 권한 관리, 인프라 사용량, 2단계 인증 관리 | 완료 (Worker API + RPC) | `src/views/admin/*`, `worker/admin.js`, `worker/infrastructure.js` |
-| **회사 · 사업장 기준정보** | 완료 (이번 세션). 마이그레이션 적용 대기 | `src/views/master/CompanySites.vue`, `src/stores/master.js`, `src/repositories/master/*` |
+| **회사 · 사업장 기준정보** | 구현·운영 마이그레이션·배포 완료. 관리자 MFA 등록 후 실제 등록 점검 대기 | `src/views/master/CompanySites.vue`, `src/stores/master.js`, `src/repositories/master/*` |
 | 결재함, 수주 관리, 재고 현황, 재무 현황, 통합 대시보드 | 데모 (메모리 리포지토리) | `src/views/erp/*`, `src/views/Dashboard.vue`, `src/stores/erp.js` |
 | 나머지 27개 메뉴 (견적, 발주, 입고, BOM, 전표 등) | 플레이스홀더 공용 화면 | `src/views/erp/GenericModule.vue` |
 
@@ -98,7 +99,7 @@ npm run build
 - git 2.55가 `C:\Program Files\Git\cmd`에 있습니다. 설치 전에 열린 셸은 PATH가 오래되어 `git`을 못 찾으니 `$env:Path = "C:\Program Files\Git\cmd;$env:Path"`를 앞에 붙이세요. 저장소 git identity는 `Codex <codex@local>`입니다.
 - Docker와 Supabase CLI 로컬 스택이 없습니다. pgTAP은 작성만 하고, 실행은 Docker가 있는 환경에서 `npx supabase test db`로 합니다.
 - `.env.local`, `.dev.vars`에 호스팅 Supabase 자격증명이 있습니다. 커밋 금지. `SUPABASE_SECRET_KEY`, `SUPABASE_MANAGEMENT_TOKEN`, `CLOUDFLARE_API_TOKEN`은 Worker 전용입니다.
-- 마이그레이션 적용은 사용자가 `npx supabase db push`로 합니다. 적용 전에는 회사 · 사업장 화면에 "기준정보를 불러오지 못했습니다" 메시지가 뜨고 대시보드 필터는 "전체"만 보입니다.
+- 회사 · 사업장 마이그레이션은 2026-09-14 호스팅 프로젝트에 적용됐습니다. 후속 마이그레이션은 Supabase CLI가 있는 환경의 `npx supabase db push` 또는 권한이 확인된 SQL Editor에서 적용하고, 적용 결과를 카탈로그로 검증하세요.
 - 커밋 메시지에 한글이나 여러 줄이 필요하면 파일로 써서 `git commit -F <file>`을 쓰세요. PowerShell here-string을 `-F -`로 넘기면 stdin이 비어 실패합니다.
 
 ## 6. 결정 사항과 미결 사항
@@ -120,9 +121,12 @@ npm run build
 
 ### 7.1 즉시 (운영, 사용자 또는 자격증명이 있는 작업자)
 
-- [ ] `npx supabase db push`로 `companies`/`sites` 마이그레이션 적용. 관리자로 로그인해 `/settings/company`에서 회사 1개, 사업장 1개 등록이 되는지, `user` 역할로는 버튼이 숨겨지는지 확인.
+- [x] 호스팅 Supabase에 `companies`/`sites` 마이그레이션 적용. `tables_exist`, `rls_enabled`, `no_delete_grant`, `six_rls_policies`, `four_triggers`, `security_functions`, `tables_empty` 카탈로그 점검이 모두 `true`.
+- [ ] 관리자 Google Authenticator 등록을 완료한 뒤 `/settings/company`에서 회사 1개와 사업장 1개가 등록되는지 확인. 현재 운영 브라우저는 MFA 등록 화면에서 해당 경로로 리다이렉트하도록 열려 있음.
+- [ ] `user` 역할로 `/settings/company`의 등록·수정·비활성화 버튼이 숨겨지는지 운영 화면에서 확인. 마운트 테스트에서는 조회 전용 동작 통과.
 - [ ] Docker가 있는 환경에서 `npx supabase test db` 실행. 기대: `companies_sites_rls.test.sql` 35개 통과. 실패하면 메시지 문구 차이(예: RLS 위반 문구)일 가능성이 높으니 pgTAP 기대 문구를 실제 Postgres 문구로 맞추세요.
-- [ ] `git push origin main` (사용자 지시 시).
+- [x] Cloudflare Worker 배포 (`9d18679b-c4e0-495b-9a2d-6788a141d9f9`) 및 최신 PWA 적용.
+- [x] `git push origin main` (이 문서 갱신 커밋 포함).
 
 ### 7.2 1단계 기준정보 마무리
 
