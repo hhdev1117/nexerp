@@ -247,6 +247,7 @@ async function publicationChanged() {
             </div>
         </header>
         <p class="access-banner"><strong>초안과 실제 적용 분리</strong> 설정을 저장한 뒤 적용 관리에서 검토·적용합니다. 적용 전에는 기존 업무 권한을 사용하고, 적용 후에는 메뉴와 회사·사업장 데이터 접근에 새 정책을 사용합니다.</p>
+        <p class="access-help">직원 계정이 인사 원장에 연결되면 현재 직급·직책·소속을 자동 반영합니다. 직접 지정한 등급은 계속 우선하며 퇴직 적용일 이후에는 해당 회사 접근이 종료됩니다. 인사 원장의 생성·수정 권한은 직원 연결과 발령으로 업무 권한을 바꿀 수 있으므로 신뢰하는 인사담당자에게만 부여해 주세요.</p>
         <p v-if="catalogError" role="alert">{{ catalogError }} <button type="button" @click="loadCatalog">회사 목록 다시 불러오기</button></p>
         <div v-if="error" role="alert" class="access-error">{{ error }} <button v-if="!policy" type="button" @click="loadPolicy">다시 불러오기</button></div>
         <button v-if="conflict" type="button" @click="reloadAfterConflict">내 변경을 취소하고 최신 설정 불러오기</button>
@@ -313,7 +314,7 @@ async function publicationChanged() {
                 <section v-show="tab === 2" id="access-panel-2" role="tabpanel" aria-labelledby="access-tab-2"><p v-if="accountsError" role="alert">{{ accountsError }} <button type="button" @click="loadAccounts">사용자 다시 불러오기</button></p><AccessPeopleEditor v-model="policy" :resources="resources" :accounts="accounts" :sites="adminSites" /></section>
                 <section v-show="tab === 3" id="access-panel-3" role="tabpanel" aria-labelledby="access-tab-3">
                     <h2>최종 권한 확인</h2>
-                    <p class="access-help">편집 중인 정책에서 선택한 사용자의 자료 접근을 계산합니다. 계정 활성·AAL2·모듈 사용을 가정한 미리보기입니다. 문서별 배정·하위 조직·결재 상태는 포함하지 않으며 실제 로그인 권한을 변경하지 않습니다.</p>
+                    <p class="access-help">편집 중인 정책에서 선택한 사용자의 자료 접근을 계산합니다. 계정 활성·AAL2·모듈 사용을 가정한 미리보기입니다. 연결된 직원의 현재 인사발령, 문서별 배정·하위 조직·결재 상태는 포함하지 않습니다. 실제 접근은 서버에서 현재 인사 원장을 반영해 판정합니다.</p>
                     <div class="access-record">
                         <label
                             >사용자<select v-model="actorId">

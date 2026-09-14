@@ -15,7 +15,7 @@ const roleOptions = [
     { label: '결재자', value: 'approver' },
     { label: '사용자', value: 'user' }
 ];
-const allPermissionGroups = buildPermissionGroups(erpMenu);
+const allPermissionGroups = buildPermissionGroups(erpMenu).map((group) => ({ ...group, items: group.items.filter((item) => item.menuKey !== 'hr.core') }));
 const selectedRole = ref('user');
 const permissionRows = ref({});
 const draftKeys = ref([]);
@@ -129,6 +129,7 @@ onMounted(loadPermissions);
 </script>
 
 <template>
+    <p class="mb-4 text-muted-color">인사 메뉴는 전사 권한관리에서 회사별 정책으로 설정하고 발행해야 사용할 수 있습니다.</p>
     <div class="admin-page permission-page">
         <div class="flex flex-col gap-3 mb-6 lg:flex-row lg:items-end lg:justify-between">
             <div class="min-w-0">

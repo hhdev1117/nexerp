@@ -70,6 +70,7 @@ export const createAuthGuard = (authStore, accessStore, runtimeStore = null) => 
         if (runtimeStore.context.value.mode === 'active') return runtimeStore.canAccess(to.meta.menuKey) ? true : { name: 'access-denied' };
         if (runtimeStore.context.value.mode !== 'legacy') return { name: 'access-denied' };
     }
+    if (to.meta.publishedAccessRequired) return { name: 'access-denied' };
     if (to.meta.menuKey && !to.meta.fixedAccess) {
         if (!accessStore) return { name: 'access-denied' };
 

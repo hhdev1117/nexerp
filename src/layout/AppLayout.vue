@@ -16,7 +16,7 @@ const auth = useAuthStore();
 const contentAllowed = computed(() => {
     if (route.meta.fixedAccess && auth.profile.value?.role === 'admin' && auth.profile.value?.is_active) return true;
     if (runtime.loading.value || !runtime.context.value) return false;
-    if (runtime.context.value.mode === 'legacy') return true;
+    if (runtime.context.value.mode === 'legacy') return !route.meta.publishedAccessRequired;
     return !route.meta.menuKey || runtime.canAccess(route.meta.menuKey);
 });
 const contentKey = computed(() => `${auth.user.value?.id}:${route.meta.fixedAccess ? 'system' : runtime.context.value?.companyId || 'legacy'}`);

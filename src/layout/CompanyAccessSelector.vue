@@ -19,7 +19,7 @@ async function navigateAllowed() {
     if (!context) return;
     if (route.meta.fixedAccess && auth.profile.value?.role === 'admin') return;
     if (context.mode === 'legacy') {
-        if (!route.meta.menuKey) await router.replace('/');
+        if (!route.meta.menuKey || route.meta.publishedAccessRequired) await router.replace('/');
         return;
     }
     if (runtime.canAccess(route.meta.menuKey)) return;

@@ -8,6 +8,7 @@ import { createAuthGuard } from './authGuard';
 
 const dedicatedViews = {
     '/': () => import('@/views/Dashboard.vue'),
+    '/hr/employees': () => import('@/views/hr/Employees.vue'),
     '/approvals': () => import('@/views/erp/Approvals.vue'),
     '/sales/orders': () => import('@/views/erp/SalesOrders.vue'),
     '/inventory/stock': () => import('@/views/erp/InventoryStock.vue'),
@@ -30,6 +31,7 @@ const erpRoutes = flattenMenuRoutes(erpMenu).map((item) => ({
         description: item.description,
         icon: item.icon,
         menuKey: item.menuKey,
+        ...(item.menuKey === 'hr.core' ? { publishedAccessRequired: true } : {}),
         ...(['/settings/accounts', '/settings/menu-permissions', '/settings/infrastructure-usage', '/settings/enterprise-access'].includes(item.to) ? { roles: ['admin'], fixedAccess: true } : {})
     }
 }));

@@ -22,7 +22,8 @@ describe('staged enterprise policy migration', () => {
 it('registers every ERP menu resource and restricts permission resources', () => {
     const menu = readFileSync(new URL('../../src/data/erp.js', import.meta.url), 'utf8');
     const keys = [...menu.matchAll(/makeItem\('([^']+)'/g)].map((match) => match[1]);
-    for (const key of keys) expect(sql).toContain("'" + key + "'");
+    const registry = readFileSync(new URL('./20260914000400_hr_employee_ledger.sql', import.meta.url), 'utf8');
+    for (const key of keys) expect(registry).toContain("'" + key + "'");
     expect(sql).toContain("value->>'resource' = any(private.enterprise_resources())");
     expect(sql).toContain('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
     expect(sql).toContain('daterange(');

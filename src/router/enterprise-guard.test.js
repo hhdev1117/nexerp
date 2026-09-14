@@ -32,3 +32,13 @@ describe('published enterprise route permissions', () => {
         expect(await guard({ meta: { menuKey: 'sales.orders' }, fullPath: '/sales/orders' })).not.toBe(true);
     });
 });
+
+it('requires a published policy for HR even for legacy administrators', async () => {
+    const { guard, legacy } = fixture('legacy');
+    expect(await guard({ meta: { menuKey: 'hr.core', publishedAccessRequired: true }, fullPath: '/hr/employees' })).toEqual({ name: 'access-denied' });
+    expect(legacy.canAccess).not.toHaveBeenCalled();
+});
+it('allows HR navigation only with the published menu grant', async () => {
+    const { guard } = fixture('active', ['hr.core']);
+    expect(await guard({ meta: { menuKey: 'hr.core', publishedAccessRequired: true }, fullPath: '/hr/employees' })).toBe(true);
+});

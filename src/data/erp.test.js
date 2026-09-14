@@ -9,6 +9,7 @@ const expectedMenuKeys = [
     'finance.journals',
     'finance.statements',
     'finance.summary',
+    'hr.core',
     'inventory.items',
     'inventory.movements',
     'inventory.stock',
@@ -41,7 +42,7 @@ const expectedMenuKeys = [
 ];
 
 describe('ERP template contract', () => {
-    it('contains the complete non-HR ERP navigation with unique routes', () => {
+    it('contains the complete ERP and HR ledger navigation with unique routes', () => {
         const routes = flattenMenuRoutes(erpMenu);
         const labels = routes.map((item) => item.label).join(' ');
 
@@ -49,7 +50,7 @@ describe('ERP template contract', () => {
         expect(labels).toContain('재고 현황');
         expect(labels).toContain('재무 현황');
         expect(labels).toContain('작업지시');
-        expect(labels).not.toMatch(/인사|급여/);
+        expect(labels).toContain('직원 · 인사발령');
         expect(new Set(routes.map((item) => item.to)).size).toBe(routes.length);
     });
 

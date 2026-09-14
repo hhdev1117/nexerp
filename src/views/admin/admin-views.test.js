@@ -213,7 +213,8 @@ describe('administrator menu-permission screen', () => {
         expect(rows.find((row) => row.menuKey === 'settings.accounts')).toMatchObject({ fixed: true, label: '계정 관리' });
         expect(rows.find((row) => row.menuKey === 'settings.menu-permissions')).toMatchObject({ fixed: true, label: '메뉴 권한 관리' });
         expect(rows.find((row) => row.menuKey === 'settings.infrastructure-usage')).toMatchObject({ fixed: true, label: '인프라 사용량' });
-        expect(rows.some((row) => /인사|급여/.test(row.label))).toBe(false);
+        expect(rows.find((row) => row.menuKey === 'hr.core')).toBeTruthy();
+        expect(permissionsSource).toContain("item.menuKey !== 'hr.core'");
     });
 
     it('compares permission keys independent of UI ordering', () => {

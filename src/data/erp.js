@@ -10,6 +10,7 @@ export const erpMenu = [
     {
         label: '업무',
         items: [
+            { label: '인사관리', icon: 'pi pi-fw pi-users', path: '/hr', items: [makeItem('hr.core', '직원 · 인사발령', 'pi pi-fw pi-id-card', '/hr/employees', '직원 정보와 발령 이력을 관리합니다.')] },
             makeItem('approvals', '결재함', 'pi pi-fw pi-check-square', '/approvals', '승인 요청과 처리 이력을 관리합니다.'),
             {
                 label: '영업관리',

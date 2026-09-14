@@ -13,7 +13,7 @@ const recoveryKeys = new Set(['settings.accounts', 'settings.menu-permissions', 
 const model = computed(() => filterMenuByAccess(erpMenu, (menuKey) => {
     if (recoveryKeys.has(menuKey)) return authStore.profile.value?.is_active && authStore.profile.value?.role === 'admin';
     if (runtime.context.value?.mode === 'active') return runtime.canAccess(menuKey);
-    if (runtime.context.value?.mode !== 'legacy') return false;
+    if (runtime.context.value?.mode !== 'legacy' || menuKey === 'hr.core') return false;
     return accessStore.canAccess(menuKey, authStore.profile.value?.role);
 }));
 </script>

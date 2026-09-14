@@ -423,3 +423,15 @@ describe('ERP application shell', () => {
         expect(configuratorSource).toContain('메뉴 모드');
     });
 });
+
+it('hides the HR ledger until published permissions are available', async () => {
+    accessStore.canAccess.mockReturnValue(true);
+    const wrapper = mount(AppMenu, { global: { stubs: { RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } });
+    wrappers.push(wrapper);
+    expect(wrapper.text()).not.toContain('직원 · 인사발령');
+    runtimeStore.context.value = { mode: 'active' };
+    runtimeStore.canAccess.mockImplementation((key) => key === 'hr.core');
+    await nextTick();
+    expect(wrapper.text()).toContain('직원 · 인사발령');
+    expect(wrapper.text()).not.toContain('수주 관리');
+});
