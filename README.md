@@ -17,6 +17,7 @@ Detailed instructions:
 
 - [Cloudflare and Supabase operations](docs/setup/cloudflare-supabase.md)
 - [Fresh-machine setup and handoff](docs/setup/fresh-machine.md)
+- [Current state, conventions, and next tasks for parallel contributors](docs/HANDOFF.md)
 
 ## Verify
 
