@@ -1,19 +1,20 @@
 # NEXERP 인수인계 문서
 
-> 기준 시점: 2026-09-14, `main` 브랜치 커밋 `e7c3f0e` 구현 및 운영 적용 후. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다. 작업 단위를 끝낼 때마다 "현재 상태"와 "다음 할 일"을 갱신하고 함께 커밋해 주세요.
+> 기준 시점: 2026-09-14, `feature/partner-master` 브랜치 커밋 `ac2f730`까지 구현하고 거래처 기준정보를 운영 적용한 후. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다. 작업 단위를 끝낼 때마다 "현재 상태"와 "다음 할 일"을 갱신하고 함께 커밋해 주세요.
 
 ## 1. 한눈에 보기
 
 | 항목 | 상태 |
 |---|---|
 | 스택 | Vue 3 + PrimeVue 4 + Tailwind, Cloudflare Workers Static Assets, Supabase (Auth + Postgres + RLS), Vitest |
-| 최신 구현 커밋 | `e7c3f0e feat: add multi-company and multi-site master data` (그 앞은 `42dce82 refactor: harden ERP workflows and remove demo assets`) |
-| 작업 트리 | 이 인수인계 갱신 커밋 후 clean. `origin/main`까지 동기화 |
-| 검증 | Vitest 45개 파일 602개 통과, ESLint 무결, `npm run build` 성공 |
-| 미적용 마이그레이션 | 없음. `20260914000100_add_companies_and_sites.sql`을 2026-09-14 호스팅 프로젝트에 적용하고 카탈로그 7항목을 검증함 |
-| 미실행 테스트 | pgTAP `supabase/tests/companies_sites_rls.test.sql` (35개 단언). 이 PC에 Docker가 없어 실행 불가 |
-| 확정된 결정 | 회사(company)와 사업장(site)은 여러 개 등록 가능. 모든 업무 테이블은 `company_id`를 갖는다 |
-| 운영 배포 | Cloudflare Worker 버전 `9d18679b-c4e0-495b-9a2d-6788a141d9f9`, `https://nexerp.merciful-chips.workers.dev` |
+| 최신 구현 커밋 | `ac2f730 fix: harden partner management interactions` (`1f74169`부터 거래처 통합 작업 10개 커밋) |
+| 작업 트리 | 이 인수인계 갱신 커밋 후 `feature/partner-master` clean. 원격 푸시는 컨트롤러 최종 검토 후 진행 |
+| 검증 | Vitest 47개 파일 643개 통과, ESLint 무결, `npm run build` 성공, 운영 의존성 취약점 0개, Wrangler dry-run 성공 |
+| Supabase 운영 프로젝트 | `mehhrnbaiojivesnobpv` (`nexerp`). 이전 문서·계획의 `kctewzpeymlncibgyosz`는 오래된 프로젝트 식별자이므로 사용하지 않음 |
+| 미적용 마이그레이션 | 없음. 회사·사업장 및 거래처 마이그레이션을 2026-09-14 운영 프로젝트에 적용하고 카탈로그 검증 완료 |
+| 미실행 테스트 | pgTAP `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 35개. 이 PC에 Docker가 없어 실행 불가 |
+| 확정된 결정 | 다회사·다사업장. 모든 업무 테이블은 `company_id`를 가지며 고객/공급처는 `master.partners`에서 통합 관리 |
+| 운영 배포 | Cloudflare Worker 버전 `444dfd1c-3082-49b4-94c7-24bee73bcd09`, `https://nexerp.merciful-chips.workers.dev` |
 
 ## 2. 현재 구현 상태
 
@@ -23,10 +24,11 @@
 | 역할 admin / approver / user, 역할별 메뉴 권한 | 완료, Supabase 영속 | `src/stores/access.js`, `supabase/migrations/20260912000100_*` |
 | 계정 관리, 메뉴 권한 관리, 인프라 사용량, 2단계 인증 관리 | 완료 (Worker API + RPC) | `src/views/admin/*`, `worker/admin.js`, `worker/infrastructure.js` |
 | **회사 · 사업장 기준정보** | 구현·운영 마이그레이션·배포 완료. 관리자 MFA 등록 후 실제 등록 점검 대기 | `src/views/master/CompanySites.vue`, `src/stores/master.js`, `src/repositories/master/*` |
+| **거래처 통합 기준정보** | 구현·운영 마이그레이션·배포 완료. 고객/공급처 레거시 경로 통합, 관리자 MFA 후 실제 CRUD 및 역할별 UI 점검 대기 | `src/views/master/Partners.vue`, `src/stores/master.js`, `src/repositories/master/*` |
 | 결재함, 수주 관리, 재고 현황, 재무 현황, 통합 대시보드 | 데모 (메모리 리포지토리) | `src/views/erp/*`, `src/views/Dashboard.vue`, `src/stores/erp.js` |
 | 나머지 27개 메뉴 (견적, 발주, 입고, BOM, 전표 등) | 플레이스홀더 공용 화면 | `src/views/erp/GenericModule.vue` |
 
-Supabase에 존재하는 테이블은 `profiles`, `role_menu_permissions`, `companies`, `sites` 네 개입니다. 나머지 업무 데이터는 아직 테이블이 없습니다.
+Supabase에 존재하는 앱 테이블은 `profiles`, `role_menu_permissions`, `companies`, `sites`, `partners` 다섯 개입니다. 나머지 업무 데이터는 아직 테이블이 없습니다.
 
 ## 3. 이번 세션에서 한 일
 
@@ -51,6 +53,15 @@ Supabase에 존재하는 테이블은 `profiles`, `role_menu_permissions`, `comp
 - **화면** `src/views/master/CompanySites.vue` (`/settings/company`, 메뉴 키 `settings.company`): 회사 목록(단일 선택) + 선택 회사의 사업장 목록, 등록/수정 대화상자, 비활성화 확인. 관리자만 쓰기 버튼을 봅니다. 코드는 수정 화면에서 잠금(불변).
 - **대시보드** `src/views/Dashboard.vue`: 회사/사업장 필터가 등록된 기준정보를 따릅니다. 수치 자체는 여전히 `getDashboardSnapshot()`의 가짜 계수입니다.
 - **문서**: README 첫 단락, `docs/setup/cloudflare-supabase.md`의 마이그레이션 설명 갱신.
+
+### 커밋 `1f74169` ~ `ac2f730` — 거래처 통합 기준정보
+
+- **메뉴 통합**: 고객 `sales.customers`와 공급처 `purchasing.vendors` 메뉴를 `master.partners` 하나로 합쳤습니다. 기존 `/sales/customers`, `/purchasing/vendors` 북마크는 `/master/partners`로 리다이렉트됩니다.
+- **마이그레이션** `20260914000200_add_partners.sql`: 회사별 코드와 사업자번호 유일성, 고객/공급업체 복수 역할, 비활성화, 감사 컬럼을 갖는 `public.partners`를 만들었습니다. 활성 AAL2 사용자는 조회하고 관리자만 등록·수정할 수 있으며 delete grant는 없습니다. 감사 트리거와 활성 회사 강제 트리거를 사용합니다.
+- **권한 이전**: 기존 고객/공급처 메뉴 권한을 가진 역할에 `master.partners`를 보존한 뒤 두 레거시 키를 제거하고 revision을 올립니다. 관리자 보호 트리거는 이전 동안만 비활성화하고 다시 활성화합니다.
+- **도메인·리포지토리·스토어**: `src/data/master.js`, `src/repositories/master/*`, `src/stores/master.js`에 거래처 검증, 오류 매핑, demo/Supabase 구현, 캐시와 CRUD를 회사·사업장 패턴으로 추가했습니다.
+- **화면** `src/views/master/Partners.vue`: 회사 선택, 검색, 고객/공급업체 역할, 등록·수정·비활성/활성 전환을 제공합니다. 일반 사용자는 조회 전용이고 관리자만 쓰기 UI를 봅니다.
+- **운영 적용**: 실제 프로젝트 `mehhrnbaiojivesnobpv`에 정확한 SQL을 적용했습니다. table/RLS, 최소 권한, 정책 3개, 트리거 2개, 제약·인덱스, 보안 함수, 권한 키 통합, 관리자 보호 트리거 복원, 빈 테이블을 모두 확인했습니다.
 
 ## 4. 아키텍처 규약 (새 모듈은 이 패턴을 따르세요)
 
@@ -98,21 +109,22 @@ npm run build
 
 - git 2.55가 `C:\Program Files\Git\cmd`에 있습니다. 설치 전에 열린 셸은 PATH가 오래되어 `git`을 못 찾으니 `$env:Path = "C:\Program Files\Git\cmd;$env:Path"`를 앞에 붙이세요. 저장소 git identity는 `Codex <codex@local>`입니다.
 - Docker와 Supabase CLI 로컬 스택이 없습니다. pgTAP은 작성만 하고, 실행은 Docker가 있는 환경에서 `npx supabase test db`로 합니다.
-- `.env.local`, `.dev.vars`에 호스팅 Supabase 자격증명이 있습니다. 커밋 금지. `SUPABASE_SECRET_KEY`, `SUPABASE_MANAGEMENT_TOKEN`, `CLOUDFLARE_API_TOKEN`은 Worker 전용입니다.
-- 회사 · 사업장 마이그레이션은 2026-09-14 호스팅 프로젝트에 적용됐습니다. 후속 마이그레이션은 Supabase CLI가 있는 환경의 `npx supabase db push` 또는 권한이 확인된 SQL Editor에서 적용하고, 적용 결과를 카탈로그로 검증하세요.
+- 저장소 루트 `.env.local`, `.dev.vars`에 운영 Supabase 프로젝트 `mehhrnbaiojivesnobpv` 자격증명이 있습니다. 커밋 금지. `SUPABASE_SECRET_KEY`, `SUPABASE_MANAGEMENT_TOKEN`, `CLOUDFLARE_API_TOKEN`은 Worker 전용입니다. 이전 계획에 남은 `kctewzpeymlncibgyosz`를 운영 대상으로 사용하지 마세요.
+- 회사·사업장과 거래처 마이그레이션은 2026-09-14 운영 프로젝트에 적용됐습니다. 후속 마이그레이션은 Supabase CLI가 있는 환경의 `npx supabase db push` 또는 권한이 확인된 SQL Editor에서 적용하고, 적용 결과를 카탈로그로 검증하세요.
 - 커밋 메시지에 한글이나 여러 줄이 필요하면 파일로 써서 `git commit -F <file>`을 쓰세요. PowerShell here-string을 `-F -`로 넘기면 stdin이 비어 실패합니다.
 
 ## 6. 결정 사항과 미결 사항
 
 **결정됨**
 - 다회사 · 다사업장 (2026-09-14, 사용자 확정). 대시보드의 두 회사 필터는 이제 기준정보에서 나옵니다.
+- 고객 · 공급처는 거래처 기준정보 `master.partners`로 통합 (2026-09-14, 사용자 확정). 업무 화면은 거래처 원장을 조회·선택합니다.
 - 삭제 대신 비활성화. 기준정보 코드는 등록 후 불변.
 - `/approvals` 라우트에 `roles` 없음. 메뉴 권한 = 조회, 역할 = 처리.
 - 상태 값은 영문 코드 저장, 한글 라벨 표시.
 - HR/급여는 ERP 메뉴에서 제외(기존 설계 문서 결정).
 
 **미결 (사용자 확인 필요)**
-- 중복 메뉴 통합: `sales.customers` / `purchasing.vendors` / `master.partners`, 그리고 `inventory.items` / `master.items`. 권장안은 기준정보(`master.*`)로 통합하고 업무 메뉴에서는 조회/선택만 하는 것. 통합하면 `src/data/erp.js` 메뉴와 `role_menu_permissions` 시드(새 마이그레이션으로 키 제거/추가)를 함께 바꿔야 합니다.
+- 품목 메뉴 통합: `inventory.items` / `master.items`. 권장안은 `master.items`에서 원장을 관리하고 재고 업무 화면에서는 조회·선택만 하는 것. 통합할 때 `src/data/erp.js`와 `role_menu_permissions` 권한 키를 함께 이전해야 합니다.
 - 전자세금계산서 발행 방식(국세청 직접 연동 vs ASP). 회계 단계 전에 결정.
 
 ## 7. 다음 할 일
@@ -122,24 +134,26 @@ npm run build
 ### 7.1 즉시 (운영, 사용자 또는 자격증명이 있는 작업자)
 
 - [x] 호스팅 Supabase에 `companies`/`sites` 마이그레이션 적용. `tables_exist`, `rls_enabled`, `no_delete_grant`, `six_rls_policies`, `four_triggers`, `security_functions`, `tables_empty` 카탈로그 점검이 모두 `true`.
+- [x] 운영 프로젝트 `mehhrnbaiojivesnobpv`에 `partners` 마이그레이션 적용. table/RLS, 최소 권한, 정책 3개, 트리거 2개, 제약·인덱스, 보안 함수, 레거시 권한 키 제거, 관리자 보호 트리거 복원, 빈 테이블 점검이 모두 `true`.
 - [ ] 관리자 Google Authenticator 등록을 완료한 뒤 `/settings/company`에서 회사 1개와 사업장 1개가 등록되는지 확인. 현재 운영 브라우저는 MFA 등록 화면에서 해당 경로로 리다이렉트하도록 열려 있음.
 - [ ] `user` 역할로 `/settings/company`의 등록·수정·비활성화 버튼이 숨겨지는지 운영 화면에서 확인. 마운트 테스트에서는 조회 전용 동작 통과.
-- [ ] Docker가 있는 환경에서 `npx supabase test db` 실행. 기대: `companies_sites_rls.test.sql` 35개 통과. 실패하면 메시지 문구 차이(예: RLS 위반 문구)일 가능성이 높으니 pgTAP 기대 문구를 실제 Postgres 문구로 맞추세요.
-- [x] Cloudflare Worker 배포 (`9d18679b-c4e0-495b-9a2d-6788a141d9f9`) 및 최신 PWA 적용.
-- [x] `git push origin main` (이 문서 갱신 커밋 포함).
+- [ ] 관리자 MFA 인증 후 `/master/partners`에서 고객·공급업체·겸용 거래처 등록, 수정, 비활성/활성 전환을 운영 확인.
+- [ ] `user` 역할로 `/master/partners`의 등록·수정·상태 전환 버튼이 숨겨지는지 운영 확인. 마운트 테스트에서는 조회 전용 동작 통과.
+- [ ] 운영 브라우저에서 두 레거시 경로의 최종 URL이 `/master/partners`인지, PWA 업데이트 완료와 콘솔 fatal 오류 부재를 확인. 현재 에이전트에는 브라우저 표면이 없어 HTTP 200/SPA shell과 라우터 자동 테스트까지만 확인함.
+- [ ] Docker가 있는 환경에서 `npx supabase test db` 실행. 기대: `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 35개 통과.
+- [x] Cloudflare Worker 배포 (`444dfd1c-3082-49b4-94c7-24bee73bcd09`). `/api/health` HTTP 200, Supabase `configured`; 레거시 2경로, 통합 경로, manifest, service worker HTTP 200.
+- [ ] 최종 전체 브랜치 검토 후 `git push origin main` 및 로컬/원격 HEAD 일치 확인.
 
 ### 7.2 1단계 기준정보 마무리
 
-**Task A: 중복 메뉴 통합** (미결 사항 확정 후)
-- Files: `src/data/erp.js`, `src/data/erp.test.js`(`expectedMenuKeys`), 새 마이그레이션 `supabase/migrations/2026MMDD000100_consolidate_master_menus.sql`(세 역할 `allowed_menu_keys` 갱신, revision +1), `supabase/migrations/admin_access_control.test.js` 영향 확인, `src/views/admin/adminModels.js`(`FIXED_ADMIN_KEYS` 무관).
-- 검증: `npm test -- --run src/data src/router`.
-- 커밋: `refactor: consolidate partner and item menus under master data`.
+**Task A: 중복 메뉴 통합**
+- [x] 고객·공급처를 `master.partners`로 통합하고 레거시 URL/권한 키 이전.
+- [ ] 품목 `inventory.items` / `master.items` 통합 여부 확정 후 같은 방식으로 메뉴·권한 키 이전.
 
-**Task B: 거래처(partners) 기준정보** — 회사 · 사업장 패턴을 그대로 복제
-- 테이블 `public.partners`: `company_id`, `code`, `name`, `partner_type enum(customer, vendor, both)`, `business_number`(회사 내 유일, 10자리), `representative`, `contact_name`, `contact_phone`, `contact_email`, `address`, `payment_terms_days int default 30`, `credit_limit numeric(18,0) default 0`, `is_active`, 감사 컬럼. `(company_id, code)` 유일. RLS/grant/트리거는 companies와 동일.
-- Files: 마이그레이션 + `.test.js` + pgTAP, `src/data/partners.js`(+test), `src/repositories/partners/{errors|index|demoPartnerRepository|supabasePartnerRepository}.js`(+tests) 또는 `src/repositories/master/`에 추가, `src/stores/partners.js`(+test), `src/views/master/Partners.vue`(+마운트 test), `src/router/index.js` dedicatedViews에 `/master/partners`, `src/router/erp-router.test.js`.
-- 화면: 회사 선택 필터(`useMasterStore().activeCompanies`), 거래처 유형 필터, 등록/수정/비활성화. 신용한도는 `InputNumber mode="currency" currency="KRW"`.
-- 커밋: `feat: add partner master data`.
+**Task B: 거래처(partners) 기준정보**
+- [x] 도메인, demo/Supabase 리포지토리, 스토어, 관리 화면, 마이그레이션, 텍스트 계약 테스트와 pgTAP 작성.
+- [x] 운영 마이그레이션과 Worker 배포.
+- [ ] 관리자 MFA와 일반 사용자 계정으로 실제 역할별 동작 확인.
 
 **Task C: 품목(items) 기준정보**
 - 테이블 `public.items`: `company_id`, `code`, `name`, `item_type enum(raw_material, semi_finished, finished_good, consumable, service)`, `unit text`(EA, KG, M 등), `safety_stock numeric(18,3) default 0`, `standard_price numeric(18,0) default 0`, `is_active`, 감사 컬럼. `(company_id, code)` 유일.
