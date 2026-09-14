@@ -4,7 +4,7 @@ import { jsonResponse } from './http';
 
 const activeProfile = {
     id: 'user-1',
-    email: 'profile@example.com',
+    login_id: 'staff01',
     display_name: '김서준',
     department: '영업팀',
     role: 'approver',

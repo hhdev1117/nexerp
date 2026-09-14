@@ -3,11 +3,11 @@ import { createWorkerApp } from './app';
 
 const callerId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const accountId = '11111111-1111-4111-8111-111111111111';
-const accountColumns = 'id, email, display_name, department, role, is_active, created_at, updated_at';
+const accountColumns = 'id, login_id, display_name, department, role, is_active, created_at, updated_at';
 
 const accountRow = {
     id: accountId,
-    email: 'employee@example.com',
+    login_id: 'staff01',
     display_name: '김서준',
     department: '영업팀',
     role: 'approver',
@@ -20,7 +20,7 @@ const accountRow = {
 
 const publicAccount = {
     id: accountId,
-    email: 'employee@example.com',
+    loginId: 'staff01',
     displayName: '김서준',
     department: '영업팀',
     role: 'approver',
@@ -85,7 +85,7 @@ function createUserClientFixture({
 
 function createAdminClientFixture({
     events = [],
-    createdUser = { id: accountId, email: accountRow.email },
+    createdUser = { id: accountId, email: 'staff01@nexerp.internal' },
     createError = null,
     createThrows = null,
     deleteError = null,
@@ -114,7 +114,7 @@ function createAdminClientFixture({
         events.push('reset-password');
         if (updateThrows) throw updateThrows;
         if (updateResultFactory) return updateResultFactory();
-        return { data: { user: { id: accountId, email: accountRow.email } }, error: updateError };
+        return { data: { user: { id: accountId, email: 'staff01@nexerp.internal' } }, error: updateError };
     });
     const listFactors = vi.fn(async () => {
         events.push('list-factors');
@@ -153,7 +153,7 @@ function request(path, { method = 'GET', body, token = 'session-token' } = {}) {
 }
 
 const validCreateBody = {
-    email: ' New.Employee@GMAIL.com ',
+    loginId: ' Staff01 ',
     temporaryPassword: 'Temporary-Password-1!',
     displayName: ' 새 직원 ',
     department: ' 운영팀 ',
@@ -230,9 +230,9 @@ describe('administrator account API', () => {
 
     it.each([
         ['malformed JSON', '{', 'invalid_request', '요청 내용을 확인해 주세요.'],
-        ['invalid email', { ...validCreateBody, email: 'not-an-email' }, 'gmail_required', 'Gmail 주소만 사용할 수 있습니다.'],
-        ['Gmail subdomain', { ...validCreateBody, email: 'staff@sub.gmail.com' }, 'gmail_required', 'Gmail 주소만 사용할 수 있습니다.'],
-        ['Gmail suffix', { ...validCreateBody, email: 'staff@gmail.com.evil' }, 'gmail_required', 'Gmail 주소만 사용할 수 있습니다.'],
+        ['missing login ID', { ...validCreateBody, loginId: undefined }, 'invalid_login_id', '로그인 ID 형식을 확인해 주세요.'],
+        ['invalid login ID characters', { ...validCreateBody, loginId: 'staff@01' }, 'invalid_login_id', '로그인 ID 형식을 확인해 주세요.'],
+        ['too-short login ID', { ...validCreateBody, loginId: 'ab' }, 'invalid_login_id', '로그인 ID 형식을 확인해 주세요.'],
         ['short password', { ...validCreateBody, temporaryPassword: 'short' }, 'invalid_temporary_password', '임시 비밀번호는 8자 이상이어야 합니다.'],
         ['blank name', { ...validCreateBody, displayName: '   ' }, 'invalid_display_name', '이름을 입력해 주세요.'],
         ['blank department', { ...validCreateBody, department: '   ' }, 'invalid_department', '부서를 입력해 주세요.'],
@@ -268,16 +268,17 @@ describe('administrator account API', () => {
         const adminFixture = createAdminClientFixture({ events });
         const { app, createAdminClient } = createApp({ userFixture, adminFixture, events });
         const response = await app.fetch(request('/api/admin/accounts', { method: 'POST', body: validCreateBody }), {});
+        const payload = await response.json();
 
         expect(response.status).toBe(201);
-        expect(await response.json()).toEqual({ account: publicAccount });
+        expect(payload).toEqual({ account: publicAccount });
         expect(events).toEqual(['get-user', 'get-aal', 'get-profile', 'create-admin-client', 'create-user', 'update-profile']);
         expect(createAdminClient).toHaveBeenCalledOnce();
         expect(adminFixture.createUser).toHaveBeenCalledWith({
-            email: 'new.employee@gmail.com',
+            email: 'staff01@nexerp.internal',
             password: 'Temporary-Password-1!',
             email_confirm: true,
-            app_metadata: { nexerp_provisioned: true }
+            app_metadata: { nexerp_provisioned: true, login_id: 'staff01' }
         });
         expect(userFixture.rpc).toHaveBeenCalledWith('admin_update_profile', {
             target_id: accountId,
@@ -287,10 +288,11 @@ describe('administrator account API', () => {
             new_is_active: true
         });
         expect(adminFixture.deleteUser).not.toHaveBeenCalled();
+        expect(payload.account).not.toHaveProperty('email');
     });
 
     it.each([[{ code: 'email_exists', status: 422, message: 'raw duplicate detail' }], [{ code: 'user_already_exists', status: 422, message: 'raw duplicate provider detail' }]])(
-        'maps duplicate email failures to a redacted conflict',
+        'maps duplicate Auth-user failures to a redacted login-ID conflict',
         async (createError) => {
             const adminFixture = createAdminClientFixture({ createError });
             const { app } = createApp({ adminFixture });
@@ -298,7 +300,7 @@ describe('administrator account API', () => {
             const body = await response.json();
 
             expect(response.status).toBe(409);
-            expect(body).toEqual({ error: { code: 'email_exists', message: '이미 사용 중인 이메일입니다.' } });
+            expect(body).toEqual({ error: { code: 'login_id_exists', message: '이미 사용 중인 로그인 ID입니다.' } });
             expect(JSON.stringify(body)).not.toContain(createError.message);
         }
     );
@@ -531,7 +533,7 @@ describe('administrator account API', () => {
         expect(JSON.stringify(body)).not.toContain('session-token');
     });
 
-    it('resets only another account\'s TOTP factors and returns no factor details', async () => {
+    it("resets only another account's TOTP factors and returns no factor details", async () => {
         const firstFactorId = '33333333-3333-4333-8333-333333333333';
         const secondFactorId = '44444444-4444-4444-8444-444444444444';
         const adminFixture = createAdminClientFixture({
