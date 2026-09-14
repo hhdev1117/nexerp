@@ -8,9 +8,9 @@ select plan(35);
 
 insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
 values
-    ('30000000-0000-0000-0000-000000000001', 'member@gmail.com', '{}'::jsonb, '{"nexerp_provisioned":true}'::jsonb),
-    ('30000000-0000-0000-0000-000000000002', 'admin@gmail.com', '{}'::jsonb, '{"nexerp_provisioned":true}'::jsonb),
-    ('30000000-0000-0000-0000-000000000003', 'inactive@gmail.com', '{}'::jsonb, '{"nexerp_provisioned":true}'::jsonb);
+    ('30000000-0000-0000-0000-000000000001', 'member@nexerp.internal', '{}'::jsonb, '{"login_id":"member","nexerp_provisioned":true}'::jsonb),
+    ('30000000-0000-0000-0000-000000000002', 'adminuser@nexerp.internal', '{}'::jsonb, '{"login_id":"adminuser","nexerp_provisioned":true}'::jsonb),
+    ('30000000-0000-0000-0000-000000000003', 'inactive@nexerp.internal', '{}'::jsonb, '{"login_id":"inactive","nexerp_provisioned":true}'::jsonb);
 
 update public.profiles
 set role = 'admin'::public.app_role
