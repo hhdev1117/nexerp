@@ -19,16 +19,24 @@ describe('setup documentation', () => {
         expect(readDocumentationSet()).toContain(command);
     });
 
-    it('documents first-admin promotion as a preflight followed by one complete guarded transaction', () => {
-        const sqlBlocks = [...readDocument(operationsPath).matchAll(/```sql\r?\n([\s\S]*?)```/g)].map((match) => match[1]);
-        const preflight = sqlBlocks.find((block) => /^select\b/i.test(block.trim()));
-        const transaction = sqlBlocks.find((block) => /^begin;/i.test(block.trim()));
+    it('documents credential-safe first-administrator bootstrap and mandatory TOTP enrollment', () => {
+        const operations = readDocument(operationsPath);
 
-        expect(preflight).toMatch(/select[\s\S]+from public\.profiles[\s\S]+where email = 'FIRST_ADMIN_EMAIL@example\.invalid'/i);
-        expect(transaction).toMatch(/^begin;[\s\S]*commit;\s*$/i);
-        expect(transaction).toMatch(/where email = 'FIRST_ADMIN_EMAIL@example\.invalid'[\s\S]+and is_active(?: = true)?/i);
-        expect(transaction).toMatch(/get diagnostics affected_rows = row_count;/i);
-        expect(transaction).toMatch(/if affected_rows <> 1 then[\s\S]+raise exception/i);
+        expect(operations).toContain('npm run bootstrap:admin');
+        expect(operations).toMatch(/Remove-Item Env:\\NEXERP_ADMIN_TEMPORARY_PASSWORD/);
+        expect(operations).toMatch(/first login|첫 로그인/i);
+        expect(operations).toMatch(/TOTP/);
+        expect(operations).not.toMatch(/NEXERP_ADMIN_TEMPORARY_PASSWORD\s*=\s*['"][^<'"\r\n]+['"]/);
+    });
+
+    it('documents credential-safe remediation when bootstrap compensation fails', () => {
+        const operations = readDocument(operationsPath);
+
+        expect(operations).toContain('promotion_failed_compensation_failed');
+        expect(operations).toMatch(/Auth user|Auth 사용자/i);
+        expect(operations).toMatch(/user ID|사용자 ID/i);
+        expect(operations).toMatch(/delete|삭제/i);
+        expect(operations).toMatch(/do not rerun|다시 실행하지/i);
     });
 
     it.each(deploymentGuidePaths)('builds static assets immediately before the Wrangler dry-run in %s', (path) => {

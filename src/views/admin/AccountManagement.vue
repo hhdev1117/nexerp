@@ -47,7 +47,7 @@ const dialogTitle = computed(() => (dialogMode.value === 'create' ? '새 계정 
 const filteredAccounts = computed(() => {
     const query = keyword.value.trim().toLocaleLowerCase('ko-KR');
     return accounts.value.filter((account) => {
-        const matchesKeyword = !query || [account.email, account.displayName, account.department].some((value) => value?.toLocaleLowerCase('ko-KR').includes(query));
+        const matchesKeyword = !query || [account.loginId, account.displayName, account.department].some((value) => value?.toLocaleLowerCase('ko-KR').includes(query));
         const matchesRole = !selectedRole.value || account.role === selectedRole.value;
         const matchesStatus = selectedStatus.value === null || account.isActive === selectedStatus.value;
         return matchesKeyword && matchesRole && matchesStatus;
@@ -56,8 +56,8 @@ const filteredAccounts = computed(() => {
 
 const failureDetail = (error, fallback) => {
     const messages = {
-        email_exists: '이미 사용 중인 이메일입니다.',
-        gmail_required: 'Gmail 주소만 사용할 수 있습니다.',
+        login_id_exists: '이미 사용 중인 아이디입니다.',
+        invalid_login_id: '아이디는 영문 소문자와 숫자 4~20자로 입력해 주세요.',
         mfa_required: '다중 인증을 완료한 후 다시 시도해 주세요.',
         self_mfa_reset_forbidden: '현재 관리자 계정의 인증 앱은 이 방식으로 초기화할 수 없습니다.',
         self_demotion_forbidden: '현재 관리자 계정의 권한은 변경할 수 없습니다.',
@@ -224,7 +224,7 @@ function toggleAccountStatus(account) {
 
 async function focusFirstError() {
     await nextTick();
-    const firstErrorId = ['email', 'temporaryPassword', 'displayName', 'department'].find((field) => formErrors.value[field]);
+    const firstErrorId = ['loginId', 'temporaryPassword', 'displayName', 'department'].find((field) => formErrors.value[field]);
     document.getElementById(`account-${firstErrorId}`)?.focus();
 }
 
@@ -290,7 +290,7 @@ onMounted(loadAccounts);
                 <div class="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:w-auto">
                     <IconField class="sm:col-span-2 xl:w-80">
                         <InputIcon class="pi pi-search" />
-                        <InputText v-model="keyword" placeholder="이름, 이메일, 부서 검색" aria-label="계정 검색" fluid />
+                        <InputText v-model="keyword" placeholder="이름, 아이디, 부서 검색" aria-label="계정 검색" fluid />
                     </IconField>
                     <Select v-model="selectedRole" :options="roleFilterOptions" optionLabel="label" optionValue="value" placeholder="전체 등급" aria-label="계정 등급 필터" showClear fluid class="xl:w-40" />
                     <Select v-model="selectedStatus" :options="statusOptions" optionLabel="label" optionValue="value" placeholder="전체 상태" aria-label="계정 상태 필터" showClear fluid class="xl:w-40" />
@@ -333,7 +333,7 @@ onMounted(loadAccounts);
                             <span class="account-avatar" aria-hidden="true">{{ [...(slotProps.data.displayName || '계')][0] }}</span>
                             <div class="min-w-0">
                                 <strong class="block truncate" :title="slotProps.data.displayName">{{ slotProps.data.displayName }}</strong>
-                                <small class="block truncate text-muted-color" :title="slotProps.data.email">{{ slotProps.data.email }}</small>
+                                <small class="block truncate text-muted-color" :title="slotProps.data.loginId">{{ slotProps.data.loginId }}</small>
                             </div>
                         </div>
                     </template>
@@ -392,9 +392,9 @@ onMounted(loadAccounts);
         <Dialog v-model:visible="accountDialog" modal :header="dialogTitle" :style="{ width: '36rem' }" :breakpoints="{ '640px': '94vw' }" :closable="!saving" @hide="clearSensitiveDraft">
             <form id="account-form" class="account-form" novalidate @submit.prevent="saveAccount">
                 <div v-if="dialogMode === 'create'" class="field-group">
-                    <label for="account-email">Gmail 이메일</label>
-                    <InputText id="account-email" v-model.trim="draft.email" type="email" autocomplete="off" required fluid :invalid="submitted && Boolean(formErrors.email)" aria-describedby="account-email-error" />
-                    <small v-if="submitted && formErrors.email" id="account-email-error" class="field-error" role="alert">{{ formErrors.email }}</small>
+                    <label for="account-loginId">아이디</label>
+                    <InputText id="account-loginId" v-model="draft.loginId" type="text" inputmode="text" autocomplete="off" required fluid :invalid="submitted && Boolean(formErrors.loginId)" aria-describedby="account-loginId-error" />
+                    <small v-if="submitted && formErrors.loginId" id="account-loginId-error" class="field-error" role="alert">{{ formErrors.loginId }}</small>
                 </div>
 
                 <div v-if="dialogMode === 'create'" class="field-group">
@@ -602,6 +602,21 @@ onMounted(loadAccounts);
 }
 
 @media (max-width: 640px) {
+    :deep(.p-inputtext),
+    :deep(.p-select),
+    :deep(.p-button) {
+        min-height: 2.75rem;
+    }
+
+    :deep(.p-button) {
+        min-width: 2.75rem;
+    }
+
+    :deep(.p-toggleswitch) {
+        min-width: 2.75rem;
+        min-height: 2.75rem;
+    }
+
     .form-grid {
         grid-template-columns: minmax(0, 1fr);
     }

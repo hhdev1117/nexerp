@@ -6,34 +6,38 @@ create extension if not exists pgtap with schema extensions;
 
 select plan(16);
 
+select public.prepare_user_provisioning('userone', 'nonce-userone-0001');
+select public.prepare_user_provisioning('usertwo', 'nonce-usertwo-0002');
+select public.prepare_user_provisioning('adminuser', 'nonce-adminuser-0003');
+
 insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
 values
-    ('10000000-0000-0000-0000-000000000001', 'USER-ONE@GMAIL.COM', '{"role":"admin","is_active":false}'::jsonb, '{"nexerp_provisioned":true}'::jsonb),
-    ('10000000-0000-0000-0000-000000000002', 'user-two@gmail.com', '{}'::jsonb, '{"nexerp_provisioned":true}'::jsonb),
-    ('10000000-0000-0000-0000-000000000003', 'admin@gmail.com', '{}'::jsonb, '{"nexerp_provisioned":true}'::jsonb);
+    ('10000000-0000-0000-0000-000000000001', 'USERONE@NEXERP.INTERNAL', '{"role":"admin","is_active":false,"provisioning_nonce":"nonce-userone-0001"}'::jsonb, '{"login_id":"userone","nexerp_provisioned":true}'::jsonb),
+    ('10000000-0000-0000-0000-000000000002', 'usertwo@nexerp.internal', '{"provisioning_nonce":"nonce-usertwo-0002"}'::jsonb, '{"login_id":"usertwo","nexerp_provisioned":true}'::jsonb),
+    ('10000000-0000-0000-0000-000000000003', 'adminuser@nexerp.internal', '{"provisioning_nonce":"nonce-adminuser-0003"}'::jsonb, '{"login_id":"adminuser","nexerp_provisioned":true}'::jsonb);
 
 select results_eq(
     $$select email from public.profiles where id = '10000000-0000-0000-0000-000000000001'::uuid$$,
-    $$values ('user-one@gmail.com'::text)$$,
-    'the signup profile stores a normalized Gmail address'
+    $$values ('userone@nexerp.internal'::text)$$,
+    'the signup profile stores the login ID internal address'
 );
 
 select throws_ok(
-    $$insert into auth.users (id, email, raw_app_meta_data) values ('10000000-0000-0000-0000-000000000004', 'employee@example.test', '{"nexerp_provisioned":true}'::jsonb)$$,
+    $$insert into auth.users (id, email, raw_app_meta_data) values ('10000000-0000-0000-0000-000000000004', 'abc@nexerp.internal', '{"login_id":"abc","nexerp_provisioned":true}'::jsonb)$$,
     '22023',
-    'gmail_required',
-    'a non-Gmail address is rejected even with the provisioning marker'
+    'invalid_login_id',
+    'an invalid login ID is rejected even with the provisioning marker'
 );
 
 select throws_ok(
-    $$insert into auth.users (id, email, raw_app_meta_data) values ('10000000-0000-0000-0000-000000000005', 'employee@gmail.com', '{}'::jsonb)$$,
+    $$insert into auth.users (id, email, raw_app_meta_data) values ('10000000-0000-0000-0000-000000000005', 'employee@nexerp.internal', '{"login_id":"employee"}'::jsonb)$$,
     '42501',
     'provisioning_required',
-    'a Gmail address without the provisioning marker is rejected'
+    'a matching login identity without the provisioning marker is rejected'
 );
 
 select throws_ok(
-    $$insert into auth.users (id, email, raw_app_meta_data) values ('10000000-0000-0000-0000-000000000006', 'employee@gmail.com', '{"nexerp_provisioned":"true"}'::jsonb)$$,
+    $$insert into auth.users (id, email, raw_app_meta_data) values ('10000000-0000-0000-0000-000000000006', 'employee@nexerp.internal', '{"login_id":"employee","nexerp_provisioned":"true"}'::jsonb)$$,
     '42501',
     'provisioning_required',
     'a JSON string provisioning marker is rejected'

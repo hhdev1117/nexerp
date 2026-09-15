@@ -3,7 +3,7 @@ import { AdminApiError, createAdminApi } from './adminApi';
 
 const account = {
     id: '11111111-1111-4111-8111-111111111111',
-    email: 'employee@nexerp.test',
+    loginId: 'staff01',
     displayName: '김서준',
     department: '영업팀',
     role: 'user',
@@ -69,7 +69,8 @@ describe('administrator API service', () => {
         fetchImpl.mockResolvedValue(response({ account }, 201));
         const api = createAdminApi({ fetchImpl, getAccessToken });
         const input = {
-            email: 'employee@nexerp.test',
+            loginId: 'staff01',
+            email: 'must-not-be-sent@example.com',
             temporaryPassword: 'One-Time-Password-9!',
             displayName: '김서준',
             department: '영업팀',
@@ -80,7 +81,13 @@ describe('administrator API service', () => {
 
         const [, options] = fetchImpl.mock.calls[0];
         expect(options).toMatchObject({ method: 'POST', headers: { Authorization: 'Bearer current-session-token', 'Content-Type': 'application/json' } });
-        expect(JSON.parse(options.body)).toEqual(input);
+        expect(JSON.parse(options.body)).toEqual({
+            loginId: 'staff01',
+            temporaryPassword: 'One-Time-Password-9!',
+            displayName: '김서준',
+            department: '영업팀',
+            role: 'user'
+        });
         expect(JSON.stringify(account)).not.toContain(input.temporaryPassword);
     });
 
@@ -162,13 +169,13 @@ describe('administrator API service', () => {
     });
 
     it('maps known API failures without trusting provider text', async () => {
-        fetchImpl.mockResolvedValue(response({ error: { code: 'email_exists', message: 'sentinel-provider-detail' } }, 409));
+        fetchImpl.mockResolvedValue(response({ error: { code: 'login_id_exists', message: 'sentinel-provider-detail' } }, 409));
         const api = createAdminApi({ fetchImpl, getAccessToken });
 
         const failure = await api.createAccount({}).catch((error) => error);
 
         expect(failure).toBeInstanceOf(AdminApiError);
-        expect(failure).toMatchObject({ code: 'email_exists', message: '이미 사용 중인 이메일입니다.' });
+        expect(failure).toMatchObject({ code: 'login_id_exists', message: '이미 사용 중인 로그인 ID입니다.' });
         expect(JSON.stringify(failure)).not.toContain('sentinel-provider-detail');
     });
 

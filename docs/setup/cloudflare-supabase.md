@@ -39,39 +39,34 @@ The migrations create `profiles`, the `admin`/`approver`/`user` role type, accou
 
 They also create the `companies`, `sites`, and `partners` master tables. Any active, MFA-verified user can read them; only administrators can insert or update rows, and nothing can be deleted. Deactivate a company, site, or partner instead. Deactivating a company automatically deactivates its sites, and inactive companies cannot receive or reactivate active partners. Partner codes are immutable after creation. Register companies and sites from `회사 · 사업장`, and manage customer/vendor roles in the unified `master.partners` screen (`거래처 관리`).
 
-After the intended first administrator has created an account, replace the placeholder below with that account's exact, already-known email. Run this read-only preflight in an authorized Supabase SQL Editor and confirm that it returns exactly one active profile with the expected identity:
+Bootstrap the first administrator only from a trusted operator workstation. The command uses the server-only Supabase secret key, refuses to run if any active administrator already exists, creates the internal Auth identity, and promotes only that newly created profile. If promotion fails, it deletes the newly created Auth user. It never prints the temporary password.
 
-```sql
-select id, email, role, is_active
-from public.profiles
-where email = 'FIRST_ADMIN_EMAIL@example.invalid';
+Set the four values in the current PowerShell process without placing credentials in shell history or a file. Enter the two secrets at the masked prompts. The login ID must contain 4–20 lowercase ASCII letters or digits; the temporary password must contain 8–128 characters.
+
+```powershell
+$env:SUPABASE_URL = Read-Host 'Supabase project URL'
+$env:SUPABASE_SECRET_KEY = Read-Host 'Supabase secret key' -MaskInput
+$env:NEXERP_ADMIN_LOGIN_ID = Read-Host 'First administrator login ID'
+$env:NEXERP_ADMIN_TEMPORARY_PASSWORD = Read-Host 'Temporary password' -MaskInput
+
+try {
+    npm run bootstrap:admin
+} finally {
+    Remove-Item Env:\NEXERP_ADMIN_TEMPORARY_PASSWORD -ErrorAction SilentlyContinue
+}
 ```
 
-Only after the preflight is correct, replace the same placeholder in the block below and submit the entire block as one SQL Editor execution. Do not run its statements separately. The update is restricted to an active profile with the exact email, and the transaction raises an exception instead of committing unless exactly one row is updated.
+After a successful run, also remove the remaining bootstrap values from the current process when they are no longer needed. Never copy the temporary password into a command, file, ticket, chat, screenshot, or log.
 
-```sql
-begin;
-
-do $$
-declare
-    affected_rows integer;
-begin
-    update public.profiles
-    set role = 'admin'::public.app_role
-    where email = 'FIRST_ADMIN_EMAIL@example.invalid'
-      and is_active = true;
-
-    get diagnostics affected_rows = row_count;
-    if affected_rows <> 1 then
-        raise exception 'Expected exactly one active profile; updated % rows.', affected_rows;
-    end if;
-end
-$$;
-
-commit;
+```powershell
+Remove-Item Env:\SUPABASE_SECRET_KEY -ErrorAction SilentlyContinue
+Remove-Item Env:\SUPABASE_URL -ErrorAction SilentlyContinue
+Remove-Item Env:\NEXERP_ADMIN_LOGIN_ID -ErrorAction SilentlyContinue
 ```
 
-Re-run the read-only preflight and confirm that the one intended profile now has role `admin`. If the guarded transaction raises an exception, investigate the account identity or active state; do not loosen the email or active-account conditions.
+At first login, the administrator must replace the temporary password as directed and enroll a TOTP authenticator before using protected application features. Confirm the session reaches MFA assurance level 2. Do not weaken or bypass mandatory TOTP enrollment.
+
+If the command returns `promotion_failed_compensation_failed`, the profile promotion failed and automatic Auth user deletion also failed. Do not rerun the bootstrap. In the Supabase Dashboard, identify the newly created Auth user by the login ID used for this attempt, record its user ID locally only for the duration of remediation, and delete that exact Auth user. Confirm that no active administrator profile exists before retrying. Do not paste the user ID, login credentials, secret key, provider response, or temporary password into logs, source files, tickets, or chat.
 
 After the bootstrap administrator is verified, create and maintain subsequent accounts from NEXERP's `계정 관리` screen. Configure role-based navigation from `메뉴 권한 관리`; do not use dashboard-side profile edits as the routine account-management workflow.
 

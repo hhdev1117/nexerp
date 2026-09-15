@@ -7,6 +7,7 @@
         "build": "vite build",
         "deploy": "npm run build && wrangler deploy",
         "cf:typegen": "wrangler types",
+        "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
         "test": "vitest",
         "preview": "vite preview",
         "lint": "eslint --fix . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore"
