@@ -11,6 +11,7 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
     const companies = ref([]);
     const sites = ref([]);
     const partners = ref([]);
+    const items = ref([]);
     const loading = ref(false);
     const loaded = ref(false);
     const error = ref(null);
@@ -20,6 +21,7 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
     const activeCompanies = computed(() => companies.value.filter((company) => company.isActive));
     const activeSites = computed(() => sites.value.filter((site) => site.isActive));
     const activePartners = computed(() => partners.value.filter((partner) => partner.isActive));
+    const activeItems = computed(() => items.value.filter((item) => item.isActive));
     const siteCountByCompany = computed(() =>
         sites.value.reduce((counts, site) => {
             counts[site.companyId] = (counts[site.companyId] || 0) + 1;
@@ -30,16 +32,19 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
     const companyById = (id) => companies.value.find((company) => company.id === id) || null;
     const sitesFor = (companyId) => sites.value.filter((site) => site.companyId === companyId);
     const partnersFor = (companyId) => partners.value.filter((partner) => partner.companyId === companyId);
+    const itemsFor = (companyId) => items.value.filter((item) => item.companyId === companyId);
+    const itemById = (id) => items.value.find((item) => item.id === id) || null;
 
     async function load() {
         const sequence = ++loadSequence;
         loading.value = true;
         try {
-            const [nextCompanies, nextSites, nextPartners] = await Promise.all([repository.listCompanies(), repository.listSites(), repository.listPartners()]);
+            const [nextCompanies, nextSites, nextPartners, nextItems] = await Promise.all([repository.listCompanies(), repository.listSites(), repository.listPartners(), repository.listItems()]);
             if (sequence !== loadSequence) return;
             companies.value = byCode(nextCompanies);
             sites.value = byCode(nextSites);
             partners.value = byCode(nextPartners);
+            items.value = byCode(nextItems);
             loaded.value = true;
             error.value = null;
         } catch {
@@ -105,13 +110,27 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
         return updated;
     }
 
+    async function createItem(draft) {
+        const created = await repository.createItem(draft);
+        items.value = byCode([...items.value, created]);
+        return created;
+    }
+
+    async function updateItem(id, changes) {
+        const updated = await repository.updateItem(id, changes);
+        items.value = byCode(replaceById(items.value, updated));
+        return updated;
+    }
+
     return {
         companies,
         sites,
         partners,
+        items,
         activeCompanies,
         activeSites,
         activePartners,
+        activeItems,
         siteCountByCompany,
         loading,
         loaded,
@@ -119,6 +138,8 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
         companyById,
         sitesFor,
         partnersFor,
+        itemsFor,
+        itemById,
         ensureLoaded,
         reload,
         createCompany,
@@ -126,7 +147,9 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
         createSite,
         updateSite,
         createPartner,
-        updatePartner
+        updatePartner,
+        createItem,
+        updateItem
     };
 }
 

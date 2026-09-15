@@ -15,6 +15,7 @@ const dedicatedViews = {
     '/finance/summary': () => import('@/views/erp/FinanceSummary.vue'),
     '/settings/company': () => import('@/views/master/CompanySites.vue'),
     '/master/partners': () => import('@/views/master/Partners.vue'),
+    '/master/items': () => import('@/views/master/Items.vue'),
     '/settings/accounts': () => import('@/views/admin/AccountManagement.vue'),
     '/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue'),
     '/settings/enterprise-access': () => import('@/views/admin/EnterpriseAccess.vue'),
@@ -45,6 +46,7 @@ const router = createRouter({
     routes: [
         { path: '/sales/customers', redirect: '/master/partners' },
         { path: '/purchasing/vendors', redirect: '/master/partners' },
+        { path: '/inventory/items', redirect: '/master/items' },
         {
             path: '/auth/login',
             name: 'login',

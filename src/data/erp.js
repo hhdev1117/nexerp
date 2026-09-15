@@ -37,7 +37,6 @@ export const erpMenu = [
                 items: [
                     makeItem('inventory.stock', '재고 현황', 'pi pi-fw pi-chart-bar', '/inventory/stock', '사업장과 창고별 재고를 조회합니다.'),
                     makeItem('inventory.movements', '입출고 이력', 'pi pi-fw pi-arrow-right-arrow-left', '/inventory/movements', '모든 재고 이동 이력을 추적합니다.'),
-                    makeItem('inventory.items', '품목 관리', 'pi pi-fw pi-tags', '/inventory/items', '품목과 단위, 안전재고를 관리합니다.'),
                     makeItem('inventory.warehouses', '창고 관리', 'pi pi-fw pi-warehouse', '/inventory/warehouses', '창고 및 로케이션을 관리합니다.'),
                     makeItem('logistics.shipments', '출하 관리', 'pi pi-fw pi-send', '/logistics/shipments', '피킹, 패킹 및 출하를 관리합니다.'),
                     makeItem('logistics.returns', '반품 관리', 'pi pi-fw pi-replay', '/logistics/returns', '고객 반품과 판정을 관리합니다.')

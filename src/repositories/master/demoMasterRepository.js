@@ -1,4 +1,4 @@
-import { MASTER_CODE_PATTERN, SITE_TYPE, normalizeBusinessNumber, normalizeCode, normalizeText } from '@/data/master';
+import { ITEM_TYPE, ITEM_UNIT_PATTERN, MASTER_CODE_PATTERN, SITE_TYPE, normalizeBusinessNumber, normalizeCode, normalizeText, normalizeUnit } from '@/data/master';
 import { masterError } from './errors';
 
 export const demoCompanies = Object.freeze([
@@ -125,6 +125,17 @@ export const demoPartners = Object.freeze([
 const cloneRows = (rows) => rows.map((row) => ({ ...row }));
 const byCode = (rows) => [...rows].sort((a, b) => a.code.localeCompare(b.code));
 
+// Codes mirror the demo inventory rows in src/data/erp.js so stock screens can resolve items.
+export const demoItems = Object.freeze(
+    [
+        { id: 'item-rm-al-001', code: 'RM-AL-001', name: '알루미늄 시트 2T', itemType: ITEM_TYPE.RAW_MATERIAL, unit: 'EA', safetyStock: 120, standardPrice: 15000 },
+        { id: 'item-rm-st-014', code: 'RM-ST-014', name: '스테인리스 파이프', itemType: ITEM_TYPE.RAW_MATERIAL, unit: 'EA', safetyStock: 180, standardPrice: 22000 },
+        { id: 'item-fg-md-220', code: 'FG-MD-220', name: '모터 드라이브 220V', itemType: ITEM_TYPE.FINISHED_GOOD, unit: 'EA', safetyStock: 32, standardPrice: 480000 },
+        { id: 'item-pk-bx-008', code: 'PK-BX-008', name: '수출 포장 박스 L', itemType: ITEM_TYPE.CONSUMABLE, unit: 'BOX', safetyStock: 300, standardPrice: 1800 },
+        { id: 'item-fg-ct-450', code: 'FG-CT-450', name: '제어반 CT-450', itemType: ITEM_TYPE.FINISHED_GOOD, unit: 'EA', safetyStock: 24, standardPrice: 1250000 }
+    ].map((item) => Object.freeze({ ...item, companyId: 'company-nxm', isActive: true, createdAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z' }))
+);
+
 const withoutIdentity = (fields) => {
     const draft = { ...fields };
     delete draft.id;
@@ -139,12 +150,16 @@ const PARTNER_BOOLEAN_FIELDS = Object.freeze(['isCustomer', 'isVendor', 'isActiv
 const partnerFields = (values) => Object.fromEntries(PARTNER_WRITABLE_FIELDS.filter((key) => values?.[key] !== undefined).map((key) => [key, values[key]]));
 const BUSINESS_NUMBER_PATTERN = /^\d{10}$/;
 
+const ITEM_WRITABLE_FIELDS = Object.freeze(['companyId', 'code', 'name', 'itemType', 'unit', 'safetyStock', 'standardPrice', 'isActive']);
+const itemFields = (values) => Object.fromEntries(ITEM_WRITABLE_FIELDS.filter((key) => values?.[key] !== undefined).map((key) => [key, values[key]]));
+
 // In-memory implementation that mirrors the database rules (unique codes, active-company
 // requirement, cascade deactivation) so the UI behaves the same before Supabase is connected.
-export function createDemoMasterRepository({ companies = demoCompanies, sites = demoSites, partners = demoPartners, now = () => new Date() } = {}) {
+export function createDemoMasterRepository({ companies = demoCompanies, sites = demoSites, partners = demoPartners, items = demoItems, now = () => new Date() } = {}) {
     const companyState = cloneRows(companies);
     const siteState = cloneRows(sites);
     const partnerState = cloneRows(partners);
+    const itemState = cloneRows(items);
     let sequence = 0;
 
     const nextId = (prefix) => `${prefix}-${String(++sequence).padStart(3, '0')}`;
@@ -152,6 +167,7 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
     const findCompany = (id) => companyState.find((company) => company.id === id);
     const findSite = (id) => siteState.find((site) => site.id === id);
     const findPartner = (id) => partnerState.find((partner) => partner.id === id);
+    const findItem = (id) => itemState.find((row) => row.id === id);
 
     const assertCompanyUnique = (code, businessNumber, exceptId) => {
         if (companyState.some((company) => company.id !== exceptId && company.code === code)) throw masterError('duplicate_code');
@@ -160,6 +176,10 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
 
     const assertSiteUnique = (companyId, code, exceptId) => {
         if (siteState.some((site) => site.id !== exceptId && site.companyId === companyId && site.code === code)) throw masterError('duplicate_code');
+    };
+
+    const assertItemUnique = (companyId, code, exceptId) => {
+        if (itemState.some((row) => row.id !== exceptId && row.companyId === companyId && row.code === code)) throw masterError('duplicate_code');
     };
 
     const assertPartnerUnique = (companyId, code, businessNumber, exceptId) => {
@@ -214,6 +234,35 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
         if (fields.paymentTermsDays !== undefined && (!Number.isInteger(fields.paymentTermsDays) || fields.paymentTermsDays < 0)) throw masterError('invalid_value');
         if (fields.creditLimit !== undefined && (typeof fields.creditLimit !== 'number' || fields.creditLimit < 0)) throw masterError('invalid_value');
         return fields;
+    };
+
+    const normalizeItemFields = (values) => {
+        const fields = itemFields(values);
+        if (fields.code !== undefined) fields.code = normalizeCode(fields.code);
+        if (fields.unit !== undefined) fields.unit = normalizeUnit(fields.unit);
+        for (const key of ['companyId', 'name']) {
+            if (fields[key] === undefined) continue;
+            if (typeof fields[key] !== 'string') throw masterError('invalid_value');
+            fields[key] = normalizeText(fields[key]);
+        }
+        if (fields.isActive !== undefined && typeof fields.isActive !== 'boolean') throw masterError('invalid_value');
+        for (const key of ['safetyStock', 'standardPrice']) {
+            if (fields[key] !== undefined && (typeof fields[key] !== 'number' || !Number.isFinite(fields[key]) || fields[key] < 0)) throw masterError('invalid_value');
+        }
+        return fields;
+    };
+
+    const assertItem = (row) => {
+        assertCode(row.code);
+        if (typeof row.companyId !== 'string' || !row.companyId) throw masterError('invalid_value');
+        if (typeof row.name !== 'string' || !row.name) throw masterError('invalid_value');
+        if (!Object.values(ITEM_TYPE).includes(row.itemType)) throw masterError('invalid_value');
+        if (!ITEM_UNIT_PATTERN.test(row.unit)) throw masterError('invalid_value');
+        if (typeof row.safetyStock !== 'number' || row.safetyStock < 0 || typeof row.standardPrice !== 'number' || row.standardPrice < 0) throw masterError('invalid_value');
+
+        const company = findCompany(row.companyId);
+        if (!company) throw masterError('not_found');
+        if (row.isActive && !company.isActive) throw masterError('company_inactive');
     };
 
     return {
@@ -349,6 +398,45 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
             assertPartnerUnique(next.companyId, next.code, next.businessNumber, id);
             Object.assign(partner, next, { updatedAt: stamp() });
             return { ...partner };
+        },
+
+        async listItems() {
+            return cloneRows(byCode(itemState));
+        },
+
+        async createItem(draft) {
+            const fields = normalizeItemFields(withoutIdentity(draft));
+            const candidate = {
+                companyId: fields.companyId,
+                code: fields.code,
+                name: fields.name,
+                itemType: fields.itemType ?? ITEM_TYPE.RAW_MATERIAL,
+                unit: fields.unit ?? 'EA',
+                safetyStock: fields.safetyStock ?? 0,
+                standardPrice: fields.standardPrice ?? 0,
+                isActive: fields.isActive !== false
+            };
+            assertItem(candidate);
+            assertItemUnique(candidate.companyId, candidate.code);
+
+            const timestamp = stamp();
+            const created = { id: nextId('item'), ...candidate, createdAt: timestamp, updatedAt: timestamp };
+            itemState.push(created);
+            return { ...created };
+        },
+
+        async updateItem(id, changes) {
+            const row = findItem(id);
+            if (!row) throw masterError('not_found');
+
+            const mutableChanges = withoutIdentity(changes);
+            delete mutableChanges.code;
+            const fields = normalizeItemFields(mutableChanges);
+            const next = { ...row, ...fields };
+            assertItem(next);
+            assertItemUnique(next.companyId, next.code, id);
+            Object.assign(row, next, { updatedAt: stamp() });
+            return { ...row };
         }
     };
 }

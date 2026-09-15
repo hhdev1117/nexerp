@@ -22,8 +22,35 @@ export function siteTypeLabel(code) {
     return siteTypeLabels[code] ?? (typeof code === 'string' ? code : '');
 }
 
+export const ITEM_TYPE = Object.freeze({
+    RAW_MATERIAL: 'raw_material',
+    SEMI_FINISHED: 'semi_finished',
+    FINISHED_GOOD: 'finished_good',
+    CONSUMABLE: 'consumable',
+    SERVICE: 'service'
+});
+
+const itemTypeLabels = Object.freeze({
+    raw_material: '원자재',
+    semi_finished: '반제품',
+    finished_good: '완제품',
+    consumable: '부자재',
+    service: '용역'
+});
+
+export const itemTypeOptions = Object.freeze(Object.entries(itemTypeLabels).map(([value, label]) => Object.freeze({ value, label })));
+
+export function itemTypeLabel(code) {
+    return itemTypeLabels[code] ?? (typeof code === 'string' ? code : '');
+}
+
+// Common stock-keeping units. The database accepts any short upper-case code.
+export const ITEM_UNITS = Object.freeze(['EA', 'BOX', 'SET', 'KG', 'G', 'TON', 'M', 'CM', 'MM', 'L', 'ML', 'ROLL', 'HR']);
+export const itemUnitOptions = Object.freeze(ITEM_UNITS.map((value) => Object.freeze({ value, label: value })));
+
 // Mirrors the database check constraints so users see the problem before a round trip.
 export const MASTER_CODE_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
+export const ITEM_UNIT_PATTERN = /^[A-Z]{1,8}$/;
 const BUSINESS_NUMBER_PATTERN = /^\d{10}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -33,7 +60,12 @@ export const MASTER_MESSAGES = Object.freeze({
     businessNumber: '사업자등록번호는 숫자 10자리여야 합니다.',
     company: '회사를 선택해 주세요.',
     siteName: '사업장명을 입력해 주세요.',
-    siteType: '사업장 유형을 선택해 주세요.'
+    siteType: '사업장 유형을 선택해 주세요.',
+    itemName: '품목명을 입력해 주세요.',
+    itemType: '품목 유형을 선택해 주세요.',
+    unit: '단위는 영문 대문자 1자 이상 8자 이하여야 합니다.',
+    safetyStock: '안전재고는 0 이상의 숫자여야 합니다.',
+    standardPrice: '표준단가는 0 이상의 숫자여야 합니다.'
 });
 
 export const normalizeCode = (value) => (typeof value === 'string' ? value.trim().toUpperCase() : '');
@@ -124,6 +156,57 @@ export function sitePayload(draft) {
         name: normalizeText(draft.name),
         siteType: draft.siteType,
         address: normalizeText(draft.address),
+        isActive: draft.isActive === true
+    };
+}
+
+const toAmount = (value) => {
+    if (value === '' || value === null || value === undefined) return 0;
+    const parsed = Number(typeof value === 'string' ? value.replaceAll(',', '').trim() : value);
+    return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
+export const normalizeUnit = (value) => (typeof value === 'string' ? value.trim().toUpperCase() : '');
+
+export function createItemDraft(item = null, companyId = '') {
+    return {
+        companyId: item?.companyId ?? companyId ?? '',
+        code: item?.code ?? '',
+        name: item?.name ?? '',
+        itemType: item?.itemType ?? ITEM_TYPE.RAW_MATERIAL,
+        unit: item?.unit ?? 'EA',
+        safetyStock: item?.safetyStock ?? 0,
+        standardPrice: item?.standardPrice ?? 0,
+        isActive: item ? item.isActive === true : true
+    };
+}
+
+export function validateItemDraft(draft) {
+    const errors = {};
+    if (!normalizeText(draft?.companyId)) errors.companyId = MASTER_MESSAGES.company;
+    if (!MASTER_CODE_PATTERN.test(normalizeCode(draft?.code))) errors.code = MASTER_MESSAGES.code;
+    if (!normalizeText(draft?.name)) errors.name = MASTER_MESSAGES.itemName;
+    if (!Object.hasOwn(itemTypeLabels, draft?.itemType)) errors.itemType = MASTER_MESSAGES.itemType;
+    if (!ITEM_UNIT_PATTERN.test(normalizeUnit(draft?.unit))) errors.unit = MASTER_MESSAGES.unit;
+
+    const safetyStock = toAmount(draft?.safetyStock);
+    if (!Number.isFinite(safetyStock) || safetyStock < 0) errors.safetyStock = MASTER_MESSAGES.safetyStock;
+
+    const standardPrice = toAmount(draft?.standardPrice);
+    if (!Number.isFinite(standardPrice) || standardPrice < 0) errors.standardPrice = MASTER_MESSAGES.standardPrice;
+
+    return errors;
+}
+
+export function itemPayload(draft) {
+    return {
+        companyId: normalizeText(draft.companyId),
+        code: normalizeCode(draft.code),
+        name: normalizeText(draft.name),
+        itemType: draft.itemType,
+        unit: normalizeUnit(draft.unit),
+        safetyStock: toAmount(draft.safetyStock),
+        standardPrice: toAmount(draft.standardPrice),
         isActive: draft.isActive === true
     };
 }

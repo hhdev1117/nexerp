@@ -6,7 +6,7 @@ const actionLabels = Object.freeze({ insert: '등록', update: '수정', delete:
 const actionSeverities = Object.freeze({ insert: 'success', update: 'info', delete: 'danger' });
 
 // Tables the shared trigger currently watches. Add an entry whenever a new trigger is attached.
-const auditedTables = Object.freeze({ companies: '회사', sites: '사업장', partners: '거래처' });
+const auditedTables = Object.freeze({ companies: '회사', sites: '사업장', partners: '거래처', items: '품목' });
 
 const fieldLabels = Object.freeze({
     code: '코드',
@@ -23,7 +23,11 @@ const fieldLabels = Object.freeze({
     email: '이메일',
     phone: '연락처',
     payment_terms_days: '결제 조건(일)',
-    credit_limit: '여신 한도'
+    credit_limit: '여신 한도',
+    item_type: '품목 유형',
+    unit: '단위',
+    safety_stock: '안전재고',
+    standard_price: '표준단가'
 });
 
 // The trigger stores a full row snapshot; these columns carry no review value on their own.
@@ -49,9 +53,7 @@ export function auditChanges(entry) {
     const after = asObject(entry?.newData);
     const fields = [...new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])].filter((field) => !IGNORED_FIELDS.includes(field));
 
-    return fields
-        .map((field) => ({ field, label: auditFieldLabel(field), before: before ? (before[field] ?? null) : null, after: after ? (after[field] ?? null) : null }))
-        .filter((change) => !before || !after || !same(change.before, change.after));
+    return fields.map((field) => ({ field, label: auditFieldLabel(field), before: before ? (before[field] ?? null) : null, after: after ? (after[field] ?? null) : null })).filter((change) => !before || !after || !same(change.before, change.after));
 }
 
 export function formatAuditValue(value) {

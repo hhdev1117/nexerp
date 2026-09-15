@@ -1,6 +1,6 @@
-import { SITE_TYPE } from '@/data/master';
+import { ITEM_TYPE, SITE_TYPE } from '@/data/master';
 import { describe, expect, it } from 'vitest';
-import { createDemoMasterRepository, demoCompanies, demoPartners, demoSites } from './demoMasterRepository';
+import { createDemoMasterRepository, demoCompanies, demoItems, demoPartners, demoSites } from './demoMasterRepository';
 
 const companyDraft = (overrides = {}) => ({ code: 'NXT', name: '넥서스 테크', businessNumber: '3018800001', representative: '박서연', address: '대전광역시 유성구', isActive: true, ...overrides });
 const siteDraft = (overrides = {}) => ({ companyId: 'company-nxm', code: 'DJ', name: '대전 지점', siteType: SITE_TYPE.BRANCH, address: '대전광역시 유성구', isActive: true, ...overrides });
@@ -231,5 +231,52 @@ describe('demo master repository', () => {
 
         const updated = await repository.updatePartner(created.id, { name: ' 수정 거래처 ', email: ' updated@nexerp.test ' });
         expect(updated).toMatchObject({ name: '수정 거래처', email: 'updated@nexerp.test' });
+    });
+});
+
+const itemDraft = (overrides = {}) => ({ companyId: 'company-nxm', code: 'RM-NEW-001', name: '신규 원자재', itemType: ITEM_TYPE.RAW_MATERIAL, unit: 'EA', safetyStock: 50, standardPrice: 1000, isActive: true, ...overrides });
+
+describe('demo item master', () => {
+    it('seeds the codes the demo inventory rows reference and lists them by code', async () => {
+        const listed = await createDemoMasterRepository().listItems();
+        expect(listed.map((item) => item.code)).toEqual(['FG-CT-450', 'FG-MD-220', 'PK-BX-008', 'RM-AL-001', 'RM-ST-014']);
+        expect(demoItems.every((item) => item.companyId === 'company-nxm')).toBe(true);
+    });
+
+    it('normalizes the code and unit, then issues identity on create', async () => {
+        const repository = createDemoMasterRepository();
+        const created = await repository.createItem(itemDraft({ code: ' rm-new-001 ', unit: ' ea ', name: ' 신규 원자재 ' }));
+
+        expect(created).toMatchObject({ code: 'RM-NEW-001', unit: 'EA', name: '신규 원자재', safetyStock: 50, standardPrice: 1000, isActive: true });
+        expect(created.id).toMatch(/^item-\d{3}$/);
+        expect(created.createdAt).toBe(created.updatedAt);
+    });
+
+    it('scopes code uniqueness to the company', async () => {
+        const repository = createDemoMasterRepository();
+        await repository.createItem(itemDraft());
+        await expect(repository.createItem(itemDraft())).rejects.toMatchObject({ code: 'duplicate_code' });
+        await expect(repository.createItem(itemDraft({ companyId: 'company-nxd' }))).resolves.toMatchObject({ code: 'RM-NEW-001' });
+    });
+
+    it('keeps the code immutable and rejects unusable amounts', async () => {
+        const repository = createDemoMasterRepository();
+        const created = await repository.createItem(itemDraft());
+
+        const updated = await repository.updateItem(created.id, { code: 'CHANGED', name: '수정 원자재', safetyStock: 75 });
+        expect(updated).toMatchObject({ code: 'RM-NEW-001', name: '수정 원자재', safetyStock: 75 });
+
+        await expect(repository.updateItem(created.id, { safetyStock: -1 })).rejects.toMatchObject({ code: 'invalid_value' });
+        await expect(repository.updateItem(created.id, { standardPrice: -1 })).rejects.toMatchObject({ code: 'invalid_value' });
+        await expect(repository.updateItem('missing', { name: '없음' })).rejects.toMatchObject({ code: 'not_found' });
+    });
+
+    it('refuses an active item under an inactive company', async () => {
+        const repository = createDemoMasterRepository();
+        await repository.updateCompany('company-nxd', { isActive: false });
+
+        await expect(repository.createItem(itemDraft({ companyId: 'company-nxd' }))).rejects.toMatchObject({ code: 'company_inactive' });
+        await expect(repository.createItem(itemDraft({ companyId: 'company-nxd', isActive: false }))).resolves.toMatchObject({ isActive: false });
+        await expect(repository.createItem(itemDraft({ companyId: 'missing-company' }))).rejects.toMatchObject({ code: 'not_found' });
     });
 });

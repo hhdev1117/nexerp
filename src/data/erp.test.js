@@ -10,7 +10,6 @@ const expectedMenuKeys = [
     'finance.statements',
     'finance.summary',
     'hr.core',
-    'inventory.items',
     'inventory.movements',
     'inventory.stock',
     'inventory.warehouses',

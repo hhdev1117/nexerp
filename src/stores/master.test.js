@@ -3,7 +3,9 @@ import { createDemoMasterRepository } from '@/repositories/master/demoMasterRepo
 import { describe, expect, it, vi } from 'vitest';
 import { createMasterStore } from './master';
 
-const mockRepository = () => Object.fromEntries(MASTER_REPOSITORY_METHODS.map((method) => [method, vi.fn()]));
+// Read methods default to an empty collection so adding one to the contract does not break every
+// test that only cares about another entity.
+const mockRepository = () => Object.fromEntries(MASTER_REPOSITORY_METHODS.map((method) => [method, method.startsWith('list') ? vi.fn().mockResolvedValue([]) : vi.fn()]));
 
 const deferred = () => {
     let resolve;

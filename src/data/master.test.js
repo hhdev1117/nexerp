@@ -1,17 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
     MASTER_MESSAGES,
+    ITEM_TYPE,
     SITE_TYPE,
     companyPayload,
     createCompanyDraft,
+    createItemDraft,
     createSiteDraft,
     formatBusinessNumber,
+    itemPayload,
+    itemTypeLabel,
+    itemTypeOptions,
     normalizeBusinessNumber,
     normalizeCode,
     sitePayload,
     siteTypeLabel,
     siteTypeOptions,
     validateCompanyDraft,
+    validateItemDraft,
     validatePartnerDraft,
     validateSiteDraft
 } from './master';
@@ -136,6 +142,53 @@ describe('site master rules', () => {
             name: '인천 공장',
             siteType: 'factory',
             address: '인천',
+            isActive: true
+        });
+    });
+});
+
+describe('item master rules', () => {
+    it('labels item types in Korean and falls back to the raw code', () => {
+        expect(itemTypeLabel(ITEM_TYPE.RAW_MATERIAL)).toBe('원자재');
+        expect(itemTypeLabel(ITEM_TYPE.FINISHED_GOOD)).toBe('완제품');
+        expect(itemTypeLabel('unmapped')).toBe('unmapped');
+        expect(itemTypeOptions.map((option) => option.value)).toEqual(['raw_material', 'semi_finished', 'finished_good', 'consumable', 'service']);
+    });
+
+    it('drafts a new item with safe defaults and reuses an existing one', () => {
+        expect(createItemDraft(null, 'company-1')).toEqual({ companyId: 'company-1', code: '', name: '', itemType: ITEM_TYPE.RAW_MATERIAL, unit: 'EA', safetyStock: 0, standardPrice: 0, isActive: true });
+        expect(createItemDraft({ companyId: 'c1', code: 'FG-001', name: '완제품', itemType: ITEM_TYPE.FINISHED_GOOD, unit: 'BOX', safetyStock: 12, standardPrice: 5000, isActive: false })).toEqual({
+            companyId: 'c1',
+            code: 'FG-001',
+            name: '완제품',
+            itemType: ITEM_TYPE.FINISHED_GOOD,
+            unit: 'BOX',
+            safetyStock: 12,
+            standardPrice: 5000,
+            isActive: false
+        });
+    });
+
+    it('mirrors the database constraints when validating a draft', () => {
+        expect(validateItemDraft({ companyId: 'c1', code: 'RM-001', name: '원자재', itemType: ITEM_TYPE.RAW_MATERIAL, unit: 'EA', safetyStock: 10, standardPrice: 100 })).toEqual({});
+
+        // Lower case is normalized rather than rejected, so invalid shapes must be genuinely invalid.
+        expect(validateItemDraft({ companyId: 'c1', code: 'rm-001', name: '원자재', itemType: ITEM_TYPE.RAW_MATERIAL, unit: 'ea', safetyStock: 0, standardPrice: 0 })).toEqual({});
+
+        const errors = validateItemDraft({ companyId: '', code: 'R', name: '  ', itemType: 'unknown', unit: 'EA-1', safetyStock: -1, standardPrice: 'abc' });
+        expect(Object.keys(errors).sort()).toEqual(['code', 'companyId', 'itemType', 'name', 'safetyStock', 'standardPrice', 'unit']);
+    });
+
+    it('accepts formatted numbers and treats a blank amount as zero', () => {
+        expect(validateItemDraft({ companyId: 'c1', code: 'RM-001', name: '원자재', itemType: ITEM_TYPE.RAW_MATERIAL, unit: 'EA', safetyStock: '1,200', standardPrice: '' })).toEqual({});
+        expect(itemPayload({ companyId: ' c1 ', code: ' rm-001 ', name: ' 원자재 ', itemType: ITEM_TYPE.RAW_MATERIAL, unit: ' ea ', safetyStock: '1,200', standardPrice: '', isActive: true })).toEqual({
+            companyId: 'c1',
+            code: 'RM-001',
+            name: '원자재',
+            itemType: ITEM_TYPE.RAW_MATERIAL,
+            unit: 'EA',
+            safetyStock: 1200,
+            standardPrice: 0,
             isActive: true
         });
     });

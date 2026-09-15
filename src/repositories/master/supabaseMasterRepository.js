@@ -1,10 +1,11 @@
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { normalizeBusinessNumber, normalizeCode, normalizeText } from '@/data/master';
+import { normalizeBusinessNumber, normalizeCode, normalizeText, normalizeUnit } from '@/data/master';
 import { MasterRepositoryError, masterError } from './errors';
 
 const COMPANY_FIELDS = 'id, code, name, business_number, representative, address, is_active, created_at, updated_at';
 const SITE_FIELDS = 'id, company_id, code, name, site_type, address, is_active, created_at, updated_at';
 const PARTNER_FIELDS = 'id, company_id, code, name, business_number, is_customer, is_vendor, representative, contact_name, email, phone, address, payment_terms_days, credit_limit, is_active, created_at, updated_at';
+const ITEM_FIELDS = 'id, company_id, code, name, item_type, unit, safety_stock, standard_price, is_active, created_at, updated_at';
 
 const companyColumns = Object.freeze({ code: 'code', name: 'name', businessNumber: 'business_number', representative: 'representative', address: 'address', isActive: 'is_active' });
 const siteColumns = Object.freeze({ companyId: 'company_id', code: 'code', name: 'name', siteType: 'site_type', address: 'address', isActive: 'is_active' });
@@ -26,6 +27,8 @@ const partnerColumns = Object.freeze({
 });
 const partnerUpdateColumns = Object.freeze(Object.fromEntries(Object.entries(partnerColumns).filter(([key]) => key !== 'code')));
 const partnerTextFields = Object.freeze(['companyId', 'name', 'representative', 'contactName', 'email', 'phone', 'address']);
+const itemColumns = Object.freeze({ companyId: 'company_id', code: 'code', name: 'name', itemType: 'item_type', unit: 'unit', safetyStock: 'safety_stock', standardPrice: 'standard_price', isActive: 'is_active' });
+const itemUpdateColumns = Object.freeze(Object.fromEntries(Object.entries(itemColumns).filter(([key]) => key !== 'code')));
 
 const toCompany = (row) => ({
     id: row.id,
@@ -85,6 +88,36 @@ const normalizePartnerValues = (values) => {
             if (!businessNumber) throw masterError('invalid_value');
             normalized.businessNumber = businessNumber;
         }
+    }
+    return normalized;
+};
+
+const toItem = (row) => ({
+    id: row.id,
+    companyId: row.company_id,
+    code: row.code,
+    name: row.name,
+    itemType: row.item_type,
+    unit: row.unit ?? 'EA',
+    safetyStock: Number(row.safety_stock ?? 0),
+    standardPrice: Number(row.standard_price ?? 0),
+    isActive: row.is_active === true,
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null
+});
+
+const normalizeItemValues = (values) => {
+    const normalized = { ...values };
+    if (typeof values?.code === 'string') normalized.code = normalizeCode(values.code);
+    if (typeof values?.unit === 'string') normalized.unit = normalizeUnit(values.unit);
+    for (const key of ['companyId', 'name']) {
+        if (typeof values?.[key] === 'string') normalized[key] = normalizeText(values[key]);
+    }
+    for (const key of ['safetyStock', 'standardPrice']) {
+        if (values?.[key] === undefined) continue;
+        const amount = Number(values[key]);
+        if (!Number.isFinite(amount) || amount < 0) throw masterError('invalid_value');
+        normalized[key] = amount;
     }
     return normalized;
 };
@@ -149,21 +182,25 @@ export function createSupabaseMasterRepository(client = getSupabaseClient()) {
             (data) => map(data)
         );
 
-    const updatePartner = async (id, changes) => {
+    // A filtered-away update returns no row. Preflighting the id separates "gone" from "refused".
+    const updateImmutableCode = async (table, fields, columns, normalize, map, id, changes) => {
         const existing = await run(
             'save',
-            () => client.from('partners').select('id').eq('id', id).maybeSingle(),
+            () => client.from(table).select('id').eq('id', id).maybeSingle(),
             (data) => data
         );
         if (!existing) throw masterError('not_found');
 
         try {
-            return await update('partners', PARTNER_FIELDS, id, toRow(partnerUpdateColumns, normalizePartnerValues(changes)), toPartner);
+            return await update(table, fields, id, toRow(columns, normalize(changes)), map);
         } catch (error) {
             if (error instanceof MasterRepositoryError && error.code === 'not_found') throw masterError('admin_required');
             throw error;
         }
     };
+
+    const updatePartner = (id, changes) => updateImmutableCode('partners', PARTNER_FIELDS, partnerUpdateColumns, normalizePartnerValues, toPartner, id, changes);
+    const updateItem = (id, changes) => updateImmutableCode('items', ITEM_FIELDS, itemUpdateColumns, normalizeItemValues, toItem, id, changes);
 
     return {
         listCompanies: () => list('companies', COMPANY_FIELDS, toCompany),
@@ -174,6 +211,10 @@ export function createSupabaseMasterRepository(client = getSupabaseClient()) {
         updateSite: (id, changes) => update('sites', SITE_FIELDS, id, toRow(siteColumns, changes), toSite),
         listPartners: () => list('partners', PARTNER_FIELDS, toPartner),
         createPartner: async (draft) => insert('partners', PARTNER_FIELDS, toRow(partnerColumns, normalizePartnerValues(draft)), toPartner),
-        updatePartner
+        updatePartner,
+        listItems: () => list('items', ITEM_FIELDS, toItem),
+        // async so a synchronous validation failure surfaces as a rejection like every other method.
+        createItem: async (draft) => insert('items', ITEM_FIELDS, toRow(itemColumns, normalizeItemValues(draft)), toItem),
+        updateItem
     };
 }

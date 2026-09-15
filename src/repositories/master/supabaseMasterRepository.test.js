@@ -263,3 +263,46 @@ describe('Supabase master repository', () => {
         await expect(createSupabaseMasterRepository(null).listCompanies()).rejects.toMatchObject({ code: 'master_not_configured' });
     });
 });
+
+const ITEM_FIELDS = 'id, company_id, code, name, item_type, unit, safety_stock, standard_price, is_active, created_at, updated_at';
+const itemRow = { id: 'i-1', company_id: 'c-1', code: 'RM-AL-001', name: '알루미늄 시트 2T', item_type: 'raw_material', unit: 'EA', safety_stock: '120.000', standard_price: '15000', is_active: true, created_at: '2026-09-15T00:00:00.000Z', updated_at: '2026-09-15T01:00:00.000Z' };
+const item = { id: 'i-1', companyId: 'c-1', code: 'RM-AL-001', name: '알루미늄 시트 2T', itemType: 'raw_material', unit: 'EA', safetyStock: 120, standardPrice: 15000, isActive: true, createdAt: '2026-09-15T00:00:00.000Z', updatedAt: '2026-09-15T01:00:00.000Z' };
+
+describe('Supabase item master', () => {
+    it('lists items ordered by code and converts numeric columns to numbers', async () => {
+        const fixture = makeClient({ list: { data: [itemRow], error: null } });
+
+        await expect(createSupabaseMasterRepository(fixture.client).listItems()).resolves.toEqual([item]);
+        expect(fixture.from).toHaveBeenCalledWith('items');
+        expect(fixture.select).toHaveBeenCalledWith(ITEM_FIELDS);
+        expect(fixture.order).toHaveBeenCalledWith('code');
+    });
+
+    it('normalizes the code and unit before insert and sends only supplied columns', async () => {
+        const fixture = makeClient({ single: { data: itemRow, error: null } });
+
+        await expect(createSupabaseMasterRepository(fixture.client).createItem({ companyId: ' c-1 ', code: ' rm-al-001 ', name: ' 알루미늄 시트 2T ', itemType: 'raw_material', unit: ' ea ', safetyStock: '120' })).resolves.toEqual(item);
+        expect(fixture.insert).toHaveBeenCalledWith({ company_id: 'c-1', code: 'RM-AL-001', name: '알루미늄 시트 2T', item_type: 'raw_material', unit: 'EA', safety_stock: 120 });
+    });
+
+    it('drops the code from an update so a stored identifier can never change', async () => {
+        const fixture = makeClient({ single: { data: itemRow, error: null } });
+
+        await expect(createSupabaseMasterRepository(fixture.client).updateItem('i-1', { code: 'CHANGED', name: '수정 품목', standardPrice: 20000 })).resolves.toEqual(item);
+        expect(fixture.update).toHaveBeenCalledWith({ name: '수정 품목', standard_price: 20000 });
+    });
+
+    it('separates a missing item from a refused update and rejects unusable amounts', async () => {
+        const missing = makeClient({ preflight: { data: null, error: null } });
+        await expect(createSupabaseMasterRepository(missing.client).updateItem('i-1', { name: '수정' })).rejects.toMatchObject({ code: 'not_found' });
+
+        const refused = makeClient({ single: { data: null, error: { code: 'PGRST116', message: 'sentinel-policy-detail' } } });
+        const failure = await createSupabaseMasterRepository(refused.client)
+            .updateItem('i-1', { name: '수정' })
+            .catch((cause) => cause);
+        expect(failure).toMatchObject({ code: 'admin_required' });
+        expect(failure.message).not.toContain('sentinel');
+
+        await expect(createSupabaseMasterRepository(makeClient().client).createItem({ companyId: 'c-1', code: 'RM-1', name: '품목', safetyStock: -1 })).rejects.toMatchObject({ code: 'invalid_value' });
+    });
+});
