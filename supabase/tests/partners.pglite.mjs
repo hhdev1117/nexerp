@@ -11,10 +11,11 @@ const user = '81000000-0000-4000-8000-000000000002';
 const company = '82000000-0000-4000-8000-000000000001';
 const inactiveCompany = '82000000-0000-4000-8000-000000000002';
 const partnerMigration = '20260915001000_add_partners.sql';
+const partnerUpgradeMigration = '20260915001100_upgrade_partner_master.sql';
 
 await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create function auth.uid() returns uuid language sql as $$select current_setting('request.jwt.claim.sub',true)::uuid$$;create function auth.jwt() returns jsonb language sql as $$select jsonb_build_object('aal',current_setting('request.aal',true))$$;create table auth.users(id uuid primary key,email text,raw_app_meta_data jsonb);grant usage on schema auth to authenticated;set request.jwt.claim.sub='${admin}';set request.aal='aal2';`);
 const migrations = fs.readdirSync('supabase/migrations').filter((file) => /^\d.*\.sql$/.test(file)).sort();
-for (const file of migrations.filter((file) => file !== partnerMigration)) {
+for (const file of migrations.filter((file) => ![partnerMigration, partnerUpgradeMigration].includes(file))) {
     await db.exec(fs.readFileSync(`supabase/migrations/${file}`, 'utf8'));
 }
 await db.query('insert into auth.users(id,email,raw_app_meta_data) values($1,$2,$3::jsonb),($4,$5,$3::jsonb)', [admin, 'admin@gmail.com', JSON.stringify({ nexerp_provisioned: true }), user, 'user@gmail.com']);
@@ -33,6 +34,7 @@ await db.query('insert into enterprise_access_policies(company_id,policy,revisio
 await db.query("insert into enterprise_access_policy_audit(company_id,revision,policy,reason,actor_id) values($1,1,$2,'seed',$3)", [company, legacyPolicy, admin]);
 await db.query("insert into enterprise_access_publications(company_id,revision,draft_revision,policy,operation,reason,actor_id) values($1,1,1,$2,'publish','seed',$3)", [company, legacyPolicy, admin]);
 await db.exec(fs.readFileSync(`supabase/migrations/${partnerMigration}`, 'utf8'));
+await db.exec(fs.readFileSync(`supabase/migrations/${partnerUpgradeMigration}`, 'utf8'));
 
 eq((await db.query("select allowed_menu_keys @> array['master.partners'] has_new, allowed_menu_keys && array['sales.customers','purchasing.vendors'] has_legacy from role_menu_permissions where role='user'")).rows[0], { has_new: true, has_legacy: false });
 eq((await db.query("select private.enterprise_resources() @> array['master.partners'] has_new, private.enterprise_resources() && array['sales.customers','purchasing.vendors'] has_legacy")).rows[0], { has_new: true, has_legacy: false });
