@@ -1,6 +1,6 @@
 # NEXERP 인수인계 문서
 
-> 기준 시점: 2026-09-16, 전사 권한관리와 인사 모듈을 운영에 적용한 뒤, 전 모듈 공통 기반인 감사 로그와 서버 측 문서 채번, 그리고 품목·창고 기준정보를 추가한 상태입니다. **이 네 마이그레이션은 아직 운영 프로젝트에 적용하지 않았습니다.** 적용 절차와 그 이유는 [운영 미적용 마이그레이션](setup/pending-migrations.md)에 따로 정리했습니다. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다.
+> 기준 시점: 2026-09-16, 전사 권한관리와 인사 모듈을 운영에 적용한 뒤, 전 모듈 공통 기반인 감사 로그와 서버 측 문서 채번, 그리고 품목·창고·계정과목 기준정보를 추가해 1단계 기준정보를 마무리한 상태입니다. **이 다섯 마이그레이션은 아직 운영 프로젝트에 적용하지 않았습니다.** 적용 절차와 그 이유는 [운영 미적용 마이그레이션](setup/pending-migrations.md)에 따로 정리했습니다. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다.
 
 ## 1. 한눈에 보기
 
@@ -27,12 +27,13 @@
 | **거래처 통합 기준정보** | 구현·운영 마이그레이션·배포 완료. 고객/공급처 레거시 경로 통합, 관리자 MFA 후 실제 CRUD 및 역할별 UI 점검 대기 | `src/views/master/Partners.vue`, `src/stores/master.js`, `src/repositories/master/*` |
 | **전사 권한관리** | 구현·운영 마이그레이션·배포 완료. 레벨 1~5, 직급·직책 매칭, 회사·사업장 범위, 정책 초안·발행·복원 지원 | `src/views/admin/EnterpriseAccess.vue`, `src/repositories/access/*`, `supabase/migrations/20260914000200_enterprise_access_policy.sql` |
 | **인사관리** | 직원 원장, 인사발령, 기준정보, 모듈 설정, 계정 연결, 재직 이력, 겸직 부서·직책 범위를 구현하고 운영 적용 완료 | `src/views/hr/*`, `src/repositories/hr/*`, `supabase/migrations/20260914000400_hr_employee_ledger.sql` 이후 |
-| **감사 로그** | 구현 완료, 운영 마이그레이션 대기. 범용 트리거가 회사·사업장·거래처·품목·창고 변경을 기록하고 관리자만 조회 | `src/views/admin/AuditLogs.vue`, `src/data/audit.js`, `src/repositories/audit/*`, `supabase/migrations/20260915001200_add_audit_logs.sql` |
+| **감사 로그** | 구현 완료, 운영 마이그레이션 대기. 범용 트리거가 회사·사업장·거래처·품목·창고·계정과목 변경을 기록하고 관리자만 조회 | `src/views/admin/AuditLogs.vue`, `src/data/audit.js`, `src/repositories/audit/*`, `supabase/migrations/20260915001200_add_audit_logs.sql` |
 | **서버 측 문서 채번** | 구현 완료, 운영 마이그레이션 대기. 업무 테이블이 생기면 이 함수에서 번호를 받아야 함 | `supabase/migrations/20260915001300_add_document_sequences.sql` |
 | **품목 기준정보** | 구현 완료, 운영 마이그레이션 대기. `inventory.items`를 `master.items`로 통합하고 레거시 경로는 리다이렉트 | `src/views/master/Items.vue`, `src/data/master.js`, `supabase/migrations/20260915001400_add_items.sql` |
 | **창고 기준정보** | 구현 완료, 운영 마이그레이션 대기. 사업장 소속, 사업장 비활성화 시 연쇄 비활성화 | `src/views/master/Warehouses.vue`, `src/data/master.js`, `supabase/migrations/20260916001500_add_warehouses.sql` |
+| **계정과목 기준정보** | 구현 완료, 운영 마이그레이션 대기. 숫자 코드 계층, 순환 차단, 하위 연쇄 비활성화 | `src/views/master/Accounts.vue`, `src/data/master.js`, `supabase/migrations/20260916001600_add_accounts.sql` |
 | 결재함, 수주 관리, 재고 현황, 재무 현황, 통합 대시보드 | 데모 (메모리 리포지토리) | `src/views/erp/*`, `src/views/Dashboard.vue`, `src/stores/erp.js` |
-| 나머지 19개 메뉴 (견적, 발주, 입고, BOM, 전표 등) | 플레이스홀더 공용 화면. 전용 화면 16개를 뺀 실제 수치 | `src/views/erp/GenericModule.vue` |
+| 나머지 18개 메뉴 (견적, 발주, 입고, BOM, 전표 등) | 플레이스홀더 공용 화면. 전용 화면 17개를 뺀 실제 수치 | `src/views/erp/GenericModule.vue` |
 
 Supabase에는 기존 인증·권한·회사·사업장·거래처 테이블과 함께 전사 권한 3개 테이블, HR 10개 테이블이 운영 적용되어 있습니다. 신규 운영 테이블 13개는 모두 RLS가 활성화되어 있고 `authenticated` 역할의 DELETE 권한은 없습니다. 정책 발행본과 직원·겸직 데이터는 현재 0건입니다. 감사 로그 `public.audit_logs`와 채번 `public.document_sequences`는 로컬 마이그레이션에만 있으므로 운영 적용 전까지 운영 화면 `/settings/audit`은 빈 목록을 보여줍니다.
 
@@ -76,6 +77,14 @@ Supabase에는 기존 인증·권한·회사·사업장·거래처 테이블과 
 - **사업장 검증** `private.enforce_warehouse_site()`가 `site_not_found`, `site_company_mismatch`, `site_inactive` 세 가지를 안정 코드로 구분합니다. BEFORE 트리거라 외래키보다 먼저 돌기 때문에 없는 사업장도 업무 사유로 보고됩니다.
 - **연쇄 비활성화** `private.deactivate_site_warehouses()`를 `sites`에 붙였습니다. 회사 비활성화 → 사업장 → 창고로 이어지며, 각 단계가 감사 로그에 남습니다.
 - **화면 버그 수정**: 처음엔 회사 변경을 워처로 감지해 사업장을 비웠는데, 수정 대화상자를 열 때 draft 객체가 통째로 교체되면서 저장된 사업장까지 지워졌습니다. 회사 Select의 변경 핸들러에서 "현재 사업장이 그 회사 소속이 아닐 때만" 비우도록 바꿨고 마운트 테스트가 이를 고정합니다.
+
+### 커밋 `39dd7c3` 이후 — 계정과목 (Task E)
+
+- **마이그레이션** `20260916001600_add_accounts.sql`: 숫자 코드(`^[0-9]{3,10}$`)를 쓰는 유일한 기준정보입니다. `parent_id` 자기 참조로 계층을 만들고 `is_postable`로 전표 입력 가능한 말단을 구분합니다.
+- **부모 검증** `private.enforce_account_parent()`가 회사 일치, 계정 유형 일치, 집계 전용 부모, 활성 부모를 각각 다른 코드로 거부하고, 재귀 CTE로 부모 사슬을 거슬러 올라가 순환을 차단합니다. 자기 자신 지정과 하위를 부모로 지정하는 경우 모두 `invalid_parent`입니다.
+- **하위 연쇄** `private.deactivate_account_children()`이 재귀 CTE로 모든 후손을 찾아 비활성화합니다. 상위를 끄면 그 아래 전표 입력 계정이 홀로 남지 않습니다.
+- **화면**: `accountOutline()`이 부모 바로 아래 자식을 놓고 깊이를 계산해 들여쓰기합니다. 부모가 없는 행과 순환이 섞여 들어와도 각 행을 정확히 한 번만 내보내므로 화면이 멈추지 않습니다. 상위 계정 선택지는 같은 회사·같은 유형의 집계 전용 계정만 보여주고 자기 자신을 제외합니다.
+- 이로써 핸드오프 7.2의 1단계 기준정보(Task A~E)가 모두 구현 완료 상태가 됐습니다. 남은 것은 운영 적용뿐입니다.
 
 ### 커밋 `42dce82` — 기반 정리 4종
 
@@ -198,9 +207,9 @@ npm run build
 - [x] 전사 권한 및 HR 마이그레이션 002~009 운영 적용. 대상 테이블 13개 존재, RLS 13개 활성, 핵심 RPC 11종 존재, DELETE grant 0개를 카탈로그에서 확인.
 - [x] 최신 `main` Cloudflare Worker 배포. 버전 `a6e74fee-404f-4f98-a5fc-7f12fd075af9`; `/api/health`, `/settings/enterprise-access`, `/hr/employees`, manifest, service worker HTTP 200 확인.
 - [x] `git push origin main` 및 로컬/원격 HEAD 일치 확인.
-- [ ] **권한 있는 운영자 작업.** SQL Editor에서 `20260915001200` → `20260915001300` → `20260915001400` → `20260916001500` 순서로 각 파일 전체를 한 번에 실행. 절차와 금지사항은 [운영 미적용 마이그레이션](setup/pending-migrations.md)에 있습니다. 저장소 토큰으로는 불가능하며 시도해도 `403`/`25006`으로 막힙니다.
+- [ ] **권한 있는 운영자 작업.** SQL Editor에서 `20260915001200` → `20260915001300` → `20260915001400` → `20260916001500` → `20260916001600` 순서로 각 파일 전체를 한 번에 실행. 절차와 금지사항은 [운영 미적용 마이그레이션](setup/pending-migrations.md)에 있습니다. 저장소 토큰으로는 불가능하며 시도해도 `403`/`25006`으로 막힙니다.
 - [ ] 적용 후 `node scripts/verify-pending-migrations.mjs`로 검증. 읽기 전용 토큰으로 동작하며 모든 줄이 `PASS`여야 합니다.
-- [ ] 검증 통과 후 최신 `main`을 Cloudflare에 배포하고 관리자 계정으로 `/settings/audit`에서 회사 수정 1건이 이력으로 보이는지, `/master/items`와 `/inventory/warehouses`가 열리고 `/inventory/items`가 리다이렉트되는지 확인.
+- [ ] 검증 통과 후 최신 `main`을 Cloudflare에 배포하고 관리자 계정으로 `/settings/audit`에서 회사 수정 1건이 이력으로 보이는지, `/master/items`·`/inventory/warehouses`·`/master/accounts`가 열리고 `/inventory/items`가 리다이렉트되는지 확인.
 - [x] `git push origin main`. `730f95e..e3756a0`, 로컬/원격 HEAD 일치 확인.
 
 ### 7.2 1단계 기준정보 마무리
@@ -225,9 +234,10 @@ npm run build
 - [x] 도메인·리포지토리·스토어·화면 `src/views/master/Warehouses.vue`(`/inventory/warehouses`). 데모 시드는 `inventoryRows`의 창고명을 따릅니다.
 - [ ] 운영 마이그레이션 적용 (7.1 참고).
 
-**Task E: 계정과목(accounts) 기준정보**
-- 테이블 `public.accounts`: `company_id`, `code`(숫자 코드 허용하려면 형식 제약 별도), `name`, `account_type enum(asset, liability, equity, revenue, expense)`, `parent_id`(자기 참조, 계층), `is_postable boolean`, `is_active`. 한국 표준 계정과목 시드는 선택.
-- 커밋: `feat: add chart of accounts master data`.
+**Task E: 계정과목(accounts) 기준정보** — 구현 완료
+- [x] 테이블(숫자 코드 `^[0-9]{3,10}$`, 자기 참조 계층, `is_postable`), 정책 3개, 부모 검증 트리거(회사·유형 일치, 집계 전용 부모, 순환 차단), 하위 연쇄 비활성화, 감사 트리거.
+- [x] 도메인·리포지토리·스토어·화면 `src/views/master/Accounts.vue`. `accountOutline()`이 부모 바로 아래 자식을 놓고 들여쓰기 깊이를 계산합니다. 텍스트 계약 테스트, pgTAP 22개, pglite 런타임 단언 25개.
+- [ ] 운영 마이그레이션 적용 (7.1 참고).
 
 **Task F: 감사 로그** — 구현 완료 (`3e3bf32`, `9cf65ab`)
 - [x] 테이블, 범용 트리거 `private.record_audit()`, 관리자 전용 조회 정책, 텍스트 계약 테스트, pgTAP 27개, pglite 런타임 단언 40개.
