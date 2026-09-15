@@ -1,0 +1,3 @@
+Reply naturally and briefly to the following user message. Do the task yourself and do not invoke any delegation skill.
+
+User message: hi
