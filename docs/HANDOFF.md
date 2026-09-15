@@ -1,5 +1,17 @@
 # NEXERP 인수인계 문서
 
+## 통합 거래처 기준정보 추가 (2026-09-15)
+
+`codex/enterprise-access`에 고객과 공급처를 하나의 `partners` 원장으로 관리하는 기능을 구현했다. `/sales/customers`와 `/purchasing/vendors`는 `/master/partners`로 이동하며, 기존 역할 메뉴 권한과 전사 권한 정책의 두 레거시 키도 `master.partners`로 변환한다. 거래처는 회사별 코드·사업자등록번호 유일성, 고객/공급처 중 하나 이상의 역할, 비활성 회사 아래 활성 거래처 금지, 삭제 권한 미부여, 작성자·수정자 강제 기록 규칙을 따른다.
+
+- 마이그레이션: `supabase/migrations/20260915001000_add_partners.sql`
+- 화면: `src/views/master/Partners.vue` — 회사·검색어·역할·상태 필터, 고객/공급처 복수 역할, 관리자 등록·수정·활성 상태 변경
+- 데이터 계층: `src/data/master.js`, `src/repositories/master/*`, `src/stores/master.js`
+- 검증: Vitest 74개 파일 830개 통과, PGlite 거래처 런타임 단언 14개 통과, ESLint 통과, 프로덕션 빌드 성공, `npm audit --omit=dev` 취약점 0개, Wrangler 드라이런 성공
+- 미실행: `supabase/tests/partners_rls.test.sql`의 pgTAP 35개 단언. 이 PC에는 Docker 명령이 없어 실행하지 못했다.
+- 운영 상태: 마이그레이션 적용, Cloudflare 배포, 원격 푸시는 수행하지 않았다. 운영 적용 직전에 SQL 변경 내용 검토와 별도 승인이 필요하다.
+- 수동 화면 확인: 로컬 서버는 Supabase 환경 변수가 없어 `/auth/setup`으로 이동하므로 인증 후 거래처 화면 확인은 대기 상태다. 빌드와 정적 화면 계약 테스트는 통과했다.
+
 ## 전사 권한 작업 브랜치 추가 (2026-09-14)
 
 `codex/enterprise-access`에 관리자 전용 전사 권한관리 화면, 정책 판정 엔진, 회사별 정책 저장·감사 RPC를 추가했다. 정책 발행·복원, 서버 기반 회사 전환·메뉴 접근, 회사·사업장 RLS까지 연결했다. 최초 발행 전에는 기존 권한을 유지하며 최초 발행부터 일반 사용자의 회사별 정책 연결을 강제한다. 상세 상태와 미구현 후속 범위는 [전사 권한 구현 상태](setup/enterprise-access.md)를 참조한다. 추가로 004 직원 원장·날짜별 발령, 005 기준정보·정정, 006 인사 모듈 상태, 007 직원 로그인 계정 연결, 008 고용 회차, 009 겸직과 대상 부서 권한을 구현했다. [직원 명부 안내](setup/hr-ledger.md), [기준정보·정정 안내](setup/hr-reference.md), [모듈 설정 안내](setup/hr-modules.md), [계정 연결 안내](setup/hr-account-links.md), [고용 회차 안내](setup/hr-employment-cycles.md), [겸직 안내](setup/hr-secondary-assignments.md)를 참조한다. 전체 테스트 814개와 HR PostgreSQL 검증 249개, 빌드, 데스크톱·모바일·가로 화면 확인을 통과했다. 002~009는 이번 작업에서 운영 적용하지 않았다. 아래 기록은 기존 main의 운영 기준이다.
