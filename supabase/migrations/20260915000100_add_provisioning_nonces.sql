@@ -6,6 +6,7 @@ create table private.user_provisioning_nonces (
     expires_at timestamptz not null
 );
 
+alter table private.user_provisioning_nonces enable row level security;
 revoke all on table private.user_provisioning_nonces from public, anon, authenticated;
 
 create or replace function public.prepare_user_provisioning(target_login_id text, provisioning_nonce text)

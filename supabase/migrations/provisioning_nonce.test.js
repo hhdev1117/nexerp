@@ -7,6 +7,7 @@ const migration = fs.readFileSync(path.join(import.meta.dirname, '20260915000100
 describe('one-time user provisioning migration', () => {
     it('requires and consumes a server-staged nonce before creating a profile', () => {
         expect(migration).toMatch(/create table private\.user_provisioning_nonces/i);
+        expect(migration).toMatch(/alter table private\.user_provisioning_nonces enable row level security/i);
         expect(migration).toMatch(/create or replace function public\.prepare_user_provisioning/i);
         expect(migration).toMatch(/new\.raw_user_meta_data\s*->>\s*'provisioning_nonce'/i);
         expect(migration).toMatch(/delete from private\.user_provisioning_nonces/i);
