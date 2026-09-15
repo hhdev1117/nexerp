@@ -13,11 +13,13 @@ select throws_ok(
     'an invalid login ID is rejected'
 );
 
+select public.prepare_user_provisioning('validuser', 'nonce-validuser-0001');
+
 select throws_ok(
-    $$insert into auth.users (id, email, raw_app_meta_data) values ('20000000-0000-0000-0000-000000000002', 'other@nexerp.internal', '{"login_id":"validuser","nexerp_provisioned":true}'::jsonb)$$,
-    '22023',
-    'login_identity_mismatch',
-    'an internal email that does not match the login ID is rejected'
+    $$insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data) values ('20000000-0000-0000-0000-000000000002', 'other@nexerp.internal', '{"provisioning_nonce":"nonce-validuser-0001"}'::jsonb, '{"login_id":"validuser","nexerp_provisioned":true}'::jsonb)$$,
+    '42501',
+    'provisioning_required',
+    'a nonce staged for one login ID cannot provision a different internal identity'
 );
 
 select throws_ok(
@@ -27,10 +29,13 @@ select throws_ok(
     'a matching identity without the provisioning marker is rejected'
 );
 
-insert into auth.users (id, email, raw_app_meta_data)
+select public.prepare_user_provisioning('validuser', 'nonce-validuser-0002');
+select public.prepare_user_provisioning('adminuser', 'nonce-adminuser-0003');
+
+insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
 values
-    ('20000000-0000-0000-0000-000000000004', 'validuser@nexerp.internal', '{"login_id":"validuser","nexerp_provisioned":true}'::jsonb),
-    ('20000000-0000-0000-0000-000000000005', 'adminuser@nexerp.internal', '{"login_id":"adminuser","nexerp_provisioned":true}'::jsonb);
+    ('20000000-0000-0000-0000-000000000004', 'validuser@nexerp.internal', '{"provisioning_nonce":"nonce-validuser-0002"}'::jsonb, '{"login_id":"validuser","nexerp_provisioned":true}'::jsonb),
+    ('20000000-0000-0000-0000-000000000005', 'adminuser@nexerp.internal', '{"provisioning_nonce":"nonce-adminuser-0003"}'::jsonb, '{"login_id":"adminuser","nexerp_provisioned":true}'::jsonb);
 
 select results_eq(
     $$select email, login_id, role from public.profiles where id = '20000000-0000-0000-0000-000000000004'::uuid$$,

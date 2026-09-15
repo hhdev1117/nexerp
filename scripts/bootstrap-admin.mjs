@@ -4,6 +4,7 @@ import { loginIdToInternalEmail } from '../shared/loginIdentity.js';
 
 const bootstrapErrorCodes = new Set([
     'invalid_login_id',
+    'active_admin_check_failed',
     'active_admin_exists',
     'provisioning_prepare_failed',
     'auth_user_creation_failed',
@@ -23,6 +24,10 @@ export const normalizeBootstrapErrorCode = (error) =>
 export async function bootstrapAdmin({ loginId, temporaryPassword, client, logger = console, createNonce = () => crypto.randomUUID() }) {
     const email = loginIdToInternalEmail(loginId);
     if (!email) fail('invalid_login_id');
+
+    const existing = await client.from('profiles').select('id').eq('role', 'admin').eq('is_active', true).limit(1);
+    if (existing.error) fail('active_admin_check_failed');
+    if (existing.data?.length) fail('active_admin_exists');
 
     const provisioningNonce = createNonce();
     const prepared = await client.rpc('prepare_user_provisioning', {

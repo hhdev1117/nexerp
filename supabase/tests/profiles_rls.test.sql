@@ -6,11 +6,15 @@ create extension if not exists pgtap with schema extensions;
 
 select plan(16);
 
+select public.prepare_user_provisioning('userone', 'nonce-userone-0001');
+select public.prepare_user_provisioning('usertwo', 'nonce-usertwo-0002');
+select public.prepare_user_provisioning('adminuser', 'nonce-adminuser-0003');
+
 insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
 values
-    ('10000000-0000-0000-0000-000000000001', 'USERONE@NEXERP.INTERNAL', '{"role":"admin","is_active":false}'::jsonb, '{"login_id":"userone","nexerp_provisioned":true}'::jsonb),
-    ('10000000-0000-0000-0000-000000000002', 'usertwo@nexerp.internal', '{}'::jsonb, '{"login_id":"usertwo","nexerp_provisioned":true}'::jsonb),
-    ('10000000-0000-0000-0000-000000000003', 'adminuser@nexerp.internal', '{}'::jsonb, '{"login_id":"adminuser","nexerp_provisioned":true}'::jsonb);
+    ('10000000-0000-0000-0000-000000000001', 'USERONE@NEXERP.INTERNAL', '{"role":"admin","is_active":false,"provisioning_nonce":"nonce-userone-0001"}'::jsonb, '{"login_id":"userone","nexerp_provisioned":true}'::jsonb),
+    ('10000000-0000-0000-0000-000000000002', 'usertwo@nexerp.internal', '{"provisioning_nonce":"nonce-usertwo-0002"}'::jsonb, '{"login_id":"usertwo","nexerp_provisioned":true}'::jsonb),
+    ('10000000-0000-0000-0000-000000000003', 'adminuser@nexerp.internal', '{"provisioning_nonce":"nonce-adminuser-0003"}'::jsonb, '{"login_id":"adminuser","nexerp_provisioned":true}'::jsonb);
 
 select results_eq(
     $$select email from public.profiles where id = '10000000-0000-0000-0000-000000000001'::uuid$$,

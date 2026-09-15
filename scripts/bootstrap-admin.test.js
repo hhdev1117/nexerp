@@ -3,7 +3,7 @@ import { bootstrapAdmin, normalizeBootstrapErrorCode, runBootstrapCli } from './
 
 const temporaryPassword = ['temporary', 'password'].join('-');
 
-const createFixture = ({ createError = null, prepareError = null, promotionError = null, deleteError = null, deleteThrows = null } = {}) => {
+const createFixture = ({ createError = null, prepareError = null, promotionError = null, deleteError = null, deleteThrows = null, existingAdmin = false, adminCheckError = null } = {}) => {
     const createUser = vi.fn().mockResolvedValue({
         data: createError ? null : { user: { id: 'new-user-id' } },
         error: createError
@@ -16,9 +16,15 @@ const createFixture = ({ createError = null, prepareError = null, promotionError
         if (name === 'prepare_user_provisioning') return Promise.resolve({ data: prepareError ? null : true, error: prepareError });
         return Promise.resolve({ data: promotionError ? null : 'new-user-id', error: promotionError });
     });
-    const client = { rpc, auth: { admin: { createUser, deleteUser } } };
+    const query = {
+        select: vi.fn(() => query),
+        eq: vi.fn(() => query),
+        limit: vi.fn().mockResolvedValue({ data: existingAdmin ? [{ id: 'existing-admin-id' }] : [], error: adminCheckError })
+    };
+    const from = vi.fn(() => query);
+    const client = { from, rpc, auth: { admin: { createUser, deleteUser } } };
 
-    return { client, createUser, deleteUser, rpc };
+    return { client, createUser, deleteUser, rpc, from };
 };
 
 describe('bootstrapAdmin', () => {
@@ -26,6 +32,22 @@ describe('bootstrapAdmin', () => {
         const fixture = createFixture();
 
         await expect(bootstrapAdmin({ loginId, temporaryPassword, client: fixture.client })).rejects.toThrow('invalid_login_id');
+        expect(fixture.createUser).not.toHaveBeenCalled();
+    });
+
+    it('refuses an existing active administrator before staging or creating anything', async () => {
+        const fixture = createFixture({ existingAdmin: true });
+
+        await expect(bootstrapAdmin({ loginId: 'admin01', temporaryPassword, client: fixture.client })).rejects.toThrow('active_admin_exists');
+        expect(fixture.rpc).not.toHaveBeenCalled();
+        expect(fixture.createUser).not.toHaveBeenCalled();
+    });
+
+    it('refuses to mutate when the active administrator preflight cannot be completed', async () => {
+        const fixture = createFixture({ adminCheckError: { message: 'database unavailable' } });
+
+        await expect(bootstrapAdmin({ loginId: 'admin01', temporaryPassword, client: fixture.client })).rejects.toThrow('active_admin_check_failed');
+        expect(fixture.rpc).not.toHaveBeenCalled();
         expect(fixture.createUser).not.toHaveBeenCalled();
     });
 

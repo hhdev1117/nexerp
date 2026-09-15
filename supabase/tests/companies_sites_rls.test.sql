@@ -6,11 +6,15 @@ create extension if not exists pgtap with schema extensions;
 
 select plan(35);
 
+select public.prepare_user_provisioning('member', 'nonce-member-000001');
+select public.prepare_user_provisioning('adminuser', 'nonce-adminuser-0002');
+select public.prepare_user_provisioning('inactive', 'nonce-inactive-00003');
+
 insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
 values
-    ('30000000-0000-0000-0000-000000000001', 'member@nexerp.internal', '{}'::jsonb, '{"login_id":"member","nexerp_provisioned":true}'::jsonb),
-    ('30000000-0000-0000-0000-000000000002', 'adminuser@nexerp.internal', '{}'::jsonb, '{"login_id":"adminuser","nexerp_provisioned":true}'::jsonb),
-    ('30000000-0000-0000-0000-000000000003', 'inactive@nexerp.internal', '{}'::jsonb, '{"login_id":"inactive","nexerp_provisioned":true}'::jsonb);
+    ('30000000-0000-0000-0000-000000000001', 'member@nexerp.internal', '{"provisioning_nonce":"nonce-member-000001"}'::jsonb, '{"login_id":"member","nexerp_provisioned":true}'::jsonb),
+    ('30000000-0000-0000-0000-000000000002', 'adminuser@nexerp.internal', '{"provisioning_nonce":"nonce-adminuser-0002"}'::jsonb, '{"login_id":"adminuser","nexerp_provisioned":true}'::jsonb),
+    ('30000000-0000-0000-0000-000000000003', 'inactive@nexerp.internal', '{"provisioning_nonce":"nonce-inactive-00003"}'::jsonb, '{"login_id":"inactive","nexerp_provisioned":true}'::jsonb);
 
 update public.profiles
 set role = 'admin'::public.app_role
