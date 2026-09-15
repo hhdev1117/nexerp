@@ -75,7 +75,7 @@ beforeEach(() => {
         value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
     });
     authStore.user.value = { id: 'user-1' };
-    authStore.profile.value = { loginId: 'user01', display_name: '박지민', department: '재무팀', role: 'user', is_active: true };
+    authStore.profile.value = { login_id: 'user01', display_name: '박지민', department: '재무팀', role: 'user', is_active: true };
     authStore.hasRole.mockClear();
     authStore.changePassword.mockReset().mockResolvedValue(undefined);
     authStore.signOut.mockReset().mockResolvedValue(undefined);
@@ -227,7 +227,7 @@ describe('ERP application shell', () => {
         expect(wrapper.get('.erp-user-copy small').text()).toBe('재무팀');
         expect(wrapper.get('[aria-controls="profile-actions-menu"]').attributes('aria-label')).toContain('박지민');
 
-        authStore.profile.value = { loginId: 'user01', display_name: '  ', department: '', role: 'approver', is_active: true };
+        authStore.profile.value = { login_id: 'user01', display_name: '  ', department: '', role: 'approver', is_active: true };
         await nextTick();
 
         expect(wrapper.get('.erp-user-avatar').text()).toBe('U');

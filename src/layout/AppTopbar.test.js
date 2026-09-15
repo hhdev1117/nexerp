@@ -9,7 +9,7 @@ import AppTopbar from './AppTopbar.vue';
 
 const authStore = {
     user: ref({ id: 'user-1' }),
-    profile: ref({ loginId: 'admin01', display_name: '', department: '', role: 'admin', is_active: true }),
+    profile: ref({ login_id: 'admin01', display_name: '', department: '', role: 'admin', is_active: true }),
     hasRole: vi.fn(() => true),
     changePassword: vi.fn(),
     signOut: vi.fn()

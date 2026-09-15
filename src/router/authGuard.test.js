@@ -254,7 +254,7 @@ describe('authentication route guard', () => {
     });
 
     it.each(['TOKEN_REFRESHED', 'SIGNED_IN'])('waits for an active approver profile during %s before authorizing', async (event) => {
-        const session = { access_token: 'approver-access-token', user: { id: 'approver-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'approver-access-token', user: { id: 'approver-1', email: 'approver01@nexerp.internal' } };
         const approverProfile = { id: 'approver-1', login_id: 'approver01', display_name: 'Approver', department: 'Finance', role: 'approver', is_active: true };
         const refreshedProfile = deferred();
         const fixture = createActualStoreFixture({
@@ -283,7 +283,7 @@ describe('authentication route guard', () => {
     });
 
     it('allows protected navigation after a failed profile request is retried', async () => {
-        const session = { access_token: 'approver-access-token', user: { id: 'approver-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'approver-access-token', user: { id: 'approver-1', email: 'approver01@nexerp.internal' } };
         const approverProfile = { id: 'approver-1', login_id: 'approver01', display_name: 'Approver', department: 'Finance', role: 'approver', is_active: true };
         const fixture = createActualStoreFixture({
             session,
@@ -303,7 +303,7 @@ describe('authentication route guard', () => {
     });
 
     it('allows login immediately after sign-out invalidates a deferred profile retry', async () => {
-        const session = { access_token: 'approver-access-token', user: { id: 'approver-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'approver-access-token', user: { id: 'approver-1', email: 'approver01@nexerp.internal' } };
         const approverProfile = { id: 'approver-1', login_id: 'approver01', display_name: 'Approver', department: 'Finance', role: 'approver', is_active: true };
         const staleProfileRetry = deferred();
         const fixture = createActualStoreFixture({

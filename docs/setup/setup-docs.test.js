@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const documentationPaths = ['README.md', 'docs/setup/cloudflare-supabase.md', 'docs/setup/fresh-machine.md'];
+const documentationPaths = ['README.md', 'docs/HANDOFF.md', 'docs/setup/cloudflare-supabase.md', 'docs/setup/fresh-machine.md'];
 const operationsPath = 'docs/setup/cloudflare-supabase.md';
 const deploymentGuidePaths = [operationsPath, 'docs/setup/fresh-machine.md'];
 const requiredCommands = ['npm ci', 'npm test -- --run', 'npm run dev', 'npm run dev:cloudflare', 'npx supabase db push', 'npx wrangler secret put', 'npm run deploy', 'git pull --ff-only origin main'];
@@ -28,6 +28,18 @@ describe('setup documentation', () => {
         expect(operations).toMatch(/first login|첫 로그인/i);
         expect(operations).toMatch(/TOTP/);
         expect(operations).not.toMatch(/NEXERP_ADMIN_TEMPORARY_PASSWORD\s*=\s*['"][^<'"\r\n]+['"]/);
+    });
+
+    it('documents login-ID authentication without legacy Gmail or direct email promotion instructions', () => {
+        const docs = readDocumentationSet();
+
+        expect(docs).toContain('<login_id>@nexerp.internal');
+        expect(docs).toContain('npm run bootstrap:admin');
+        expect(docs).toMatch(/server-only|서버 전용/i);
+        expect(docs).toMatch(/`\/api\/me`[\s\S]*loginId/);
+        expect(docs).toMatch(/TOTP[\s\S]*(mandatory|필수)/i);
+        expect(docs).not.toMatch(/Gmail|Gmail 전용|이메일\+비밀번호/i);
+        expect(docs).not.toMatch(/exact account email[\s\S]*SQL/i);
     });
 
     it('documents credential-safe remediation when bootstrap compensation fails', () => {

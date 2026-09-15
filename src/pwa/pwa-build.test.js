@@ -52,11 +52,19 @@ describe('PWA build output', () => {
         expect(source).not.toBeNull();
         const precached = [];
         const routes = [];
+        let skipWaitingCalled = false;
+        let clientsClaimCalled = false;
         const workbox = {
             precacheAndRoute(entries) {
                 precached.push(...entries);
             },
             cleanupOutdatedCaches() {},
+            skipWaiting() {
+                skipWaitingCalled = true;
+            },
+            clientsClaim() {
+                clientsClaimCalled = true;
+            },
             createHandlerBoundToURL(url) {
                 return { url };
             },
@@ -71,7 +79,16 @@ describe('PWA build output', () => {
             }
         };
         const define = (_dependencies, factory) => factory(workbox);
-        runInNewContext(source.toString(), { define, self: { define, addEventListener() {} } });
+        runInNewContext(source.toString(), {
+            define,
+            self: {
+                define,
+                addEventListener() {},
+                skipWaiting() {
+                    skipWaitingCalled = true;
+                }
+            }
+        });
 
         expect(precached.length).toBeGreaterThan(0);
         const precachedUrls = precached.map(({ url }) => url);
@@ -87,6 +104,16 @@ describe('PWA build output', () => {
             expect(routes[0].options.denylist.some((pattern) => pattern.test(pathname))).toBe(true);
         }
         expect(routes[0].options.denylist.some((pattern) => pattern.test('/sales/orders'))).toBe(false);
+        expect(skipWaitingCalled).toBe(true);
+        expect(clientsClaimCalled).toBe(true);
+    });
+
+    it('registers the generated service worker without an application prompt', () => {
+        const shell = readOutput('index.html')?.toString() || '';
+        const registration = readOutput('registerSW.js')?.toString() || '';
+
+        expect(shell).toContain('src="/registerSW.js"');
+        expect(registration).toContain("navigator.serviceWorker.register('/sw.js'");
     });
 
     it('ships Cloudflare revalidation headers for the service worker and manifest', () => {

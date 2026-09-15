@@ -19,8 +19,8 @@ export default defineConfig({
             resolvers: [PrimeVueResolver()]
         }),
         VitePWA({
-            registerType: 'prompt',
-            injectRegister: null,
+            registerType: 'autoUpdate',
+            injectRegister: 'auto',
             includeAssets: [],
             manifest: {
                 id: '/',
@@ -45,8 +45,8 @@ export default defineConfig({
                 navigateFallbackDenylist: [/^\/api(?:\/|\?|$)/],
                 runtimeCaching: [],
                 cleanupOutdatedCaches: true,
-                skipWaiting: false,
-                clientsClaim: false
+                skipWaiting: true,
+                clientsClaim: true
             }
         })
     ],

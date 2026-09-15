@@ -3,7 +3,7 @@ import { getBearerToken } from './auth';
 import { handleAdminAccountRequest } from './admin';
 import { handleInfrastructureUsageRequest } from './infrastructure';
 import { createAdminSupabaseClient, createUserSupabaseClient } from './supabase';
-import { isValidLoginId } from '../shared/loginIdentity';
+import { internalEmailToLoginId, isValidLoginId } from '../shared/loginIdentity';
 
 const apiError = (status, code, message) => jsonResponse({ error: { code, message } }, { status });
 const upstreamAuthErrorNames = new Set(['AuthRetryableFetchError', 'AuthUnknownError']);
@@ -58,7 +58,7 @@ async function getCurrentUser(request, env, createSupabaseClient) {
     }
 
     const profile = profileResult?.data;
-    if (!profile || profile.is_active !== true || !isValidLoginId(profile.login_id)) {
+    if (!profile || profile.is_active !== true || !isValidLoginId(profile.login_id) || internalEmailToLoginId(user.email) !== profile.login_id) {
         return apiError(403, 'inactive_user', '비활성화된 사용자입니다.');
     }
 

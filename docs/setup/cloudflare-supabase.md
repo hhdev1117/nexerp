@@ -6,6 +6,8 @@ This guide configures the NEXERP frontend, Worker, database migration, and deplo
 
 The browser uses only `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. A Supabase publishable key is designed to be browser-visible; Row Level Security remains the data authorization boundary. Never put a secret key, service-role key, direct database password, or access token in a `VITE_` variable.
 
+Users sign in with a login ID, which maps to the internal Auth address `<login_id>@nexerp.internal`. That address is an implementation detail and is never accepted as user-facing email input or returned as profile data. Every active account must complete mandatory TOTP enrollment and reach AAL2 before protected application features are available.
+
 The Worker uses `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for user-scoped requests. It forwards the signed-in user's bearer token so Supabase evaluates those requests under that user and applies RLS. Account creation additionally uses `SUPABASE_SECRET_KEY` only after the Worker validates the caller and verifies an active `admin` profile. The secret key is server-only and must never enter browser code, a `VITE_*` variable, a response, or a log.
 
 The administrator-only infrastructure screen uses `SUPABASE_MANAGEMENT_TOKEN` for allowlisted Supabase Management API health and usage reads, and `CLOUDFLARE_API_TOKEN` for Cloudflare Workers analytics and allowlisted script settings. Both are Worker-only secrets. The Cloudflare token needs the narrow analytics-read permission and `Workers Scripts Read` for the configured account, while the Supabase token needs project, health, analytics usage, and disk configuration read permissions. The nonsecret Cloudflare account and Worker names are committed as Worker vars.
@@ -92,7 +94,7 @@ With no `.env.local`, navigation to `/` deliberately redirects to `/auth/setup`,
 
 `GET /api/me` requires one valid `Bearer` access token. Its stable status categories are:
 
-- `200`: active profile, returning only id, email, display name, department, and role.
+- `200`: active profile whose internal Auth address matches its login ID, returning only id, `loginId`, display name, department, and role. Email is never returned.
 - `401`: missing authorization or invalid session.
 - `403`: missing or inactive profile.
 - `503`: missing Worker configuration.

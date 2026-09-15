@@ -11,7 +11,7 @@ const activeProfile = {
     is_active: true
 };
 
-const createSupabaseFixture = ({ user = { id: 'user-1', email: 'login@example.com' }, authError = null, authThrows = null, profile = activeProfile, profileError = null, profileThrows = null } = {}) => {
+const createSupabaseFixture = ({ user = { id: 'user-1', email: 'staff01@nexerp.internal' }, authError = null, authThrows = null, profile = activeProfile, profileError = null, profileThrows = null } = {}) => {
     const maybeSingle = vi.fn(async () => {
         if (profileThrows) throw profileThrows;
         return { data: profile, error: profileError };
@@ -212,6 +212,29 @@ describe('Cloudflare Worker app', () => {
 
         expect(response.status).toBe(403);
         expect(await response.json()).toEqual({ error: { code: 'inactive_user', message: '비활성화된 사용자입니다.' } });
+    });
+
+    it('accepts a normalized internal auth email that matches the profile login ID', async () => {
+        const fixture = createSupabaseFixture({ user: { id: 'user-1', email: '  Staff01@NEXERP.INTERNAL  ' } });
+        const app = createWorkerApp({ createSupabaseClient: () => fixture.client });
+        const response = await app.fetch(new Request('https://erp.test/api/me', { headers: { Authorization: 'Bearer session-token' } }), {});
+
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ id: 'user-1', loginId: 'staff01' });
+    });
+
+    it('forbids an internal auth email that does not match the profile login ID without leaking provider data', async () => {
+        const fixture = createSupabaseFixture({
+            user: { id: 'user-1', email: 'other01@nexerp.internal', user_metadata: { private_note: 'identity-sentinel' } },
+            profile: { ...activeProfile, private_note: 'profile-sentinel' }
+        });
+        const app = createWorkerApp({ createSupabaseClient: () => fixture.client });
+        const response = await app.fetch(new Request('https://erp.test/api/me', { headers: { Authorization: 'Bearer bearer-sentinel' } }), {});
+        const body = await response.json();
+
+        expect(response.status).toBe(403);
+        expect(body).toEqual({ error: { code: 'inactive_user', message: '비활성화된 사용자입니다.' } });
+        expect(JSON.stringify(body)).not.toMatch(/other01|identity-sentinel|profile-sentinel|bearer-sentinel/);
     });
 
     it('reports configured health without exposing values', async () => {

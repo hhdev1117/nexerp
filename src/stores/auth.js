@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { readSupabaseConfig } from '@/lib/supabase/config';
-import { loginIdToInternalEmail } from '@/lib/auth/loginIdentity';
+import { internalEmailToLoginId, loginIdToInternalEmail } from '@/lib/auth/loginIdentity';
 
 const PROFILE_FIELDS = 'id, login_id, display_name, department, role, is_active';
 const NOT_CONFIGURED_MESSAGE = 'Supabase 연결 정보가 설정되지 않았습니다.';
@@ -19,8 +19,6 @@ const MFA_MUTATION_MESSAGE = '인증 앱 변경을 처리 중입니다. 잠시 �
 const INVALID_SESSION_NAMES = new Set(['AuthSessionMissingError', 'AuthInvalidJwtError', 'AuthInvalidTokenResponseError']);
 const INVALID_SESSION_CODES = new Set(['session_not_found', 'bad_jwt', 'invalid_jwt']);
 const TOTP_CODE_PATTERN = /^\d{6}$/;
-const INTERNAL_EMAIL_SUFFIX = '@nexerp.internal';
-
 const isInvalidSessionError = (source) => INVALID_SESSION_NAMES.has(source?.name) || INVALID_SESSION_CODES.has(source?.code) || source?.status === 401 || source?.status === 403;
 
 const authSessionKey = (authSession) => {
@@ -61,7 +59,7 @@ const rejection = (message) => {
 };
 
 const publicUser = (authUser) => {
-    if (!authUser || typeof authUser.email !== 'string' || !authUser.email.endsWith(INTERNAL_EMAIL_SUFFIX)) return authUser || null;
+    if (!authUser || !internalEmailToLoginId(authUser.email)) return authUser || null;
     const safeUser = { ...authUser };
     delete safeUser.email;
     return safeUser;
@@ -70,10 +68,8 @@ const publicUser = (authUser) => {
 const publicSession = (authSession) => (authSession ? { ...authSession, user: publicUser(authSession.user) } : null);
 
 const trustedInternalEmail = (authUser) => {
-    const email = authUser?.email;
-    if (typeof email !== 'string' || !email.endsWith(INTERNAL_EMAIL_SUFFIX)) return null;
-    const loginId = email.slice(0, -INTERNAL_EMAIL_SUFFIX.length);
-    return loginIdToInternalEmail(loginId) === email ? email : null;
+    const loginId = internalEmailToLoginId(authUser?.email);
+    return loginId ? loginIdToInternalEmail(loginId) : null;
 };
 
 export function createAuthStore({ client, configured, locks = typeof window === 'undefined' ? null : window.navigator?.locks }) {
@@ -190,7 +186,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
             error.value = MISSING_PROFILE_MESSAGE;
             return;
         }
-        if (!loginIdToInternalEmail(result.data.login_id)) {
+        if (!loginIdToInternalEmail(result.data.login_id) || internalEmailToLoginId(nextUser.email) !== result.data.login_id) {
             profileLoadFailed.value = false;
             error.value = MISSING_PROFILE_MESSAGE;
             return;
@@ -824,7 +820,8 @@ export function createAuthStore({ client, configured, locks = typeof window === 
             throw rejection(message);
         }
 
-        trackIdentity(session.value);
+        const retrySession = reauthenticationEmail ? { ...session.value, user: { ...session.value.user, email: reauthenticationEmail } } : session.value;
+        trackIdentity(retrySession);
         await awaitIdentitySettled();
 
         if (!profile.value) throw rejection(error.value || MISSING_PROFILE_MESSAGE);

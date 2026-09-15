@@ -48,7 +48,7 @@ npx wrangler secret put SUPABASE_PUBLISHABLE_KEY --name nexerp
 npx wrangler secret put SUPABASE_SECRET_KEY --name nexerp
 ```
 
-Values are entered only at the interactive prompts. Promote the first administrator only after verifying the exact account email and using the narrowly scoped SQL in the operations guide. After bootstrap, administrators manage accounts and role-based menu access from the NEXERP system-management screens.
+Values are entered only at the interactive prompts. Login IDs map to internal Auth addresses in the form `<login_id>@nexerp.internal`; operators and users never promote accounts by editing an email in SQL. Bootstrap the first administrator once with the trusted `npm run bootstrap:admin` command and server-only credentials from the operations guide. `/api/me` exposes `loginId`, not email, and every account must complete mandatory TOTP enrollment. After bootstrap, administrators manage accounts and role-based menu access from the NEXERP system-management screens.
 
 ## Verify and Deploy
 

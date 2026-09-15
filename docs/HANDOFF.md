@@ -20,7 +20,7 @@
 
 | 영역 | 상태 | 위치 |
 |---|---|---|
-| 인증 (이메일+비밀번호, 필수 TOTP, Gmail 전용 계정) | 완료, Supabase 영속 | `src/stores/auth.js`, `src/views/auth/*`, `worker/*` |
+| 인증 (로그인 ID+비밀번호, 필수 TOTP, 내부 Auth 주소 매핑) | 완료, Supabase 영속 | `src/stores/auth.js`, `src/views/auth/*`, `worker/*` |
 | 역할 admin / approver / user, 역할별 메뉴 권한 | 완료, Supabase 영속 | `src/stores/access.js`, `supabase/migrations/20260912000100_*` |
 | 계정 관리, 메뉴 권한 관리, 인프라 사용량, 2단계 인증 관리 | 완료 (Worker API + RPC) | `src/views/admin/*`, `worker/admin.js`, `worker/infrastructure.js` |
 | **회사 · 사업장 기준정보** | 구현·운영 마이그레이션·배포 완료. 관리자 MFA 등록 후 실제 등록 점검 대기 | `src/views/master/CompanySites.vue`, `src/stores/master.js`, `src/repositories/master/*` |
@@ -29,6 +29,8 @@
 | 나머지 27개 메뉴 (견적, 발주, 입고, BOM, 전표 등) | 플레이스홀더 공용 화면 | `src/views/erp/GenericModule.vue` |
 
 Supabase에 존재하는 앱 테이블은 `profiles`, `role_menu_permissions`, `companies`, `sites`, `partners` 다섯 개입니다. 나머지 업무 데이터는 아직 테이블이 없습니다.
+
+사용자가 입력하는 로그인 ID는 내부 Auth 주소 `<login_id>@nexerp.internal`로 매핑되며 이메일은 로그인 입력이나 공개 프로필로 사용하지 않습니다. 최초 관리자는 서버 전용 자격 증명을 사용하는 신뢰된 환경에서 `npm run bootstrap:admin`으로 한 번만 생성하고, `/api/me`는 이메일 대신 `loginId`를 반환합니다. 모든 사용자는 첫 로그인부터 TOTP 등록과 AAL2 인증이 필수입니다.
 
 ## 3. 이번 세션에서 한 일
 
