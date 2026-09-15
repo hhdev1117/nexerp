@@ -55,6 +55,12 @@ export default defineConfig({
             '@': fileURLToPath(new URL('./src', import.meta.url))
         }
     },
+    test: {
+        // Stale worktree copies would otherwise be collected as duplicate suites.
+        exclude: ['**/node_modules/**', '**/dist/**', '**/.worktrees/**'],
+        // PrimeVue data tables render slowly under jsdom; the default 5s budget is not a product signal.
+        testTimeout: 20000
+    },
     css: {
         preprocessorOptions: {
             scss: {
