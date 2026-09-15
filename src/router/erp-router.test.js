@@ -22,6 +22,8 @@ describe('ERP router', () => {
         expect(router.resolve('/approvals').name).toBe('approvals');
         expect(router.resolve('/finance/summary').name).toBe('finance-summary');
         expect(routerSource).toContain("'/settings/company': () => import('@/views/master/CompanySites.vue')");
+        expect(routerSource).toContain("'/master/partners': () => import('@/views/master/Partners.vue')");
+        expect(router.resolve('/master/partners').name).toBe('master-partners');
         expect(router.resolve('/settings/company').name).toBe('settings-company');
         expect(router.resolve('/hr/employees').meta).toMatchObject({ menuKey: 'hr.core', publishedAccessRequired: true });
         expect(routerSource).toContain("'/hr/employees': () => import('@/views/hr/Employees.vue')");

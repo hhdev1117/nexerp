@@ -14,6 +14,7 @@ const dedicatedViews = {
     '/inventory/stock': () => import('@/views/erp/InventoryStock.vue'),
     '/finance/summary': () => import('@/views/erp/FinanceSummary.vue'),
     '/settings/company': () => import('@/views/master/CompanySites.vue'),
+    '/master/partners': () => import('@/views/master/Partners.vue'),
     '/settings/accounts': () => import('@/views/admin/AccountManagement.vue'),
     '/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue'),
     '/settings/enterprise-access': () => import('@/views/admin/EnterpriseAccess.vue'),
