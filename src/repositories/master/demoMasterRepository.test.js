@@ -4,6 +4,7 @@ import { createDemoMasterRepository, demoCompanies, demoSites } from './demoMast
 
 const companyDraft = (overrides = {}) => ({ code: 'NXT', name: '넥서스 테크', businessNumber: '3018800001', representative: '박서연', address: '대전광역시 유성구', isActive: true, ...overrides });
 const siteDraft = (overrides = {}) => ({ companyId: 'company-nxm', code: 'DJ', name: '대전 지점', siteType: SITE_TYPE.BRANCH, address: '대전광역시 유성구', isActive: true, ...overrides });
+const partnerDraft = (overrides = {}) => ({ companyId: 'company-nxm', code: ' new-1 ', name: ' 신규 거래처 ', businessNumber: '301-88-00001', isCustomer: true, isVendor: false, representative: ' 대표 ', contactName: ' 담당자 ', phone: ' 010-0000-0000 ', email: ' user@example.com ', address: ' 서울 ', paymentTermsDays: 30, creditLimit: 1000000, isActive: true, ...overrides });
 
 describe('demo master repository', () => {
     it('seeds two companies with three sites and returns sorted clones', async () => {
@@ -84,5 +85,36 @@ describe('demo master repository', () => {
         expect(updated).toMatchObject({ id: created.id, code: 'HQ', name: '유통 본점', address: '서울특별시' });
         expect((await repository.listSites()).filter((site) => site.code === 'HQ')).toHaveLength(2);
         await expect(repository.updateSite('missing', { name: '없음' })).rejects.toMatchObject({ code: 'not_found' });
+    });
+
+    it('seeds customer, vendor and dual-role partners and returns sorted clones', async () => {
+        const repository = createDemoMasterRepository();
+        const partners = await repository.listPartners();
+        expect(partners.map((partner) => [partner.code, partner.isCustomer, partner.isVendor])).toEqual([
+            ['CUST-01', true, false], ['DUAL-01', true, true], ['VEND-01', false, true]
+        ]);
+        partners[0].name = 'mutated';
+        expect((await repository.listPartners())[0].name).not.toBe('mutated');
+    });
+
+    it('creates normalized partners and enforces company-scoped rules', async () => {
+        const repository = createDemoMasterRepository({ now: () => new Date('2026-09-15T00:00:00.000Z') });
+        const input = partnerDraft();
+        const created = await repository.createPartner(input);
+        expect(created).toMatchObject({ id: 'partner-001', companyId: 'company-nxm', code: 'NEW-1', name: '신규 거래처', businessNumber: '3018800001', representative: '대표', contactName: '담당자', isCustomer: true, isVendor: false });
+        expect(input.code).toBe(' new-1 ');
+        await expect(repository.createPartner(partnerDraft({ code: 'CUST-01', businessNumber: '9999999999' }))).rejects.toMatchObject({ code: 'duplicate_code' });
+        await expect(repository.createPartner(partnerDraft({ code: 'NEW-2' }))).rejects.toMatchObject({ code: 'duplicate_business_number' });
+        await expect(repository.createPartner(partnerDraft({ code: 'NEW-3', businessNumber: '', isCustomer: false }))).rejects.toMatchObject({ code: 'invalid_value' });
+        await expect(repository.createPartner(partnerDraft({ companyId: 'missing', code: 'NEW-4', businessNumber: '' }))).rejects.toMatchObject({ code: 'not_found' });
+        await repository.updateCompany('company-nxm', { isActive: false });
+        await expect(repository.createPartner(partnerDraft({ code: 'NEW-5', businessNumber: '' }))).rejects.toMatchObject({ code: 'company_inactive' });
+    });
+
+    it('updates partners without accepting identity fields', async () => {
+        const repository = createDemoMasterRepository({ now: () => new Date('2026-09-15T01:00:00.000Z') });
+        const updated = await repository.updatePartner('partner-customer', { code: ' cust-02 ', name: ' 변경 ', id: 'hijack', createdAt: 'hijack' });
+        expect(updated).toMatchObject({ id: 'partner-customer', code: 'CUST-02', name: '변경', updatedAt: '2026-09-15T01:00:00.000Z' });
+        await expect(repository.updatePartner('missing', { name: '없음' })).rejects.toMatchObject({ code: 'not_found' });
     });
 });

@@ -3,9 +3,11 @@ import { MasterRepositoryError, masterError } from './errors';
 
 const COMPANY_FIELDS = 'id, code, name, business_number, representative, address, is_active, created_at, updated_at';
 const SITE_FIELDS = 'id, company_id, code, name, site_type, address, is_active, created_at, updated_at';
+const PARTNER_FIELDS = 'id, company_id, code, name, business_number, is_customer, is_vendor, representative, contact_name, phone, email, address, payment_terms_days, credit_limit, is_active, created_at, updated_at, created_by, updated_by';
 
 const companyColumns = Object.freeze({ code: 'code', name: 'name', businessNumber: 'business_number', representative: 'representative', address: 'address', isActive: 'is_active' });
 const siteColumns = Object.freeze({ companyId: 'company_id', code: 'code', name: 'name', siteType: 'site_type', address: 'address', isActive: 'is_active' });
+const partnerColumns = Object.freeze({ companyId: 'company_id', code: 'code', name: 'name', businessNumber: 'business_number', isCustomer: 'is_customer', isVendor: 'is_vendor', representative: 'representative', contactName: 'contact_name', phone: 'phone', email: 'email', address: 'address', paymentTermsDays: 'payment_terms_days', creditLimit: 'credit_limit', isActive: 'is_active' });
 
 const toCompany = (row) => ({
     id: row.id,
@@ -31,6 +33,14 @@ const toSite = (row) => ({
     updatedAt: row.updated_at ?? null
 });
 
+const toPartner = (row) => ({
+    id: row.id, companyId: row.company_id, code: row.code, name: row.name,
+    businessNumber: row.business_number ?? null, isCustomer: row.is_customer === true, isVendor: row.is_vendor === true,
+    representative: row.representative ?? '', contactName: row.contact_name ?? '', phone: row.phone ?? '', email: row.email ?? '', address: row.address ?? '',
+    paymentTermsDays: row.payment_terms_days, creditLimit: row.credit_limit, isActive: row.is_active === true,
+    createdAt: row.created_at ?? null, updatedAt: row.updated_at ?? null, createdBy: row.created_by ?? null, updatedBy: row.updated_by ?? null
+});
+
 // Only keys the caller supplied become columns, so partial updates never overwrite other fields.
 const toRow = (columns, values) => Object.fromEntries(Object.entries(columns).filter(([key]) => values?.[key] !== undefined).map(([key, column]) => [column, values[key]]));
 
@@ -40,6 +50,7 @@ const failure = (operation, source) => {
     const code = typeof source?.code === 'string' ? source.code : '';
     const message = typeof source?.message === 'string' ? source.message : '';
 
+    if (code === '23505' && `${message} ${source?.details ?? ''} ${source?.constraint ?? ''}`.includes('business_number')) return masterError('duplicate_business_number');
     if (code === '23505') return masterError('duplicate_code');
     if (message === 'company_inactive') return masterError('company_inactive');
     if (code === '23514' || code === '22023') return masterError('invalid_value');
@@ -89,6 +100,9 @@ export function createSupabaseMasterRepository(client = getSupabaseClient()) {
         updateCompany: (id, changes) => update('companies', COMPANY_FIELDS, id, toRow(companyColumns, changes), toCompany),
         listSites: () => list('sites', SITE_FIELDS, toSite),
         createSite: (draft) => insert('sites', SITE_FIELDS, toRow(siteColumns, draft), toSite),
-        updateSite: (id, changes) => update('sites', SITE_FIELDS, id, toRow(siteColumns, changes), toSite)
+        updateSite: (id, changes) => update('sites', SITE_FIELDS, id, toRow(siteColumns, changes), toSite),
+        listPartners: () => list('partners', PARTNER_FIELDS, toPartner),
+        createPartner: (draft) => insert('partners', PARTNER_FIELDS, toRow(partnerColumns, draft), toPartner),
+        updatePartner: (id, changes) => update('partners', PARTNER_FIELDS, id, toRow(partnerColumns, changes), toPartner)
     };
 }

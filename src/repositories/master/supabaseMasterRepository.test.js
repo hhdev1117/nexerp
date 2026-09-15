@@ -3,11 +3,14 @@ import { createSupabaseMasterRepository } from './supabaseMasterRepository';
 
 const COMPANY_FIELDS = 'id, code, name, business_number, representative, address, is_active, created_at, updated_at';
 const SITE_FIELDS = 'id, company_id, code, name, site_type, address, is_active, created_at, updated_at';
+const PARTNER_FIELDS = 'id, company_id, code, name, business_number, is_customer, is_vendor, representative, contact_name, phone, email, address, payment_terms_days, credit_limit, is_active, created_at, updated_at, created_by, updated_by';
 
 const companyRow = { id: 'c-1', code: 'NXM', name: '넥서스 제조', business_number: '1208812345', representative: '김정호', address: '인천', is_active: true, created_at: '2026-09-14T00:00:00.000Z', updated_at: '2026-09-14T01:00:00.000Z' };
 const company = { id: 'c-1', code: 'NXM', name: '넥서스 제조', businessNumber: '1208812345', representative: '김정호', address: '인천', isActive: true, createdAt: '2026-09-14T00:00:00.000Z', updatedAt: '2026-09-14T01:00:00.000Z' };
 const siteRow = { id: 's-1', company_id: 'c-1', code: 'ICN', name: '인천 공장', site_type: 'factory', address: '인천', is_active: true, created_at: '2026-09-14T00:00:00.000Z', updated_at: '2026-09-14T01:00:00.000Z' };
 const site = { id: 's-1', companyId: 'c-1', code: 'ICN', name: '인천 공장', siteType: 'factory', address: '인천', isActive: true, createdAt: '2026-09-14T00:00:00.000Z', updatedAt: '2026-09-14T01:00:00.000Z' };
+const partnerRow = { id: 'p-1', company_id: 'c-1', code: 'P01', name: '거래처', business_number: '1208812345', is_customer: true, is_vendor: true, representative: '대표', contact_name: '담당', phone: '010', email: 'p@example.com', address: '서울', payment_terms_days: 30, credit_limit: 5000000, is_active: true, created_at: '2026-09-14T00:00:00.000Z', updated_at: '2026-09-14T01:00:00.000Z', created_by: 'u-1', updated_by: 'u-2' };
+const partner = { id: 'p-1', companyId: 'c-1', code: 'P01', name: '거래처', businessNumber: '1208812345', isCustomer: true, isVendor: true, representative: '대표', contactName: '담당', phone: '010', email: 'p@example.com', address: '서울', paymentTermsDays: 30, creditLimit: 5000000, isActive: true, createdAt: '2026-09-14T00:00:00.000Z', updatedAt: '2026-09-14T01:00:00.000Z', createdBy: 'u-1', updatedBy: 'u-2' };
 
 const makeClient = ({ list = { data: [companyRow], error: null }, single = { data: companyRow, error: null } } = {}) => {
     const singleFn = vi.fn().mockResolvedValue(single);
@@ -75,8 +78,22 @@ describe('Supabase master repository', () => {
         expect(fixture.eq).toHaveBeenCalledWith('id', 's-1');
     });
 
+    it('lists, creates and partially updates partners with column mapping', async () => {
+        const fixture = makeClient({ list: { data: [partnerRow], error: null }, single: { data: partnerRow, error: null } });
+        const repository = createSupabaseMasterRepository(fixture.client);
+        await expect(repository.listPartners()).resolves.toEqual([partner]);
+        expect(fixture.from).toHaveBeenCalledWith('partners');
+        expect(fixture.select).toHaveBeenCalledWith(PARTNER_FIELDS);
+        await expect(repository.createPartner({ companyId: 'c-1', code: 'P01', name: '거래처', businessNumber: '1208812345', isCustomer: true, isVendor: true, paymentTermsDays: 30, creditLimit: 5000000, extra: 'ignored' })).resolves.toEqual(partner);
+        expect(fixture.insert).toHaveBeenCalledWith({ company_id: 'c-1', code: 'P01', name: '거래처', business_number: '1208812345', is_customer: true, is_vendor: true, payment_terms_days: 30, credit_limit: 5000000 });
+        await expect(repository.updatePartner('p-1', { name: '변경', isActive: false })).resolves.toEqual(partner);
+        expect(fixture.update).toHaveBeenCalledWith({ name: '변경', is_active: false });
+        expect(fixture.eq).toHaveBeenCalledWith('id', 'p-1');
+    });
+
     it.each([
         [{ code: '23505', message: 'duplicate key value violates unique constraint "companies_code_key"' }, 'duplicate_code'],
+        [{ code: '23505', message: 'duplicate key value violates unique constraint "partners_company_business_number_key"', details: 'business_number' }, 'duplicate_business_number'],
         [{ code: '22023', message: 'company_inactive' }, 'company_inactive'],
         [{ code: '23514', message: 'new row for relation "companies" violates check constraint "companies_code_format"' }, 'invalid_value'],
         [{ code: '42501', message: 'new row violates row-level security policy for table "companies"' }, 'admin_required'],
