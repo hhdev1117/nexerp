@@ -4,7 +4,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(35);
+select plan(38);
 
 insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
 values
@@ -159,6 +159,43 @@ select ok(
         where 'purchasing.vendors' = any (allowed_menu_keys)
     ),
     'purchasing.vendors is removed from saved permissions'
+);
+
+select results_eq(
+    $$with legacy_permissions (allowed_menu_keys) as (
+          values (array[null::text, 'sales.customers']::text[])
+      ), normalized_permissions as (
+          select pg_catalog.array_remove(
+                     pg_catalog.array_remove(
+                         case
+                             when not coalesce('master.partners' = any (allowed_menu_keys), false)
+                                 then pg_catalog.array_append(allowed_menu_keys, 'master.partners')
+                             else allowed_menu_keys
+                         end,
+                         'sales.customers'
+                     ),
+                     'purchasing.vendors'
+                 ) as allowed_menu_keys
+          from legacy_permissions
+      )
+      select menu_key
+      from normalized_permissions
+      cross join lateral pg_catalog.unnest(allowed_menu_keys) as normalized(menu_key)
+      order by menu_key$$,
+    $$values ('master.partners'::text)$$,
+    'legacy-only permissions with null entries normalize to master.partners'
+);
+
+select ok(
+    exists (
+        select 1
+        from pg_catalog.pg_trigger
+        where tgrelid = 'public.role_menu_permissions'::regclass
+          and tgname = 'protect_admin_role_menu_permissions'
+          and tgenabled <> 'D'
+          and not tgisinternal
+    ),
+    'admin permission protection trigger remains enabled'
 );
 
 select set_config('request.jwt.claims', '{"sub":"31000000-0000-0000-0000-000000000001","aal":"aal1"}', true);
@@ -351,6 +388,16 @@ select throws_ok(
     '22023',
     'company_inactive',
     'an active partner cannot be created under an inactive company'
+);
+
+insert into public.partners (company_id, code, name, is_customer, is_active)
+values ('41000000-0000-0000-0000-000000000003', 'ARCHIVED', 'Archived Partner', true, false);
+
+select throws_ok(
+    $$update public.partners set is_active = true where code = 'ARCHIVED'$$,
+    '22023',
+    'company_inactive',
+    'an inactive partner cannot be reactivated under an inactive company'
 );
 
 reset role;

@@ -109,7 +109,6 @@ const activeLabel = (partner) => (partner.isActive ? '활성' : '비활성');
 
 const partnerEditPayload = (draft) => ({
     companyId: normalizeText(draft.companyId),
-    code: normalizeCode(draft.code),
     name: normalizeText(draft.name),
     businessNumber: normalizeBusinessNumber(draft.businessNumber),
     isCustomer: draft.isCustomer === true,
@@ -119,7 +118,7 @@ const partnerEditPayload = (draft) => ({
     phone: normalizeText(draft.phone),
     address: normalizeText(draft.address)
 });
-const partnerCreatePayload = (draft) => ({ ...partnerEditPayload(draft), isActive: true });
+const partnerCreatePayload = (draft) => ({ ...partnerEditPayload(draft), code: normalizeCode(draft.code), isActive: true });
 
 const errorMessage = (field) => (submitted.value && validation.value.errors[field] ? PARTNER_MESSAGES[field] : '');
 
@@ -369,7 +368,7 @@ function setDialogVisible(visible) {
                         placeholder="예: CUS-001"
                         aria-describedby="partner-code-error"
                         :invalid="submitted && validation.errors.code"
-                        :disabled="saving"
+                        :disabled="saving || partnerMode === 'edit'"
                         fluid
                     />
                     <small v-if="errorMessage('code')" id="partner-code-error" class="text-red-700 dark:text-red-400" role="alert">{{ errorMessage('code') }}</small>

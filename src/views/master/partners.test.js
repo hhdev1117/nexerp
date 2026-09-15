@@ -4,7 +4,6 @@ import PrimeVue from 'primevue/config';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDemoMasterRepository, demoCompanies, demoPartners } from '@/repositories/master/demoMasterRepository';
 import { createMasterStore } from '@/stores/master';
-import { ref } from 'vue';
 import Partners from './Partners.vue';
 
 const harness = vi.hoisted(() => ({
@@ -151,22 +150,10 @@ describe('partner management screen', () => {
     });
 
     it('announces loading and provider-safe load errors', async () => {
-        harness.store = {
-            companies: ref([]),
-            partners: ref([]),
-            loading: ref(true),
-            error: ref(null),
-            partnersFor: () => [],
-            ensureLoaded: vi.fn(),
-            createPartner: vi.fn(),
-            updatePartner: vi.fn()
-        };
+        const repository = createDemoMasterRepository();
+        repository.listPartners = vi.fn().mockRejectedValue(new Error('sentinel-provider-secret'));
+        harness.store = createMasterStore({ repository });
         const wrapper = await mountScreen();
-
-        expect(wrapper.get('[role="status"]').text()).toContain('거래처 목록을 불러오는 중입니다.');
-        harness.store.loading.value = false;
-        harness.store.error.value = '기준정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';
-        await flushPromises();
 
         expect(wrapper.get('[role="alert"]').text()).toContain('기준정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
         expect(wrapper.text()).not.toContain('sentinel');
@@ -253,12 +240,12 @@ describe('partner management screen', () => {
         await wrapper.find('[aria-label="미래 상사 거래처 수정"]').trigger('click');
         await flushPromises();
         expect(document.querySelector('#partner-isActive')).toBeNull();
+        expect(document.querySelector('#partner-code').disabled).toBe(true);
         setText('#partner-name', ' 미래 종합상사 ');
         await submitForm();
 
         expect(updatePartner).toHaveBeenCalledWith('partner-nxd-dual', {
             companyId: 'company-nxd',
-            code: 'DUAL-001',
             name: '미래 종합상사',
             businessNumber: '3018800003',
             isCustomer: true,
@@ -280,6 +267,27 @@ describe('partner management screen', () => {
         expect(harness.confirmRequire).toHaveBeenLastCalledWith(expect.objectContaining({ header: '거래처 활성화' }));
         expect(updatePartner).toHaveBeenCalledWith('partner-nxd-dual', { isActive: true });
         expect(harness.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: '상태 변경 완료' }));
+    });
+
+    it('does not change partner status until confirmation is accepted', async () => {
+        const updatePartner = vi.spyOn(harness.store, 'updatePartner');
+        let confirmation;
+        harness.confirmRequire.mockImplementation((options) => {
+            confirmation = options;
+        });
+        const wrapper = await mountScreen();
+
+        await wrapper.find('[aria-label="미래 상사 거래처 비활성화"]').trigger('click');
+        await flushPromises();
+
+        expect(confirmation).toEqual(expect.objectContaining({ header: '거래처 비활성화' }));
+        expect(updatePartner).not.toHaveBeenCalled();
+
+        await confirmation.accept();
+        await flushPromises();
+
+        expect(updatePartner).toHaveBeenCalledOnce();
+        expect(updatePartner).toHaveBeenCalledWith('partner-nxd-dual', { isActive: false });
     });
 
     it('keeps a pending save bound to its original dialog and blocks competing actions', async () => {

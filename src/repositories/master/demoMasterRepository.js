@@ -96,7 +96,7 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
 
     const assertCompanyUnique = (code, businessNumber, exceptId) => {
         if (companyState.some((company) => company.id !== exceptId && company.code === code)) throw masterError('duplicate_code');
-        if (businessNumber && companyState.some((company) => company.id !== exceptId && company.businessNumber === businessNumber)) throw masterError('duplicate_code');
+        if (businessNumber && companyState.some((company) => company.id !== exceptId && company.businessNumber === businessNumber)) throw masterError('duplicate_business_number');
     };
 
     const assertSiteUnique = (companyId, code, exceptId) => {
@@ -276,7 +276,9 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
             const partner = findPartner(id);
             if (!partner) throw masterError('not_found');
 
-            const fields = normalizePartnerFields(withoutIdentity(changes));
+            const mutableChanges = withoutIdentity(changes);
+            delete mutableChanges.code;
+            const fields = normalizePartnerFields(mutableChanges);
             const next = { ...partner, ...fields };
             assertPartner(next);
             assertPartnerUnique(next.companyId, next.code, next.businessNumber, id);

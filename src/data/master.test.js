@@ -70,8 +70,12 @@ describe('partner master rules', () => {
         });
     });
 
-    it('accepts a normalized code, either partner role, and empty optional fields', () => {
-        expect(validatePartnerDraft({ companyId: 'company-1', code: ' partner-1 ', name: ' 넥서스 ', isCustomer: true, isVendor: false, businessNumber: '', email: '' })).toEqual({
+    it.each([
+        ['customer-only', true, false],
+        ['vendor-only', false, true],
+        ['dual-role', true, true]
+    ])('accepts a normalized code for a %s partner and empty optional fields', (_label, isCustomer, isVendor) => {
+        expect(validatePartnerDraft({ companyId: 'company-1', code: ' partner-1 ', name: ' 넥서스 ', isCustomer, isVendor, businessNumber: '', email: '' })).toEqual({
             errors: { companyId: false, code: false, name: false, roles: false, businessNumber: false, email: false },
             isValid: true
         });

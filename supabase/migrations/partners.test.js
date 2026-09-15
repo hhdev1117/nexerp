@@ -83,11 +83,11 @@ describe('partners migration contract', () => {
         expect(migration).not.toMatch(/delete\s+from\s+public\.role_menu_permissions[\s\S]*master\.partners/i);
     });
 
-    it('defines the complete 35-assertion pgTAP security contract', () => {
+    it('defines the complete 38-assertion pgTAP security contract', () => {
         const assertions = pgTap.match(/^select\s+(?:ok|results_eq|is_empty|throws_ok|lives_ok)\s*\(/gim) ?? [];
 
-        expect(pgTap).toMatch(/select\s+plan\s*\(\s*35\s*\)/i);
-        expect(assertions).toHaveLength(35);
+        expect(pgTap).toMatch(/select\s+plan\s*\(\s*38\s*\)/i);
+        expect(assertions).toHaveLength(38);
         expect(pgTap).toMatch(/row-level security enabled/i);
         expect(pgTap).toMatch(/AAL1 user cannot read partners/i);
         expect(pgTap).toMatch(/active AAL2 user reads partners/i);
@@ -98,6 +98,9 @@ describe('partners migration contract', () => {
         expect(pgTap).toMatch(/business numbers are unique within a company/i);
         expect(pgTap).toMatch(/partner must be a customer, a vendor, or both/i);
         expect(pgTap).toMatch(/active partner cannot be created under an inactive company/i);
+        expect(pgTap).toMatch(/inactive partner cannot be reactivated under an inactive company/i);
+        expect(pgTap).toMatch(/legacy-only permissions with null entries normalize to master\.partners/i);
+        expect(pgTap).toMatch(/admin permission protection trigger remains enabled/i);
         expect(pgTap).toMatch(/sales\.customers is removed/i);
         expect(pgTap).toMatch(/purchasing\.vendors is removed/i);
     });

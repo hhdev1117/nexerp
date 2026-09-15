@@ -97,6 +97,17 @@ describe('Supabase master repository', () => {
         expect(fixture.writeSelect).toHaveBeenCalledWith(COMPANY_FIELDS);
     });
 
+    it.each([
+        ['companies_business_number_key', 'duplicate_business_number'],
+        ['companies_code_key', 'duplicate_code']
+    ])('maps company constraint %s to %s', async (constraint, expected) => {
+        const error = { code: '23505', message: `duplicate key value violates unique constraint "${constraint}"` };
+        const fixture = makeClient({ single: { data: null, error } });
+        const repository = createSupabaseMasterRepository(fixture.client);
+
+        await expect(repository.createCompany({ code: 'NXT', name: '넥서스', businessNumber: '1208812345' })).rejects.toMatchObject({ code: expected });
+    });
+
     it('creates and updates sites with column mapping', async () => {
         const fixture = makeClient({ single: { data: siteRow, error: null } });
         const repository = createSupabaseMasterRepository(fixture.client);
@@ -161,11 +172,11 @@ describe('Supabase master repository', () => {
         expect(fixture.writeSelect).toHaveBeenCalledWith(PARTNER_FIELDS);
     });
 
-    it('updates only supplied partner fields and preserves omitted values', async () => {
+    it('updates only supplied mutable partner fields and preserves omitted values and the immutable code', async () => {
         const fixture = makeClient({ single: { data: { ...partnerRow, name: '서울 제일유통', is_vendor: true }, error: null } });
         const repository = createSupabaseMasterRepository(fixture.client);
 
-        await expect(repository.updatePartner('p-1', { name: '서울 제일유통', isVendor: true, businessNumber: undefined, id: 'ignored' })).resolves.toEqual({
+        await expect(repository.updatePartner('p-1', { code: 'CHANGED', name: '서울 제일유통', isVendor: true, businessNumber: undefined, id: 'ignored' })).resolves.toEqual({
             ...partner,
             name: '서울 제일유통',
             isVendor: true
@@ -212,6 +223,9 @@ describe('Supabase master repository', () => {
         [{ code: '23505', message: 'duplicate key value violates unique constraint "partners_company_business_number_key"' }, 'duplicate_business_number'],
         [{ code: '22023', message: 'company_inactive' }, 'company_inactive'],
         [{ code: '23514', message: 'new row for relation "partners" violates check constraint "partners_role_required"' }, 'invalid_value'],
+        [{ code: '23502', message: 'null value in column "name" violates not-null constraint' }, 'invalid_value'],
+        [{ code: '22P02', message: 'invalid input syntax for type uuid' }, 'invalid_value'],
+        [{ code: '23503', message: 'insert or update violates foreign key constraint' }, 'not_found'],
         [{ code: '42501', message: 'new row violates row-level security policy for table "partners"' }, 'admin_required'],
         [{ code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' }, 'not_found'],
         [{ code: '08006', message: 'sentinel-connection-string' }, 'master_save_failed']

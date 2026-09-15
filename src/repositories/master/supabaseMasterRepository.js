@@ -21,6 +21,7 @@ const partnerColumns = Object.freeze({
     address: 'address',
     isActive: 'is_active'
 });
+const partnerUpdateColumns = Object.freeze(Object.fromEntries(Object.entries(partnerColumns).filter(([key]) => key !== 'code')));
 const partnerTextFields = Object.freeze(['companyId', 'name', 'representative', 'email', 'phone', 'address']);
 
 const toCompany = (row) => ({
@@ -92,10 +93,11 @@ const failure = (operation, source) => {
     const message = typeof source?.message === 'string' ? source.message : '';
     const providerContext = [source?.constraint, source?.details, message].filter((value) => typeof value === 'string').join(' ');
 
-    if (code === '23505' && /partners_company_business_number_key|\(company_id,\s*business_number\)/i.test(providerContext)) return masterError('duplicate_business_number');
+    if (code === '23505' && /companies_business_number_key|partners_company_business_number_key|\(company_id,\s*business_number\)/i.test(providerContext)) return masterError('duplicate_business_number');
     if (code === '23505') return masterError('duplicate_code');
     if (message === 'company_inactive') return masterError('company_inactive');
-    if (code === '23514' || code === '22023') return masterError('invalid_value');
+    if (code === '23514' || code === '22023' || code === '23502' || code === '22P02') return masterError('invalid_value');
+    if (code === '23503') return masterError('not_found');
     if (code === '42501') return masterError('admin_required');
     if (code === 'PGRST116') return masterError('not_found');
     return masterError(operation === 'load' ? 'master_load_failed' : 'master_save_failed');
@@ -145,7 +147,7 @@ export function createSupabaseMasterRepository(client = getSupabaseClient()) {
         if (!existing) throw masterError('not_found');
 
         try {
-            return await update('partners', PARTNER_FIELDS, id, toRow(partnerColumns, normalizePartnerValues(changes)), toPartner);
+            return await update('partners', PARTNER_FIELDS, id, toRow(partnerUpdateColumns, normalizePartnerValues(changes)), toPartner);
         } catch (error) {
             if (error instanceof MasterRepositoryError && error.code === 'not_found') throw masterError('admin_required');
             throw error;

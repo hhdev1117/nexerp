@@ -139,8 +139,9 @@ describe('master store', () => {
 
         const updatedPartner = await store.updatePartner(partner.id, { code: 'ZZZ-001', name: '수정 거래처' });
         expect(updatedPartner.name).toBe('수정 거래처');
+        expect(updatedPartner.code).toBe('AAA-001');
         expect(store.partners.value).toHaveLength(4);
-        expect(store.partners.value.map((row) => row.code)).toEqual(['CUS-001', 'DUAL-001', 'VEN-001', 'ZZZ-001']);
+        expect(store.partners.value.map((row) => row.code)).toEqual(['AAA-001', 'CUS-001', 'DUAL-001', 'VEN-001']);
         expect(store.partners.value.find((row) => row.id === partner.id)).toEqual(updatedPartner);
     });
 

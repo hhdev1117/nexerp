@@ -54,13 +54,19 @@ describe('demo master repository', () => {
         expect((await repository.listCompanies()).map((company) => company.code)).toEqual(['NXD', 'NXM', 'NXT']);
     });
 
-    it('rejects duplicate codes, duplicate business numbers, malformed codes, and unknown rows', async () => {
+    it('distinguishes duplicate company codes from duplicate company business numbers', async () => {
         const repository = createDemoMasterRepository();
 
         await expect(repository.createCompany(companyDraft({ code: 'nxm' }))).rejects.toMatchObject({ name: 'MasterRepositoryError', code: 'duplicate_code' });
-        await expect(repository.createCompany(companyDraft({ businessNumber: '1208812345' }))).rejects.toMatchObject({ code: 'duplicate_code' });
-        await expect(repository.createCompany(companyDraft({ code: 'NX M' }))).rejects.toMatchObject({ code: 'invalid_value' });
+        await expect(repository.createCompany(companyDraft({ businessNumber: '1208812345' }))).rejects.toMatchObject({ code: 'duplicate_business_number' });
+        await expect(repository.updateCompany('company-nxd', { businessNumber: '1208812345' })).rejects.toMatchObject({ code: 'duplicate_business_number' });
         await expect(repository.updateCompany('company-nxd', { code: 'NXM' })).rejects.toMatchObject({ code: 'duplicate_code' });
+    });
+
+    it('rejects malformed company codes and unknown rows', async () => {
+        const repository = createDemoMasterRepository();
+
+        await expect(repository.createCompany(companyDraft({ code: 'NX M' }))).rejects.toMatchObject({ code: 'invalid_value' });
         await expect(repository.updateCompany('missing', { name: '없음' })).rejects.toMatchObject({ code: 'not_found' });
         expect((await repository.listCompanies()).map((company) => company.code)).toEqual(['NXD', 'NXM']);
     });
@@ -153,7 +159,6 @@ describe('demo master repository', () => {
 
         await expect(repository.createPartner(partnerDraft({ code: 'cus-001', businessNumber: '5555500001' }))).rejects.toMatchObject({ code: 'duplicate_code' });
         await expect(repository.createPartner(partnerDraft({ code: 'NEW-01', businessNumber: source.businessNumber }))).rejects.toMatchObject({ code: 'duplicate_business_number' });
-        await expect(repository.updatePartner('partner-nxm-vendor', { code: 'CUS-001' })).rejects.toMatchObject({ code: 'duplicate_code' });
         await expect(repository.updatePartner('partner-nxm-vendor', { businessNumber: source.businessNumber })).rejects.toMatchObject({ code: 'duplicate_business_number' });
     });
 
@@ -175,7 +180,7 @@ describe('demo master repository', () => {
         expect(archived).toMatchObject({ companyId: 'company-nxm', code: 'NXT-01', isActive: false });
     });
 
-    it('updates partner timestamps and strips caller-supplied identity fields', async () => {
+    it('updates partner timestamps while preserving immutable codes and stripping caller-supplied identity fields', async () => {
         let currentTime = '2026-09-14T10:00:00.000Z';
         const repository = createDemoMasterRepository({ now: () => new Date(currentTime) });
         const changes = { code: ' vendor-02 ', businessNumber: '555-55-00002', name: '수정 공급사', id: 'changed', createdAt: 'changed', updatedAt: 'changed' };
@@ -186,7 +191,7 @@ describe('demo master repository', () => {
 
         expect(updated).toMatchObject({
             id: 'partner-nxm-vendor',
-            code: 'VENDOR-02',
+            code: 'VEN-001',
             businessNumber: '5555500002',
             name: '수정 공급사',
             createdAt: '2026-01-05T00:00:00.000Z',
