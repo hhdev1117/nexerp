@@ -1,0 +1,10 @@
+# Normalize line endings so Windows checkouts stop producing whitespace-only diffs.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.jpg binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
