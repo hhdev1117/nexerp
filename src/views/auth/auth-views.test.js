@@ -123,9 +123,9 @@ describe('login view', () => {
         expect(authStore.signIn).not.toHaveBeenCalled();
     });
 
-    it('rejects an invalid login ID and focuses the login ID control', async () => {
+    it('rejects a non-normalized login ID and focuses the login ID control', async () => {
         const { wrapper } = await mountLogin();
-        await wrapper.get('#login-id').setValue('INVALID-ID');
+        await wrapper.get('#login-id').setValue('Admin01');
         await wrapper.get('#password').setValue('password');
 
         await wrapper.get('form').trigger('submit');
@@ -139,7 +139,7 @@ describe('login view', () => {
         const pending = deferred();
         authStore.signIn.mockReturnValueOnce(pending.promise);
         const { wrapper } = await mountLogin();
-        await wrapper.get('#login-id').setValue('user1234');
+        await wrapper.get('#login-id').setValue('user01');
         await wrapper.get('#password').setValue('password');
 
         await wrapper.get('form').trigger('submit');
@@ -154,20 +154,20 @@ describe('login view', () => {
     it('signs in and restores a safe local redirect with router replacement', async () => {
         const { wrapper, router } = await mountLogin('/login?redirect=/approvals');
         const replace = vi.spyOn(router, 'replace');
-        await wrapper.get('#login-id').setValue('user1234');
+        await wrapper.get('#login-id').setValue('user01');
         await wrapper.get('#password').setValue('password');
 
         await wrapper.get('form').trigger('submit');
         await flushPromises();
 
-        expect(authStore.signIn).toHaveBeenCalledWith('user1234', 'password');
+        expect(authStore.signIn).toHaveBeenCalledWith('user01', 'password');
         expect(replace).toHaveBeenCalledWith('/approvals');
     });
 
     it('rejects protocol-relative redirects and returns to the dashboard', async () => {
         const { wrapper, router } = await mountLogin('/login?redirect=//evil.example/path');
         const replace = vi.spyOn(router, 'replace');
-        await wrapper.get('#email').setValue('user@nexerp.test');
+        await wrapper.get('#login-id').setValue('user01');
         await wrapper.get('#password').setValue('password');
 
         await wrapper.get('form').trigger('submit');
@@ -177,24 +177,24 @@ describe('login view', () => {
     });
 
     it('presents a sign-in error accessibly and focuses its summary', async () => {
-        authStore.error.value = '이메일 또는 비밀번호가 올바르지 않습니다.';
-        authStore.signIn.mockRejectedValueOnce(new Error('이메일 또는 비밀번호가 올바르지 않습니다.'));
+        authStore.error.value = '아이디 또는 비밀번호가 올바르지 않습니다.';
+        authStore.signIn.mockRejectedValueOnce(new Error('아이디 또는 비밀번호가 올바르지 않습니다.'));
         const { wrapper } = await mountLogin();
-        await wrapper.get('#email').setValue('user@nexerp.test');
+        await wrapper.get('#login-id').setValue('user01');
         await wrapper.get('#password').setValue('wrong');
 
         await wrapper.get('form').trigger('submit');
         await flushPromises();
 
         const summary = wrapper.get('[role="alert"]');
-        expect(summary.text()).toContain('이메일 또는 비밀번호가 올바르지 않습니다.');
+        expect(summary.text()).toContain('아이디 또는 비밀번호가 올바르지 않습니다.');
         expect(document.activeElement).toBe(summary.element);
     });
 
     it('does not render raw sign-in exception details', async () => {
         authStore.signIn.mockRejectedValueOnce(new Error('sentinel-secret-auth-detail'));
         const { wrapper } = await mountLogin();
-        await wrapper.get('#email').setValue('user@nexerp.test');
+        await wrapper.get('#login-id').setValue('user01');
         await wrapper.get('#password').setValue('password');
 
         await wrapper.get('form').trigger('submit');
@@ -207,7 +207,7 @@ describe('login view', () => {
     it('does not render raw router exception details after authentication', async () => {
         const { wrapper, router } = await mountLogin();
         vi.spyOn(router, 'replace').mockRejectedValueOnce(new Error('sentinel-secret-router-detail'));
-        await wrapper.get('#email').setValue('user@nexerp.test');
+        await wrapper.get('#login-id').setValue('user01');
         await wrapper.get('#password').setValue('password');
 
         await wrapper.get('form').trigger('submit');
@@ -217,10 +217,13 @@ describe('login view', () => {
         expect(wrapper.text()).not.toContain('sentinel-secret-router-detail');
     });
 
-    it('uses email and current-password autocomplete without optional account links', async () => {
+    it('uses a text username control and current-password autocomplete without optional account links', async () => {
         const { wrapper } = await mountLogin();
 
-        expect(wrapper.get('#email').attributes('autocomplete')).toBe('email');
+        expect(wrapper.get('#login-id').attributes('type')).toBe('text');
+        expect(wrapper.get('#login-id').attributes('inputmode')).toBe('text');
+        expect(wrapper.get('#login-id').attributes('autocomplete')).toBe('username');
+        expect(wrapper.text()).not.toContain('@nexerp.internal');
         expect(wrapper.get('#password').attributes('autocomplete')).toBe('current-password');
         expect(wrapper.text()).not.toContain('회원가입');
         expect(wrapper.text()).not.toContain('비밀번호 찾기');

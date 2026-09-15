@@ -6,11 +6,15 @@ create extension if not exists pgtap with schema extensions;
 
 select plan(38);
 
+select public.prepare_user_provisioning('partnermember', 'nonce-partner-member-0001');
+select public.prepare_user_provisioning('partneradmin', 'nonce-partner-admin-0002');
+select public.prepare_user_provisioning('partnerinactive', 'nonce-partner-inactive-0003');
+
 insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
 values
-    ('31000000-0000-0000-0000-000000000001', 'partner-member@gmail.com', '{}'::jsonb, '{"nexerp_provisioned":true}'::jsonb),
-    ('31000000-0000-0000-0000-000000000002', 'partner-admin@gmail.com', '{}'::jsonb, '{"nexerp_provisioned":true}'::jsonb),
-    ('31000000-0000-0000-0000-000000000003', 'partner-inactive@gmail.com', '{}'::jsonb, '{"nexerp_provisioned":true}'::jsonb);
+    ('31000000-0000-0000-0000-000000000001', 'partnermember@nexerp.internal', '{"provisioning_nonce":"nonce-partner-member-0001"}'::jsonb, '{"login_id":"partnermember","nexerp_provisioned":true}'::jsonb),
+    ('31000000-0000-0000-0000-000000000002', 'partneradmin@nexerp.internal', '{"provisioning_nonce":"nonce-partner-admin-0002"}'::jsonb, '{"login_id":"partneradmin","nexerp_provisioned":true}'::jsonb),
+    ('31000000-0000-0000-0000-000000000003', 'partnerinactive@nexerp.internal', '{"provisioning_nonce":"nonce-partner-inactive-0003"}'::jsonb, '{"login_id":"partnerinactive","nexerp_provisioned":true}'::jsonb);
 
 update public.profiles
 set role = 'admin'::public.app_role
@@ -182,7 +186,7 @@ select results_eq(
       from normalized_permissions
       cross join lateral pg_catalog.unnest(allowed_menu_keys) as normalized(menu_key)
       order by menu_key$$,
-    $$values ('master.partners'::text)$$,
+    $$values ('master.partners'::text), (null::text)$$,
     'legacy-only permissions with null entries normalize to master.partners'
 );
 

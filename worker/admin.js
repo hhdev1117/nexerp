@@ -1,16 +1,16 @@
 import { getBearerToken } from './auth';
 import { jsonResponse } from './http';
+import { loginIdToInternalEmail } from './loginIdentity';
 import { createAdminSupabaseClient, createUserSupabaseClient } from './supabase';
 
-const accountColumns = 'id, email, display_name, department, role, is_active, created_at, updated_at';
+const accountColumns = 'id, login_id, display_name, department, role, is_active, created_at, updated_at';
 const allowedCreateRoles = new Set(['approver', 'user']);
 const allowedUpdateRoles = new Set(['admin', 'approver', 'user']);
-const duplicateEmailCodes = new Set(['email_exists', 'user_already_exists']);
+const duplicateLoginIdCodes = new Set(['email_exists', 'user_already_exists']);
 const missingUserCodes = new Set(['user_not_found']);
 const upstreamAuthErrorNames = new Set(['AuthRetryableFetchError', 'AuthUnknownError']);
 const upstreamAuthErrorCodes = new Set(['unexpected_failure', 'request_timeout', 'hook_timeout', 'hook_timeout_after_retry', 'over_request_rate_limit']);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const gmailEmailPattern = /^[^\s@]+@gmail\.com$/;
 
 const apiError = (status, code, message) => jsonResponse({ error: { code, message } }, { status });
 const upstreamError = () => apiError(502, 'upstream_error', '계정 관리 서비스를 사용할 수 없습니다.');
@@ -24,7 +24,7 @@ function isUpstreamAuthError(error) {
 function publicAccount(profile) {
     return {
         id: profile.id,
-        email: profile.email,
+        loginId: profile.login_id,
         displayName: profile.display_name,
         department: profile.department,
         role: profile.role,
@@ -115,10 +115,9 @@ function temporaryPassword(value) {
 }
 
 function validateCreatePayload(body) {
-    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-    if (!email || email.length > 320 || !gmailEmailPattern.test(email)) {
-        return { response: apiError(400, 'gmail_required', 'Gmail 주소만 사용할 수 있습니다.') };
-    }
+    const loginId = body.loginId;
+    const email = loginIdToInternalEmail(loginId);
+    if (!email) return { response: apiError(400, 'invalid_login_id', '로그인 ID 형식을 확인해 주세요.') };
 
     const password = temporaryPassword(body.temporaryPassword);
     if (!password) {
@@ -135,7 +134,7 @@ function validateCreatePayload(body) {
         return { response: apiError(400, 'invalid_role', '생성할 계정의 권한을 확인해 주세요.') };
     }
 
-    return { data: { email, temporaryPassword: password, displayName, department, role: body.role } };
+    return { data: { loginId, email, temporaryPassword: password, displayName, department, role: body.role } };
 }
 
 function validateUpdatePayload(accountId, body) {
@@ -218,20 +217,33 @@ async function createAccount(request, env, client, createAdminClient) {
     }
 
     const input = validated.data;
+    const provisioningNonce = crypto.randomUUID();
+    let prepared;
+    try {
+        prepared = await adminClient.rpc('prepare_user_provisioning', {
+            target_login_id: input.loginId,
+            provisioning_nonce: provisioningNonce
+        });
+    } catch {
+        return upstreamError();
+    }
+    if (prepared?.error || prepared?.data !== true) return upstreamError();
+
     let createResult;
     try {
         createResult = await adminClient.auth.admin.createUser({
             email: input.email,
             password: input.temporaryPassword,
             email_confirm: true,
-            app_metadata: { nexerp_provisioned: true }
+            app_metadata: { nexerp_provisioned: true, login_id: input.loginId },
+            user_metadata: { provisioning_nonce: provisioningNonce }
         });
     } catch {
         return upstreamError();
     }
 
     if (createResult?.error) {
-        return duplicateEmailCodes.has(createResult.error.code) ? apiError(409, 'email_exists', '이미 사용 중인 이메일입니다.') : upstreamError();
+        return duplicateLoginIdCodes.has(createResult.error.code) ? apiError(409, 'login_id_exists', '이미 사용 중인 로그인 ID입니다.') : upstreamError();
     }
 
     const userId = createResult?.data?.user?.id;

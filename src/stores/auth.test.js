@@ -3,17 +3,24 @@ import { createHmac } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { createAuthStore } from './auth';
 
-const profileFields = 'id, email, display_name, department, role, is_active, ui_preferences';
+const profileFields = 'id, login_id, display_name, department, role, is_active, ui_preferences';
 const initialUiPreferences = { preset: 'Aura', primary: 'emerald', surface: null, darkTheme: true, menuMode: 'static' };
 const approverProfile = {
     id: 'user-1',
-    email: 'approver@nexerp.test',
+    login_id: 'approver01',
     display_name: 'Kim Approver',
     department: 'Finance',
     role: 'approver',
     is_active: true,
     ui_preferences: initialUiPreferences
 };
+
+const publicUserFixture = (user) => {
+    const safeUser = { ...user };
+    delete safeUser.email;
+    return safeUser;
+};
+const publicSessionFixture = (session) => ({ ...session, user: publicUserFixture(session.user) });
 
 const deferred = () => {
     let resolve;
@@ -27,7 +34,7 @@ const jwtSession = (sessionId, issuedAt = 1789257600, userId = 'user-1') => {
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(JSON.stringify({ iss: 'https://auth.nexerp.test/auth/v1', aud: 'authenticated', sub: userId, role: 'authenticated', session_id: sessionId, iat: issuedAt, exp: issuedAt + 3600 })).toString('base64url');
     const signature = createHmac('sha256', 'test-fixture-signing-key').update(`${header}.${payload}`).digest('base64url');
-    return { access_token: `${header}.${payload}.${signature}`, user: { id: userId, email: `${userId}@nexerp.test` } };
+    return { access_token: `${header}.${payload}.${signature}`, user: { id: userId, email: 'approver01@nexerp.internal' } };
 };
 
 const mfaFactor = (id, status = 'verified') => ({ id, factor_type: 'totp', status, friendly_name: 'NEXERP Authenticator' });
@@ -91,7 +98,7 @@ const createClient = ({
                     mfaVerifyResult || {
                         data: {
                             access_token: session?.access_token || 'mfa-access-token',
-                            user: session?.user || { id: 'user-1', email: 'approver@nexerp.test' }
+                            user: session?.user || { id: 'user-1', email: 'approver01@nexerp.internal' }
                         },
                         error: null
                     }
@@ -150,7 +157,7 @@ describe('Supabase auth store', () => {
     beforeEach(() => vi.restoreAllMocks());
 
     it('initializes once with the current approver and selects only public profile fields', async () => {
-        const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
         const store = createAuthStore({ client: fixture.client, configured: true });
 
@@ -162,8 +169,8 @@ describe('Supabase auth store', () => {
         expect(fixture.client.auth.getSession).toHaveBeenCalledTimes(1);
         expect(fixture.client.auth.onAuthStateChange).toHaveBeenCalledTimes(1);
         expect(fixture.profileRequests).toEqual([{ fields: profileFields, id: 'user-1' }]);
-        expect(store.session.value).toEqual(session);
-        expect(store.user.value).toEqual(session.user);
+        expect(store.session.value).toEqual(publicSessionFixture(session));
+        expect(store.user.value).toEqual(publicUserFixture(session.user));
         expect(store.profile.value).toEqual(approverProfile);
         expect(store.role.value).toBe('approver');
         expect(store.initialized.value).toBe(true);
@@ -240,7 +247,7 @@ describe('Supabase auth store', () => {
         await vi.waitFor(() => expect(fixture.profileUpdateRequests).toHaveLength(1));
         await fixture.emit('SIGNED_IN', newSession);
 
-        expect(store.user.value).toEqual(newSession.user);
+        expect(store.user.value).toEqual(publicUserFixture(newSession.user));
         expect(store.profile.value).toEqual(newProfile);
         expect(store.loading.value).toBe(false);
 
@@ -354,7 +361,7 @@ describe('Supabase auth store', () => {
 
         secondUpdate.resolve({ data: { ui_preferences: secondPreferences }, error: null });
         await expect(secondOutcome).resolves.toEqual({ status: 'fulfilled', value: secondPreferences });
-        expect(store.session.value).toEqual(refreshedSession);
+        expect(store.session.value).toEqual(publicSessionFixture(refreshedSession));
         expect(store.profile.value.ui_preferences).toEqual(secondPreferences);
     });
 
@@ -435,7 +442,7 @@ describe('Supabase auth store', () => {
 
         await expect(saving).resolves.toBeNull();
         expect(fixture.profileUpdateRequests[0].id).toBe('old-user');
-        expect(store.user.value).toEqual(newSession.user);
+        expect(store.user.value).toEqual(publicUserFixture(newSession.user));
         expect(store.profile.value).toEqual(newProfile);
     });
 
@@ -469,7 +476,7 @@ describe('Supabase auth store', () => {
 
         expect(fixture.profileUpdateRequests).toHaveLength(1);
         expect(fixture.profileUpdateRequests[0].id).toBe('old-user');
-        expect(store.user.value).toEqual(newSession.user);
+        expect(store.user.value).toEqual(publicUserFixture(newSession.user));
         expect(store.profile.value).toEqual(newProfile);
         expect(store.error.value).toBeNull();
         expect(JSON.stringify({ profile: store.profile.value, error: store.error.value })).not.toContain('old account private provider failure');
@@ -487,7 +494,7 @@ describe('Supabase auth store', () => {
     });
 
     it('blocks a locally cached session that Supabase reports as revoked without signing out', async () => {
-        const session = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const revoked = Object.assign(new Error('session_not_found private detail'), {
             name: 'AuthSessionMissingError',
             status: 400
@@ -515,7 +522,7 @@ describe('Supabase auth store', () => {
 
     it('validates a duplicate SIGNED_IN event emitted while the stored session is loading', async () => {
         const sessionLookup = deferred();
-        const session = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const revoked = Object.assign(new Error('session_not_found private detail'), {
             name: 'AuthSessionMissingError',
             status: 400
@@ -545,7 +552,7 @@ describe('Supabase auth store', () => {
 
     it('ignores duplicate rejected-token events after stored-session verification', async () => {
         const userLookup = deferred();
-        const session = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const revoked = Object.assign(new Error('session_not_found private detail'), {
             name: 'AuthSessionMissingError',
             status: 400
@@ -625,15 +632,15 @@ describe('Supabase auth store', () => {
         expect(store.session.value).toBeNull();
         expect(fixture.profileRequests).toHaveLength(0);
 
-        await store.signIn(sessionB.user.email, 'password');
+        await store.signIn('userb01', 'password');
         await fixture.emit('TOKEN_REFRESHED', sessionA2);
         expect(store.role.value).toBe('approver');
-        expect(store.session.value).toEqual(sessionB);
+        expect(store.session.value).toEqual(publicSessionFixture(sessionB));
         expect(fixture.client.auth.signOut).not.toHaveBeenCalled();
     });
 
     it.each([null, undefined, 123, '', '   '])('never initializes an identity with an unusable access token (case %#)', async (accessToken) => {
-        const malformedSession = { access_token: accessToken, user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const malformedSession = { access_token: accessToken, user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const sessionLookup = deferred();
         const fixture = createClient({ session: malformedSession, profiles: { 'user-1': { data: approverProfile, error: null } } });
         fixture.client.auth.getSession.mockReturnValueOnce(sessionLookup.promise);
@@ -655,7 +662,7 @@ describe('Supabase auth store', () => {
     });
 
     it.each([null, undefined, 123, '', '   '])('ignores unusable-token events without replacing a valid identity (case %#)', async (accessToken) => {
-        const malformedSession = { access_token: accessToken, user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const malformedSession = { access_token: accessToken, user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const sessionB = jwtSession('session-b', 1789257600, 'user-2');
         const profileB = { ...approverProfile, id: 'user-2', role: 'admin' };
         const fixture = createClient({
@@ -676,8 +683,8 @@ describe('Supabase auth store', () => {
         await fixture.emit('SIGNED_IN', sessionB);
         for (const event of ['SIGNED_IN', 'TOKEN_REFRESHED']) {
             await fixture.emit(event, malformedSession);
-            expect(store.session.value).toEqual(sessionB);
-            expect(store.user.value).toEqual(sessionB.user);
+            expect(store.session.value).toEqual(publicSessionFixture(sessionB));
+            expect(store.user.value).toEqual(publicUserFixture(sessionB.user));
             expect(store.profile.value).toEqual(profileB);
             expect(store.role.value).toBe('admin');
         }
@@ -685,14 +692,14 @@ describe('Supabase auth store', () => {
     });
 
     it.each([null, undefined, 123, '', '   '])('rejects sign-in success responses with unusable access tokens (case %#)', async (accessToken) => {
-        const malformedSession = { access_token: accessToken, user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const malformedSession = { access_token: accessToken, user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({
             profiles: { 'user-1': { data: approverProfile, error: null } },
             signInResult: { data: { session: malformedSession, user: malformedSession.user }, error: null }
         });
         const store = createAuthStore({ client: fixture.client, configured: true });
 
-        await expect(store.signIn(malformedSession.user.email, 'password')).rejects.toThrow('로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        await expect(store.signIn('broken01', 'password')).rejects.toThrow('로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
         expect(store.session.value).toBeNull();
         expect(store.user.value).toBeNull();
         expect(store.profile.value).toBeNull();
@@ -702,7 +709,7 @@ describe('Supabase auth store', () => {
     });
 
     it.each(['session lookup', 'user verification', 'after initialization'])('blocks a rotated opaque-token family during %s until explicit sign-in', async (phase) => {
-        const sessionA = { access_token: 'opaque-a', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const sessionA = { access_token: 'opaque-a', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const sessionA2 = { ...sessionA, access_token: 'header.%.signature' };
         const sessionB = jwtSession('session-b');
         const sessionC = jwtSession('session-c');
@@ -738,17 +745,17 @@ describe('Supabase auth store', () => {
         for (const currentSession of [sessionB, sessionC]) {
             await fixture.emit('SIGNED_IN', currentSession);
             await fixture.emit('TOKEN_REFRESHED', sessionA2);
-            expect(store.session.value).toEqual(currentSession);
+            expect(store.session.value).toEqual(publicSessionFixture(currentSession));
             expect(store.role.value).toBe('approver');
         }
-        await store.signIn(sessionA2.user.email, 'password');
+        await store.signIn('usera02', 'password');
         await fixture.emit('TOKEN_REFRESHED', sessionA);
-        expect(store.session.value).toEqual(sessionA);
+        expect(store.session.value).toEqual(publicSessionFixture(sessionA));
         expect(store.role.value).toBe('approver');
     });
 
     it('keeps an explicit opaque-token login usable after stale verification rejects the same user', async () => {
-        const sessionA = { access_token: 'opaque-a', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const sessionA = { access_token: 'opaque-a', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const sessionB = { ...sessionA, access_token: 'opaque-b' };
         const sessionB2 = { ...sessionA, access_token: 'opaque-b-refreshed' };
         const userLookup = deferred();
@@ -762,22 +769,22 @@ describe('Supabase auth store', () => {
 
         const initialization = store.initialize();
         await vi.waitFor(() => expect(fixture.client.auth.getUser).toHaveBeenCalledOnce());
-        await store.signIn(sessionB.user.email, 'password');
+        await store.signIn('userb01', 'password');
         userLookup.resolve({ data: { user: null }, error: { code: 'bad_jwt' } });
         await initialization;
         await fixture.emit('TOKEN_REFRESHED', sessionB2);
 
-        expect(store.session.value).toEqual(sessionB2);
-        expect(store.user.value).toEqual(sessionB2.user);
+        expect(store.session.value).toEqual(publicSessionFixture(sessionB2));
+        expect(store.user.value).toEqual(publicUserFixture(sessionB2.user));
         expect(store.profile.value).toEqual(approverProfile);
         expect(store.role.value).toBe('approver');
         expect(store.error.value).toBeNull();
     });
 
     it('does not let a late rejected-token event overwrite a newer identity', async () => {
-        const revokedSession = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'old@nexerp.test' } };
-        const newerSession = { access_token: 'new-access-token', user: { id: 'user-2', email: 'new@nexerp.test' } };
-        const newerProfile = { ...approverProfile, id: 'user-2', email: 'new@nexerp.test', role: 'admin' };
+        const revokedSession = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
+        const newerSession = { access_token: 'new-access-token', user: { id: 'user-2', email: 'approver01@nexerp.internal' } };
+        const newerProfile = { ...approverProfile, id: 'user-2', email: 'approver01@nexerp.internal', role: 'admin' };
         const revoked = Object.assign(new Error('session_not_found private detail'), {
             name: 'AuthSessionMissingError',
             status: 400
@@ -794,8 +801,8 @@ describe('Supabase auth store', () => {
         await fixture.emit('TOKEN_REFRESHED', revokedSession);
 
         expect(fixture.client.auth.signOut).not.toHaveBeenCalled();
-        expect(store.session.value).toEqual(newerSession);
-        expect(store.user.value).toEqual(newerSession.user);
+        expect(store.session.value).toEqual(publicSessionFixture(newerSession));
+        expect(store.user.value).toEqual(publicUserFixture(newerSession.user));
         expect(store.profile.value).toEqual(newerProfile);
         expect(store.role.value).toBe('admin');
         expect(store.error.value).toBeNull();
@@ -807,7 +814,7 @@ describe('Supabase auth store', () => {
         const refreshedRevokedSession = jwtSession('00000000-0000-4000-8000-00000000000a', 1789257900);
         const sessionB = jwtSession('00000000-0000-4000-8000-00000000000b', 1789257600, 'user-2');
         const sessionC = jwtSession('00000000-0000-4000-8000-00000000000c', 1789257600, 'user-3');
-        const profileC = { ...approverProfile, id: 'user-3', email: 'c@nexerp.test', role: 'admin' };
+        const profileC = { ...approverProfile, id: 'user-3', email: 'approver01@nexerp.internal', role: 'admin' };
         const revoked = Object.assign(new Error('session_not_found private detail'), {
             name: 'AuthSessionMissingError',
             status: 400
@@ -829,24 +836,31 @@ describe('Supabase auth store', () => {
         await fixture.emit('TOKEN_REFRESHED', refreshedRevokedSession);
 
         expect(fixture.client.auth.signOut).not.toHaveBeenCalled();
-        expect(store.session.value).toEqual(sessionC);
-        expect(store.user.value).toEqual(sessionC.user);
+        expect(store.session.value).toEqual(publicSessionFixture(sessionC));
+        expect(store.user.value).toEqual(publicUserFixture(sessionC.user));
         expect(store.profile.value).toEqual(profileC);
         expect(store.role.value).toBe('admin');
         expect(store.initialized.value).toBe(true);
         expect(store.loading.value).toBe(false);
     });
 
-    it.each(['not-a-jwt', 'header.%.signature', 'header.bm90LWpzb24.signature', 'header.bnVsbA.signature', jwtSession(null).access_token, jwtSession({}).access_token, jwtSession('').access_token, jwtSession(undefined).access_token])(
-        'rejects an unidentifiable session safely without exposing credentials (case %#)',
-        async (accessToken) => {
-            const session = { access_token: accessToken, user: { id: 'user-1', email: 'approver@nexerp.test' } };
-            const fixture = createClient({
-                session,
-                profiles: { 'user-1': { data: approverProfile, error: null } },
-                getUserResult: { data: { user: null }, error: { code: 'bad_jwt', message: accessToken } }
-            });
-            const store = createAuthStore({ client: fixture.client, configured: true });
+    it.each([
+        'not-a-jwt',
+        'header.%.signature',
+        'header.bm90LWpzb24.signature',
+        'header.bnVsbA.signature',
+        jwtSession(null).access_token,
+        jwtSession({}).access_token,
+        jwtSession('').access_token,
+        jwtSession(undefined).access_token
+    ])('rejects an unidentifiable session safely without exposing credentials (case %#)', async (accessToken) => {
+        const session = { access_token: accessToken, user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            getUserResult: { data: { user: null }, error: { code: 'bad_jwt', message: accessToken } }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
 
             await expect(store.initialize()).resolves.toBeUndefined();
             await fixture.emit('TOKEN_REFRESHED', session);
@@ -874,7 +888,7 @@ describe('Supabase auth store', () => {
 
         const initialization = store.initialize();
         await vi.waitFor(() => expect(fixture.client.auth.getUser).toHaveBeenCalledOnce());
-        await store.signIn(sessionB.user.email, 'password');
+        await store.signIn('userb01', 'password');
         userLookup.resolve({ data: { user: null }, error: { code: 'session_not_found', status: 400 } });
         await initialization;
         await fixture.emit('TOKEN_REFRESHED', sessionA2);
@@ -886,7 +900,7 @@ describe('Supabase auth store', () => {
     });
 
     it('allows an explicitly signed-in token that was rejected during initialization', async () => {
-        const revokedSession = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'old@nexerp.test' } };
+        const revokedSession = { access_token: 'revoked-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const revoked = Object.assign(new Error('session_not_found private detail'), {
             name: 'AuthSessionMissingError',
             status: 400
@@ -900,19 +914,19 @@ describe('Supabase auth store', () => {
         const store = createAuthStore({ client: fixture.client, configured: true });
 
         await store.initialize();
-        await store.signIn('old@nexerp.test', 'password');
+        await store.signIn('olduser1', 'password');
         await fixture.emit('SIGNED_OUT', null);
         await fixture.emit('SIGNED_IN', revokedSession);
 
         expect(fixture.client.auth.signOut).not.toHaveBeenCalled();
-        expect(store.session.value).toEqual(revokedSession);
-        expect(store.user.value).toEqual(revokedSession.user);
+        expect(store.session.value).toEqual(publicSessionFixture(revokedSession));
+        expect(store.user.value).toEqual(publicUserFixture(revokedSession.user));
         expect(store.profile.value).toEqual(approverProfile);
         expect(store.role.value).toBe('approver');
     });
 
     it('does not revoke local credentials when stored-session verification fails transiently', async () => {
-        const session = { access_token: 'current-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'current-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const temporaryFailure = Object.assign(new Error('Failed to fetch private auth endpoint'), {
             name: 'AuthRetryableFetchError',
             status: 503
@@ -939,8 +953,8 @@ describe('Supabase auth store', () => {
         const fixture = createClient({ signInResult: { data: { session: null, user: null }, error: raw } });
         const store = createAuthStore({ client: fixture.client, configured: true });
 
-        await expect(store.signIn('user@nexerp.test', 'wrong')).rejects.toThrow('이메일 또는 비밀번호가 올바르지 않습니다.');
-        expect(store.error.value).toBe('이메일 또는 비밀번호가 올바르지 않습니다.');
+        await expect(store.signIn('user01', 'wrong')).rejects.toThrow('아이디 또는 비밀번호가 올바르지 않습니다.');
+        expect(store.error.value).toBe('아이디 또는 비밀번호가 올바르지 않습니다.');
         expect(store.error.value).not.toContain('secret');
     });
 
@@ -949,7 +963,7 @@ describe('Supabase auth store', () => {
         fixture.client.auth.signInWithPassword.mockRejectedValueOnce(new TypeError('Failed to fetch https://private.example?access_token=secret'));
         const store = createAuthStore({ client: fixture.client, configured: true });
 
-        await expect(store.signIn('user@nexerp.test', 'password')).rejects.toThrow('네트워크 연결을 확인한 후 다시 시도해 주세요.');
+        await expect(store.signIn('user01', 'password')).rejects.toThrow('네트워크 연결을 확인한 후 다시 시도해 주세요.');
         expect(store.error.value).toBe('네트워크 연결을 확인한 후 다시 시도해 주세요.');
         expect(store.error.value).not.toContain('secret');
     });
@@ -966,24 +980,87 @@ describe('Supabase auth store', () => {
         expect(fixture.client.auth.onAuthStateChange).toHaveBeenCalledOnce();
     });
 
-    it('signs in with a login ID mapped to its internal email and loads the authenticated profile', async () => {
-        const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+    it('signs in with an exact login ID and loads the authenticated profile without exposing email in profile state', async () => {
+        const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({
             profiles: { 'user-1': { data: approverProfile, error: null } },
             signInResult: { data: { session, user: session.user }, error: null }
         });
         const store = createAuthStore({ client: fixture.client, configured: true });
 
-        const result = await store.signIn('approver1', 'password');
+        const result = await store.signIn('approver01', 'password');
 
-        expect(fixture.client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'approver1@nexerp.internal', password: 'password' });
-        expect(result).toEqual({ session, user: session.user });
+        expect(fixture.client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'approver01@nexerp.internal', password: 'password' });
+        expect(result).toEqual({ session: { access_token: 'not-logged', user: { id: 'user-1' } }, user: { id: 'user-1' } });
         expect(store.profile.value).toEqual(approverProfile);
+        expect(store.profile.value.login_id).toBe('approver01');
+        expect(store.profile.value).not.toHaveProperty('email');
         expect(store.role.value).toBe('approver');
     });
 
+    it('keeps the internal auth email out of public session and user state after login', async () => {
+        const internalUser = { id: 'user-1', email: 'approver01@nexerp.internal' };
+        const internalSession = { access_token: 'internal-login-token', user: internalUser };
+        const fixture = createClient({
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            signInResult: { data: { session: internalSession, user: internalUser }, error: null }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+
+        const result = await store.signIn('approver01', 'password');
+
+        expect(result.user).not.toHaveProperty('email');
+        expect(result.session.user).not.toHaveProperty('email');
+        expect(store.user.value).not.toHaveProperty('email');
+        expect(store.session.value.user).not.toHaveProperty('email');
+    });
+
+    it('accepts a normalized internal email only when it maps to the profile login ID', async () => {
+        const internalUser = { id: 'user-1', email: '  Approver01@NEXERP.INTERNAL  ' };
+        const internalSession = { access_token: 'normalized-internal-token', user: internalUser };
+        const fixture = createClient({
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            signInResult: { data: { session: internalSession, user: internalUser }, error: null }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+
+        const result = await store.signIn('approver01', 'password');
+
+        expect(store.profile.value).toEqual(approverProfile);
+        expect(result.user).not.toHaveProperty('email');
+        expect(result.session.user).not.toHaveProperty('email');
+    });
+
+    it('fails closed when the authenticated internal email does not map to the profile login ID', async () => {
+        const internalUser = { id: 'user-1', email: 'other01@nexerp.internal' };
+        const internalSession = { access_token: 'identity-sentinel-token', user: internalUser };
+        const fixture = createClient({
+            profiles: { 'user-1': { data: { ...approverProfile, private_note: 'profile-sentinel' }, error: null } },
+            signInResult: { data: { session: internalSession, user: internalUser }, error: null }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+
+        const result = await store.signIn('approver01', 'password');
+
+        expect(store.profile.value).toBeNull();
+        expect(store.role.value).toBeNull();
+        expect(store.error.value).toBe('계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.');
+        expect(result.user).not.toHaveProperty('email');
+        expect(store.error.value).not.toMatch(/other01|identity-sentinel|profile-sentinel/);
+    });
+
+    it.each(['Admin01', ' admin01', 'admin01 ', 'abc', 'admin@example.com'])('rejects invalid login ID %s without calling Supabase', async (loginId) => {
+        const fixture = createClient();
+        const store = createAuthStore({ client: fixture.client, configured: true });
+
+        await expect(store.signIn(loginId, 'password')).rejects.toThrow('아이디 또는 비밀번호가 올바르지 않습니다.');
+
+        expect(fixture.client.auth.signInWithPassword).not.toHaveBeenCalled();
+        expect(store.error.value).toBe('아이디 또는 비밀번호가 올바르지 않습니다.');
+    });
+
     it('reauthenticates the current active user before changing the password', async () => {
-        const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({
             session,
             profiles: { 'user-1': { data: approverProfile, error: null } },
@@ -995,11 +1072,23 @@ describe('Supabase auth store', () => {
 
         await expect(store.changePassword('Current-Password-1!', 'Replacement-Password-2!')).resolves.toBeUndefined();
 
-        expect(fixture.client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'approver@nexerp.test', password: 'Current-Password-1!' });
+        expect(fixture.client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'approver01@nexerp.internal', password: 'Current-Password-1!' });
         expect(fixture.client.auth.updateUser).toHaveBeenCalledWith({ password: 'Replacement-Password-2!' });
         expect(fixture.client.auth.signInWithPassword.mock.invocationCallOrder[0]).toBeLessThan(fixture.client.auth.updateUser.mock.invocationCallOrder[0]);
         expect(store.error.value).toBeNull();
         expect(store.loading.value).toBe(false);
+    });
+
+    it('does not reauthenticate a password change with an inconsistent external session email', async () => {
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@example.com' } };
+        const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.');
+
+        expect(fixture.client.auth.signInWithPassword).not.toHaveBeenCalled();
+        expect(fixture.client.auth.updateUser).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -1010,7 +1099,7 @@ describe('Supabase auth store', () => {
         ['Current-Password-1!', 'x'.repeat(129), '새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.'],
         ['Same-Password-1!', 'Same-Password-1!', '새 비밀번호는 현재 비밀번호와 다르게 입력해 주세요.']
     ])('rejects invalid password input without calling Supabase', async (currentPassword, newPassword, message) => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
         const store = createAuthStore({ client: fixture.client, configured: true });
         await store.initialize();
@@ -1021,7 +1110,7 @@ describe('Supabase auth store', () => {
         expect(fixture.client.auth.updateUser).not.toHaveBeenCalled();
     });
 
-    it('requires a configured active identity with a session and email', async () => {
+    it('requires a configured active identity with a session email and profile login ID', async () => {
         const unconfigured = createAuthStore({ client: null, configured: false });
         await expect(unconfigured.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('Supabase 연결 정보가 설정되지 않았습니다.');
 
@@ -1029,7 +1118,7 @@ describe('Supabase auth store', () => {
         const signedOut = createAuthStore({ client: fixture.client, configured: true });
         await expect(signedOut.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.');
 
-        const inactiveSession = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const inactiveSession = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const inactiveFixture = createClient({
             session: inactiveSession,
             profiles: { 'user-1': { data: { ...approverProfile, is_active: false }, error: null } }
@@ -1037,10 +1126,19 @@ describe('Supabase auth store', () => {
         const inactive = createAuthStore({ client: inactiveFixture.client, configured: true });
         await inactive.initialize();
         await expect(inactive.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('비활성화된 계정입니다. 관리자에게 문의해 주세요.');
+
+        const missingLoginIdFixture = createClient({
+            session: inactiveSession,
+            profiles: { 'user-1': { data: { ...approverProfile, login_id: null }, error: null } }
+        });
+        const missingLoginId = createAuthStore({ client: missingLoginIdFixture.client, configured: true });
+        await missingLoginId.initialize();
+        expect(missingLoginId.profile.value).toBeNull();
+        await expect(missingLoginId.changePassword('Current-Password-1!', 'Replacement-Password-2!')).rejects.toThrow('계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.');
     });
 
     it('redacts invalid current-password details and does not update the user', async () => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const raw = new Error('Invalid login credentials password=sentinel-secret');
         raw.status = 400;
         const fixture = createClient({
@@ -1059,7 +1157,7 @@ describe('Supabase auth store', () => {
     });
 
     it('rejects a reauthenticated identity mismatch before updating the password', async () => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({
             session,
             profiles: { 'user-1': { data: approverProfile, error: null } },
@@ -1074,7 +1172,7 @@ describe('Supabase auth store', () => {
     });
 
     it('redacts password-update failures behind a stable message', async () => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({
             session,
             profiles: { 'user-1': { data: approverProfile, error: null } },
@@ -1091,13 +1189,13 @@ describe('Supabase auth store', () => {
     });
 
     it('keeps local identity when sign-out fails and clears it only after success', async () => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } }, signOutError: new Error('network failed') });
         const store = createAuthStore({ client: fixture.client, configured: true });
         await store.initialize();
 
         await expect(store.signOut()).rejects.toThrow('네트워크 연결을 확인한 후 다시 시도해 주세요.');
-        expect(store.user.value).toEqual(session.user);
+        expect(store.user.value).toEqual(publicUserFixture(session.user));
 
         fixture.client.auth.signOut.mockResolvedValueOnce({ error: null });
         await store.signOut();
@@ -1108,7 +1206,7 @@ describe('Supabase auth store', () => {
     });
 
     it('normalizes a thrown sign-out failure and preserves local identity', async () => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
         const store = createAuthStore({ client: fixture.client, configured: true });
         await store.initialize();
@@ -1116,13 +1214,13 @@ describe('Supabase auth store', () => {
 
         await expect(store.signOut()).rejects.toThrow('네트워크 연결을 확인한 후 다시 시도해 주세요.');
 
-        expect(store.user.value).toEqual(session.user);
+        expect(store.user.value).toEqual(publicUserFixture(session.user));
         expect(store.profile.value).toEqual(approverProfile);
     });
 
     it('does not clear local identity from an early sign-out event before the request succeeds', async () => {
         const signOutRequest = deferred();
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
         const store = createAuthStore({ client: fixture.client, configured: true });
         await store.initialize();
@@ -1130,7 +1228,7 @@ describe('Supabase auth store', () => {
 
         const signingOut = store.signOut();
         await fixture.emit('SIGNED_OUT', null);
-        expect(store.user.value).toEqual(session.user);
+        expect(store.user.value).toEqual(publicUserFixture(session.user));
         expect(store.profile.value).toEqual(approverProfile);
 
         signOutRequest.resolve({ error: null });
@@ -1140,7 +1238,7 @@ describe('Supabase auth store', () => {
     });
 
     it('grants listed roles only to active profiles and clears state on sign-out events', async () => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
         const store = createAuthStore({ client: fixture.client, configured: true });
         await store.initialize();
@@ -1158,8 +1256,8 @@ describe('Supabase auth store', () => {
     });
 
     it('denies inactive profiles with a stable authorization error', async () => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'disabled@nexerp.test' } };
-        const inactive = { ...approverProfile, email: 'disabled@nexerp.test', is_active: false };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
+        const inactive = { ...approverProfile, email: 'approver01@nexerp.internal', is_active: false };
         const fixture = createClient({ session, profiles: { 'user-1': { data: inactive, error: null } } });
         const store = createAuthStore({ client: fixture.client, configured: true });
 
@@ -1186,9 +1284,9 @@ describe('Supabase auth store', () => {
 
     it('lets a newer auth event win while initial profile loading is pending', async () => {
         const oldProfile = deferred();
-        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'old@nexerp.test' } };
-        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'new@nexerp.test' } };
-        const newProfile = { ...approverProfile, id: 'new-user', email: 'new@nexerp.test', role: 'admin' };
+        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'approver01@nexerp.internal' } };
+        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'approver01@nexerp.internal' } };
+        const newProfile = { ...approverProfile, id: 'new-user', email: 'approver01@nexerp.internal', role: 'admin' };
         const fixture = createClient({
             session: oldSession,
             profiles: {
@@ -1204,16 +1302,16 @@ describe('Supabase auth store', () => {
         oldProfile.resolve({ data: { ...approverProfile, id: 'old-user' }, error: null });
         await initialization;
 
-        expect(store.user.value).toEqual(newSession.user);
+        expect(store.user.value).toEqual(publicUserFixture(newSession.user));
         expect(store.profile.value).toEqual(newProfile);
         expect(store.role.value).toBe('admin');
     });
 
     it('does not let a stale getSession result overwrite an auth event', async () => {
         const sessionLookup = deferred();
-        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'old@nexerp.test' } };
-        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'new@nexerp.test' } };
-        const newProfile = { ...approverProfile, id: 'new-user', email: 'new@nexerp.test', role: 'admin' };
+        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'approver01@nexerp.internal' } };
+        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'approver01@nexerp.internal' } };
+        const newProfile = { ...approverProfile, id: 'new-user', email: 'approver01@nexerp.internal', role: 'admin' };
         const fixture = createClient({
             profiles: {
                 'old-user': { data: { ...approverProfile, id: 'old-user' }, error: null },
@@ -1228,7 +1326,7 @@ describe('Supabase auth store', () => {
         sessionLookup.resolve({ data: { session: oldSession }, error: null });
         await initialization;
 
-        expect(store.user.value).toEqual(newSession.user);
+        expect(store.user.value).toEqual(publicUserFixture(newSession.user));
         expect(store.profile.value).toEqual(newProfile);
         expect(store.role.value).toBe('admin');
     });
@@ -1236,9 +1334,9 @@ describe('Supabase auth store', () => {
     it('waits for a newer auth profile when the initial profile resolves first', async () => {
         const oldProfile = deferred();
         const newProfileRequest = deferred();
-        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'old@nexerp.test' } };
-        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'new@nexerp.test' } };
-        const newProfile = { ...approverProfile, id: 'new-user', email: 'new@nexerp.test', role: 'admin' };
+        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'approver01@nexerp.internal' } };
+        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'approver01@nexerp.internal' } };
+        const newProfile = { ...approverProfile, id: 'new-user', email: 'approver01@nexerp.internal', role: 'admin' };
         const fixture = createClient({
             session: oldSession,
             profiles: {
@@ -1261,16 +1359,16 @@ describe('Supabase auth store', () => {
         newProfileRequest.resolve({ data: newProfile, error: null });
         await authUpdate;
         await initialization;
-        expect(store.user.value).toEqual(newSession.user);
+        expect(store.user.value).toEqual(publicUserFixture(newSession.user));
         expect(store.profile.value).toEqual(newProfile);
     });
 
     it('waits for a newer auth profile before successful sign-in resolves', async () => {
         const oldProfile = deferred();
         const newProfileRequest = deferred();
-        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'old@nexerp.test' } };
-        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'new@nexerp.test' } };
-        const newProfile = { ...approverProfile, id: 'new-user', email: 'new@nexerp.test', role: 'user' };
+        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'approver01@nexerp.internal' } };
+        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'approver01@nexerp.internal' } };
+        const newProfile = { ...approverProfile, id: 'new-user', email: 'approver01@nexerp.internal', role: 'user' };
         const fixture = createClient({
             profiles: {
                 'old-user': oldProfile.promise,
@@ -1282,7 +1380,7 @@ describe('Supabase auth store', () => {
         await store.initialize();
         let signedIn = false;
 
-        const signingIn = store.signIn('old@nexerp.test', 'password').then(() => {
+        const signingIn = store.signIn('olduser1', 'password').then(() => {
             signedIn = true;
         });
         await Promise.resolve();
@@ -1294,16 +1392,16 @@ describe('Supabase auth store', () => {
         newProfileRequest.resolve({ data: newProfile, error: null });
         await authUpdate;
         await signingIn;
-        expect(store.user.value).toEqual(newSession.user);
+        expect(store.user.value).toEqual(publicUserFixture(newSession.user));
         expect(store.profile.value).toEqual(newProfile);
     });
 
     it('waits for the latest identity update when the observed update is superseded', async () => {
         const oldProfileRequest = deferred();
         const newProfileRequest = deferred();
-        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'old@nexerp.test' } };
-        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'new@nexerp.test' } };
-        const newProfile = { ...approverProfile, id: 'new-user', email: 'new@nexerp.test', role: 'admin' };
+        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'approver01@nexerp.internal' } };
+        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'approver01@nexerp.internal' } };
+        const newProfile = { ...approverProfile, id: 'new-user', email: 'approver01@nexerp.internal', role: 'admin' };
         const fixture = createClient({
             profiles: {
                 'old-user': oldProfileRequest.promise,
@@ -1328,13 +1426,13 @@ describe('Supabase auth store', () => {
         newProfileRequest.resolve({ data: newProfile, error: null });
         await Promise.all([oldUpdate, newUpdate, waiting]);
 
-        expect(store.user.value).toEqual(newSession.user);
+        expect(store.user.value).toEqual(publicUserFixture(newSession.user));
         expect(store.profile.value).toEqual(newProfile);
         expect(store.loading.value).toBe(false);
     });
 
     it('retries the current profile after a temporary failure and normalizes the error', async () => {
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const profiles = {
             'user-1': { data: null, error: new TypeError('Failed to fetch https://private.example?access_token=secret') }
         };
@@ -1363,11 +1461,11 @@ describe('Supabase auth store', () => {
     });
 
     it('does not let a stale profile retry overwrite a newer signed-in identity', async () => {
-        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'old@nexerp.test' } };
-        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'new@nexerp.test' } };
+        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'approver01@nexerp.internal' } };
+        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'approver01@nexerp.internal' } };
         const oldProfileRetry = deferred();
         const oldProfiles = { data: null, error: new Error('temporary profile failure') };
-        const newProfile = { ...approverProfile, id: 'new-user', email: 'new@nexerp.test', role: 'admin' };
+        const newProfile = { ...approverProfile, id: 'new-user', email: 'approver01@nexerp.internal', role: 'admin' };
         const profiles = {
             'old-user': oldProfiles,
             'new-user': { data: newProfile, error: null }
@@ -1382,14 +1480,14 @@ describe('Supabase auth store', () => {
         oldProfileRetry.resolve({ data: { ...approverProfile, id: 'old-user' }, error: null });
         await Promise.all([retrying, newerUpdate]);
 
-        expect(store.user.value).toEqual(newSession.user);
+        expect(store.user.value).toEqual(publicUserFixture(newSession.user));
         expect(store.profile.value).toEqual(newProfile);
         expect(store.role.value).toBe('admin');
     });
 
     it('reconciles a buffered signed-out event after explicit sign-out fails', async () => {
         const signOutRequest = deferred();
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
         const store = createAuthStore({ client: fixture.client, configured: true });
         await store.initialize();
@@ -1409,7 +1507,7 @@ describe('Supabase auth store', () => {
     it('keeps the sign-out event guard active until overlapping operations settle', async () => {
         const firstRequest = deferred();
         const secondRequest = deferred();
-        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver@nexerp.test' } };
+        const session = { access_token: 'user-1-access-token', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
         const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
         const store = createAuthStore({ client: fixture.client, configured: true });
         await store.initialize();
@@ -1422,19 +1520,19 @@ describe('Supabase auth store', () => {
         await expect(firstSignOut).rejects.toThrow('네트워크 연결을 확인한 후 다시 시도해 주세요.');
         await fixture.emit('SIGNED_OUT', null);
 
-        expect(store.user.value).toEqual(session.user);
+        expect(store.user.value).toEqual(publicUserFixture(session.user));
         secondRequest.resolve({ error: new Error('network failed') });
         await expect(secondSignOut).rejects.toThrow('네트워크 연결을 확인한 후 다시 시도해 주세요.');
         expect(fixture.client.auth.getSession).toHaveBeenCalledTimes(2);
-        expect(store.user.value).toEqual(session.user);
+        expect(store.user.value).toEqual(publicUserFixture(session.user));
         expect(store.profile.value).toEqual(approverProfile);
     });
 
     it('ignores a stale profile response after a newer auth session arrives', async () => {
         const oldProfile = deferred();
-        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'old@nexerp.test' } };
-        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'new@nexerp.test' } };
-        const newProfile = { ...approverProfile, id: 'new-user', email: 'new@nexerp.test', role: 'admin' };
+        const oldSession = { access_token: 'old-user-access-token', user: { id: 'old-user', email: 'approver01@nexerp.internal' } };
+        const newSession = { access_token: 'new-user-access-token', user: { id: 'new-user', email: 'approver01@nexerp.internal' } };
+        const newProfile = { ...approverProfile, id: 'new-user', email: 'approver01@nexerp.internal', role: 'admin' };
         const fixture = createClient({
             session: null,
             profiles: {
@@ -1451,8 +1549,8 @@ describe('Supabase auth store', () => {
         oldProfile.resolve({ data: { ...approverProfile, id: 'old-user' }, error: null });
         await oldUpdate;
 
-        expect(store.session.value).toEqual(newSession);
-        expect(store.user.value).toEqual(newSession.user);
+        expect(store.session.value).toEqual(publicSessionFixture(newSession));
+        expect(store.user.value).toEqual(publicUserFixture(newSession.user));
         expect(store.profile.value).toEqual(newProfile);
         expect(store.role.value).toBe('admin');
     });
@@ -1528,7 +1626,7 @@ describe('Supabase auth store', () => {
 
         expect(fixture.client.auth.mfa.challenge).toHaveBeenCalledTimes(2);
         expect(fixture.client.auth.mfa.verify).toHaveBeenCalledWith({ factorId: 'totp-factor-1', challengeId: 'challenge-1', code: '123456' });
-        expect(store.session.value).toEqual(upgradedSession);
+        expect(store.session.value).toEqual(publicSessionFixture(upgradedSession));
     });
 
     it('cleans an unverified enrollment on cancellation without retaining secret material', async () => {
@@ -1580,7 +1678,7 @@ describe('Supabase auth store', () => {
 
         expect(fixture.client.auth.mfa.unenroll).toHaveBeenCalledWith({ factorId: 'totp-factor-2' });
         expect(fixture.client.auth.refreshSession).toHaveBeenCalledOnce();
-        expect(store.session.value).toEqual(refreshedSession);
+        expect(store.session.value).toEqual(publicSessionFixture(refreshedSession));
     });
 
     it('does not let a stale MFA lookup replace a newer identity state', async () => {
@@ -1603,7 +1701,7 @@ describe('Supabase auth store', () => {
         staleFactors.resolve({ data: { all: [mfaFactor('old-factor')], totp: [mfaFactor('old-factor')] }, error: null });
         await checkingMfa;
 
-        expect(store.user.value).toEqual(newSession.user);
+        expect(store.user.value).toEqual(publicUserFixture(newSession.user));
         expect(store.mfaStatus.value).toBe('unknown');
         expect(store.mfaFactors.value).toEqual([]);
     });

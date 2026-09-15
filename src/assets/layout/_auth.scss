@@ -142,4 +142,14 @@
         border-radius: 0;
         box-shadow: none;
     }
+
+    .auth-panel .p-inputtext,
+    .auth-panel .p-password,
+    .auth-panel .p-button {
+        min-height: 2.75rem;
+    }
+
+    .auth-panel .p-button {
+        min-width: 2.75rem;
+    }
 }

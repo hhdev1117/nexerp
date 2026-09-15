@@ -4,14 +4,26 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { flushPromises, mount } from '@vue/test-utils';
 import PrimeVue from 'primevue/config';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { erpMenu, flattenMenuRoutes } from '@/data/erp';
 import { accountCreatePayload, accountUpdatePayload, buildPermissionGroups, createAccountDraft, createEditAccountDraft, permissionKeysEqual, validateAccountDraft, validatePasswordResetDraft } from './adminModels';
 import SecuritySettings from './SecuritySettings.vue';
+import AccountManagement from './AccountManagement.vue';
 
 const confirmRequire = vi.hoisted(() => vi.fn());
+const toastAdd = vi.hoisted(() => vi.fn());
+const adminApi = vi.hoisted(() => ({
+    listAccounts: vi.fn(),
+    createAccount: vi.fn(),
+    updateAccount: vi.fn(),
+    resetAccountPassword: vi.fn(),
+    resetAccountMfa: vi.fn(),
+    updateAccountStatus: vi.fn()
+}));
 const securityAuthStore = {
+    user: ref({ id: 'admin-1' }),
     loading: ref(false),
     mfaStatus: ref('ready'),
     mfaSatisfied: ref(true),
@@ -25,7 +37,9 @@ const securityAuthStore = {
 };
 
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => securityAuthStore }));
+vi.mock('@/services/adminApi', () => ({ useAdminApi: () => adminApi }));
 vi.mock('primevue/useconfirm', () => ({ useConfirm: () => ({ require: confirmRequire }) }));
+vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: toastAdd }) }));
 
 const source = (file) => {
     const path = fileURLToPath(new URL(file, import.meta.url));
@@ -38,17 +52,102 @@ const securitySource = source('./SecuritySettings.vue');
 
 const existingAccount = {
     id: 'admin-1',
-    email: 'admin@nexerp.test',
+    loginId: 'admin01',
     displayName: '시스템 관리자',
     department: '시스템 관리',
     role: 'admin',
     isActive: true
 };
 
+const mountedAccounts = [];
+const mountAccounts = async (rows = [existingAccount]) => {
+    adminApi.listAccounts.mockResolvedValueOnce(rows);
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] });
+    await router.push('/');
+    await router.isReady();
+    const wrapper = mount(AccountManagement, { attachTo: document.body, global: { plugins: [PrimeVue, router], stubs: { ConfirmDialog: true } } });
+    mountedAccounts.push(wrapper);
+    await flushPromises();
+    return wrapper;
+};
+
+const setInput = async (selector, value) => {
+    const input = document.querySelector(selector);
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+};
+
+const fillCreateForm = async () => {
+    await setInput('#account-loginId', 'staff01');
+    await setInput('#account-temporaryPassword', 'Temporary-9!');
+    await setInput('#account-displayName', '김서준');
+    await setInput('#account-department', '영업팀');
+};
+
+beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
+    adminApi.listAccounts.mockReset();
+    adminApi.createAccount.mockReset();
+    toastAdd.mockReset();
+});
+
+afterEach(() => {
+    while (mountedAccounts.length) mountedAccounts.pop().unmount();
+    document.body.innerHTML = '';
+});
+
 describe('administrator account screen', () => {
+    it('renders account login IDs and filters the mounted table by login ID', async () => {
+        const wrapper = await mountAccounts([existingAccount, { ...existingAccount, id: 'staff-1', loginId: 'staff01', displayName: '김서준' }]);
+
+        expect(wrapper.text()).toContain('staff01');
+        await wrapper.get('[aria-label="계정 검색"]').setValue('staff01');
+        await flushPromises();
+
+        expect(wrapper.text()).toContain('staff01');
+        expect(wrapper.text()).not.toContain('admin01');
+    });
+
+    it('submits loginId through the mounted create flow and renders the created account', async () => {
+        adminApi.createAccount.mockResolvedValueOnce({ ...existingAccount, id: 'staff-1', loginId: 'staff01', displayName: '김서준', department: '영업팀', role: 'user' });
+        const wrapper = await mountAccounts([]);
+        await wrapper.findAll('button').find((button) => button.text().includes('새 계정')).trigger('click');
+        await flushPromises();
+        await fillCreateForm();
+
+        document.querySelector('#account-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        await flushPromises();
+
+        expect(adminApi.createAccount).toHaveBeenCalledWith({ loginId: 'staff01', temporaryPassword: 'Temporary-9!', displayName: '김서준', department: '영업팀', role: 'user' });
+        expect(wrapper.text()).toContain('staff01');
+    });
+
+    it('shows a normalized duplicate-login-ID message from the mounted create flow', async () => {
+        adminApi.createAccount.mockRejectedValueOnce(Object.assign(new Error('provider detail'), { code: 'login_id_exists' }));
+        const wrapper = await mountAccounts([]);
+        await wrapper.findAll('button').find((button) => button.text().includes('새 계정')).trigger('click');
+        await flushPromises();
+        await fillCreateForm();
+
+        document.querySelector('#account-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        await flushPromises();
+
+        expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: '계정 등록 실패', detail: '이미 사용 중인 아이디입니다.' }));
+    });
+
+    it('keeps login and account interactive targets at least 44px on mobile', () => {
+        const authStylesSource = source('../../assets/layout/_auth.scss');
+        expect(authStylesSource).toMatch(/@media \(max-width: 575px\)[\s\S]*\.auth-panel \.p-inputtext,[\s\S]*\.auth-panel \.p-button[\s\S]*min-height:\s*2\.75rem/);
+        expect(authStylesSource).toMatch(/@media \(max-width: 575px\)[\s\S]*\.auth-panel \.p-button\s*\{[\s\S]*min-width:\s*2\.75rem/);
+        expect(accountsSource).toMatch(/@media \(max-width: 640px\)[\s\S]*:deep\(\.p-inputtext\),[\s\S]*:deep\(\.p-select\),[\s\S]*:deep\(\.p-button\)[\s\S]*min-height:\s*2\.75rem/);
+        expect(accountsSource).toMatch(/@media \(max-width: 640px\)[\s\S]*:deep\(\.p-button\)\s*\{[\s\S]*min-width:\s*2\.75rem/);
+        expect(accountsSource).toMatch(/@media \(max-width: 640px\)[\s\S]*:deep\(\.p-toggleswitch\)\s*\{[\s\S]*min-width:\s*2\.75rem;[\s\S]*min-height:\s*2\.75rem/);
+    });
+
     it('validates every required create field before submitting', () => {
         expect(validateAccountDraft(createAccountDraft(), 'create')).toEqual({
-            email: 'Gmail 주소만 사용할 수 있습니다.',
+            loginId: '아이디는 영문 소문자와 숫자 4~20자로 입력해 주세요.',
             temporaryPassword: '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.',
             displayName: '이름을 입력해 주세요.',
             department: '부서를 입력해 주세요.'
@@ -57,7 +156,7 @@ describe('administrator account screen', () => {
         expect(
             validateAccountDraft(
                 {
-                    email: ' employee@gmail.com ',
+                    loginId: 'employee01',
                     temporaryPassword: 'Temporary-9!',
                     displayName: ' 김서준 ',
                     department: ' 영업팀 ',
@@ -80,7 +179,7 @@ describe('administrator account screen', () => {
     it('normalizes a create payload without retaining form-only state', () => {
         expect(
             accountCreatePayload({
-                email: ' Employee@GMAIL.com ',
+                loginId: 'employee01',
                 temporaryPassword: 'Temporary-9!',
                 displayName: ' 김서준 ',
                 department: ' 영업팀 ',
@@ -89,7 +188,7 @@ describe('administrator account screen', () => {
                 submitted: true
             })
         ).toEqual({
-            email: 'employee@gmail.com',
+            loginId: 'employee01',
             temporaryPassword: 'Temporary-9!',
             displayName: '김서준',
             department: '영업팀',
@@ -97,11 +196,18 @@ describe('administrator account screen', () => {
         });
     });
 
-    it('accepts only normalized Gmail addresses for account provisioning', () => {
-        expect(validateAccountDraft({ email: ' Employee@GMAIL.com ', temporaryPassword: 'Temporary-9!', displayName: '김서준', department: '영업팀' }, 'create')).toEqual({});
-        for (const email of ['employee@gmail.com.evil', 'employee@sub.gmail.com', '@gmail.com', 'employee@nexerp.test']) {
-            expect(validateAccountDraft({ email, temporaryPassword: 'Temporary-9!', displayName: '김서준', department: '영업팀' }, 'create')).toEqual({ email: 'Gmail 주소만 사용할 수 있습니다.' });
+    it('accepts only exact lowercase login IDs for account provisioning', () => {
+        expect(validateAccountDraft({ loginId: 'admin01', temporaryPassword: 'Temporary-9!', displayName: '김서준', department: '영업팀' }, 'create')).toEqual({});
+        for (const loginId of ['Admin01', 'abc', 'admin_01', 'admin 01']) {
+            expect(validateAccountDraft({ loginId, temporaryPassword: 'Temporary-9!', displayName: '김서준', department: '영업팀' }, 'create')).toEqual({ loginId: '아이디는 영문 소문자와 숫자 4~20자로 입력해 주세요.' });
         }
+    });
+
+    it('uses login IDs in account search, list display, and duplicate errors without exposing internal emails', () => {
+        expect(accountsSource).toContain('[account.loginId, account.displayName, account.department]');
+        expect(accountsSource).toContain('{{ slotProps.data.loginId }}');
+        expect(accountsSource).toContain('이미 사용 중인 아이디입니다.');
+        expect(accountsSource).not.toContain('@nexerp.internal');
     });
 
     it('validates reset passwords by total length, non-whitespace content, and confirmation', () => {

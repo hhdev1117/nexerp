@@ -8,7 +8,7 @@ const ERROR_MESSAGES = Object.freeze({
     admin_required: '관리자 권한이 필요합니다.',
     mfa_required: '다중 인증을 완료한 후 다시 시도해 주세요.',
     invalid_request: '요청 내용을 확인해 주세요.',
-    gmail_required: 'Gmail 주소만 사용할 수 있습니다.',
+    invalid_login_id: '로그인 ID 형식을 확인해 주세요.',
     invalid_temporary_password: '임시 비밀번호는 8자 이상이어야 합니다.',
     invalid_display_name: '이름을 입력해 주세요.',
     invalid_department: '부서를 입력해 주세요.',
@@ -16,7 +16,7 @@ const ERROR_MESSAGES = Object.freeze({
     invalid_activation: '계정 활성화 상태를 확인해 주세요.',
     invalid_account_id: '올바른 계정 ID가 아닙니다.',
     invalid_range: '조회 기간을 확인해 주세요.',
-    email_exists: '이미 사용 중인 이메일입니다.',
+    login_id_exists: '이미 사용 중인 로그인 ID입니다.',
     self_demotion_forbidden: '현재 관리자 계정의 권한은 변경할 수 없습니다.',
     self_deactivation_forbidden: '현재 관리자 계정은 비활성화할 수 없습니다.',
     account_not_found: '계정을 찾을 수 없습니다.',
@@ -98,7 +98,14 @@ export function createAdminApi({ fetchImpl = fetch, getAccessToken = defaultAcce
             return payload;
         },
         async createAccount(input) {
-            const payload = await request('/api/admin/accounts', { method: 'POST', body: input });
+            const body = {
+                loginId: input?.loginId,
+                temporaryPassword: input?.temporaryPassword,
+                displayName: input?.displayName,
+                department: input?.department,
+                role: input?.role
+            };
+            const payload = await request('/api/admin/accounts', { method: 'POST', body });
             if (!payload?.account) throw new AdminApiError('invalid_response', DEFAULT_FAILURE_MESSAGE);
             return payload.account;
         },

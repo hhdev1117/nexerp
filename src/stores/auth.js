@@ -2,9 +2,9 @@ import { computed, ref } from 'vue';
 import { normalizeUiPreferences } from '@/domain/uiPreferences';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { readSupabaseConfig } from '@/lib/supabase/config';
-import { loginIdToInternalEmail } from '@/lib/auth/loginIdentity';
+import { internalEmailToLoginId, loginIdToInternalEmail } from '@/lib/auth/loginIdentity';
 
-const PROFILE_FIELDS = 'id, email, display_name, department, role, is_active, ui_preferences';
+const PROFILE_FIELDS = 'id, login_id, display_name, department, role, is_active, ui_preferences';
 const NOT_CONFIGURED_MESSAGE = 'Supabase 연결 정보가 설정되지 않았습니다.';
 const INACTIVE_PROFILE_MESSAGE = '비활성화된 계정입니다. 관리자에게 문의해 주세요.';
 const MISSING_PROFILE_MESSAGE = '계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.';
@@ -68,6 +68,20 @@ const rejection = (message) => {
     return authError;
 };
 
+const publicUser = (authUser) => {
+    if (!authUser || !internalEmailToLoginId(authUser.email)) return authUser || null;
+    const safeUser = { ...authUser };
+    delete safeUser.email;
+    return safeUser;
+};
+
+const publicSession = (authSession) => (authSession ? { ...authSession, user: publicUser(authSession.user) } : null);
+
+const trustedInternalEmail = (authUser) => {
+    const loginId = internalEmailToLoginId(authUser?.email);
+    return loginId ? loginIdToInternalEmail(loginId) : null;
+};
+
 export function createAuthStore({ client, configured, locks = typeof window === 'undefined' ? null : window.navigator?.locks }) {
     const session = ref(null);
     const user = ref(null);
@@ -89,6 +103,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
     let identityVersion = 0;
     let accountEpoch = 0;
     let activeAccountId = null;
+    let reauthenticationEmail = null;
     let pendingOperations = 0;
     const mfaLoadingTickets = new Set();
     let latestAuthUpdate = Promise.resolve();
@@ -145,6 +160,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         latestAuthUpdate = Promise.resolve();
         session.value = null;
         user.value = null;
+        reauthenticationEmail = null;
         profile.value = null;
         profileLoadFailed.value = false;
         clearMfaState();
@@ -160,8 +176,11 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         const identityChanged = previousUser?.id !== nextUser?.id || authSessionKey(previousSession) !== authSessionKey(nextSession);
         if (identityChanged) clearMfaState();
         const keepRecoverableFailure = Boolean(nextUser && user.value?.id === nextUser.id && profileLoadFailed.value);
-        session.value = nextSession || null;
-        user.value = nextUser;
+        const nextInternalEmail = trustedInternalEmail(nextUser);
+        if (nextInternalEmail) reauthenticationEmail = nextInternalEmail;
+        else if (!nextUser || previousUser?.id !== nextUser.id || nextUser.email !== undefined) reauthenticationEmail = null;
+        session.value = publicSession(nextSession);
+        user.value = publicUser(nextUser);
         profile.value = null;
         if (!keepRecoverableFailure) {
             profileLoadFailed.value = false;
@@ -185,6 +204,11 @@ export function createAuthStore({ client, configured, locks = typeof window === 
             return;
         }
         if (!result.data) {
+            profileLoadFailed.value = false;
+            error.value = MISSING_PROFILE_MESSAGE;
+            return;
+        }
+        if (!loginIdToInternalEmail(result.data.login_id) || internalEmailToLoginId(nextUser.email) !== result.data.login_id) {
             profileLoadFailed.value = false;
             error.value = MISSING_PROFILE_MESSAGE;
             return;
@@ -728,11 +752,12 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         };
 
         if (!isConfigured) fail(NOT_CONFIGURED_MESSAGE);
-        if (!session.value || !user.value?.id || !user.value?.email?.trim() || session.value.user?.id !== user.value.id) {
+        if (!session.value || !user.value?.id || session.value.user?.id !== user.value.id) {
             fail('로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.');
         }
         if (!profile.value) fail(MISSING_PROFILE_MESSAGE);
         if (!profile.value.is_active) fail(INACTIVE_PROFILE_MESSAGE);
+        if (!reauthenticationEmail) fail('로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.');
         if (typeof currentPassword !== 'string' || !currentPassword.trim()) fail('현재 비밀번호를 입력해 주세요.');
         if (typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 128 || !newPassword.trim()) {
             fail('새 비밀번호는 8자 이상 128자 이하로 입력해 주세요.');
@@ -740,7 +765,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         if (currentPassword === newPassword) fail('새 비밀번호는 현재 비밀번호와 다르게 입력해 주세요.');
 
         const currentUserId = user.value.id;
-        const email = user.value.email.trim();
+        const email = reauthenticationEmail;
         beginOperation();
         error.value = null;
         try {
@@ -876,7 +901,8 @@ export function createAuthStore({ client, configured, locks = typeof window === 
             throw rejection(message);
         }
 
-        trackIdentity(session.value);
+        const retrySession = reauthenticationEmail ? { ...session.value, user: { ...session.value.user, email: reauthenticationEmail } } : session.value;
+        trackIdentity(retrySession);
         await awaitIdentitySettled();
 
         if (!profile.value) throw rejection(error.value || MISSING_PROFILE_MESSAGE);

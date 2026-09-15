@@ -1,5 +1,6 @@
-const GMAIL_PATTERN = /^[^\s@]+@gmail\.com$/;
-const GMAIL_ERROR = 'Gmail 주소만 사용할 수 있습니다.';
+import { isValidLoginId } from '@/lib/auth/loginIdentity';
+
+const LOGIN_ID_ERROR = '아이디는 영문 소문자와 숫자 4~20자로 입력해 주세요.';
 const FIXED_ADMIN_KEYS = new Set(['settings.accounts', 'settings.menu-permissions', 'settings.infrastructure-usage', 'settings.enterprise-access', 'settings.hr-modules']);
 const TEMPORARY_PASSWORD_ERROR = '임시 비밀번호는 8자 이상 128자 이하로 입력해 주세요.';
 
@@ -9,7 +10,7 @@ export const accountRoleOptions = Object.freeze([Object.freeze({ label: '관리�
 
 export function createAccountDraft() {
     return {
-        email: '',
+        loginId: '',
         temporaryPassword: '',
         displayName: '',
         department: '',
@@ -30,8 +31,7 @@ export function createEditAccountDraft(account) {
 export function validateAccountDraft(draft, mode) {
     const errors = {};
     if (mode === 'create') {
-        const email = typeof draft?.email === 'string' ? draft.email.trim().toLowerCase() : '';
-        if (!GMAIL_PATTERN.test(email)) errors.email = GMAIL_ERROR;
+        if (!isValidLoginId(draft?.loginId)) errors.loginId = LOGIN_ID_ERROR;
         if (!isValidTemporaryPassword(draft?.temporaryPassword)) errors.temporaryPassword = TEMPORARY_PASSWORD_ERROR;
     }
     if (!draft?.displayName?.trim()) errors.displayName = '이름을 입력해 주세요.';
@@ -49,7 +49,7 @@ export function validatePasswordResetDraft(draft) {
 
 export function accountCreatePayload(draft) {
     return {
-        email: draft.email.trim().toLowerCase(),
+        loginId: draft.loginId,
         temporaryPassword: draft.temporaryPassword,
         displayName: draft.displayName.trim(),
         department: draft.department.trim(),

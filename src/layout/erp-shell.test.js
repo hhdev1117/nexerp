@@ -21,7 +21,7 @@ const themeHarness = vi.hoisted(() => {
     return { builder };
 });
 const authStore = {
-    user: ref({ id: 'user-1', email: 'user@nexerp.test' }),
+    user: ref({ id: 'user-1' }),
     profile: ref({ display_name: '박지민', department: '재무팀', role: 'user', is_active: true }),
     hasRole: vi.fn((roles) => roles.includes(authStore.profile.value?.role)),
     changePassword: vi.fn(),
@@ -92,8 +92,8 @@ beforeEach(() => {
         configurable: true,
         value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
     });
-    authStore.user.value = { id: 'user-1', email: 'user@nexerp.test' };
-    authStore.profile.value = { display_name: '박지민', department: '재무팀', role: 'user', is_active: true };
+    authStore.user.value = { id: 'user-1' };
+    authStore.profile.value = { login_id: 'user01', display_name: '박지민', department: '재무팀', role: 'user', is_active: true };
     authStore.hasRole.mockClear();
     authStore.changePassword.mockReset().mockResolvedValue(undefined);
     authStore.saveUiPreferences.mockReset().mockResolvedValue(undefined);
@@ -312,13 +312,13 @@ describe('ERP application shell', () => {
         expect(wrapper.get('.erp-user-copy small').text()).toBe('재무팀');
         expect(wrapper.get('[aria-controls="profile-actions-menu"]').attributes('aria-label')).toContain('박지민');
 
-        authStore.profile.value = { display_name: '  ', department: '', role: 'approver', is_active: true };
+        authStore.profile.value = { login_id: 'user01', display_name: '  ', department: '', role: 'approver', is_active: true };
         await nextTick();
 
         expect(wrapper.get('.erp-user-avatar').text()).toBe('U');
-        expect(wrapper.get('.erp-user-copy strong').text()).toBe('user@nexerp.test');
+        expect(wrapper.get('.erp-user-copy strong').text()).toBe('user01');
         expect(wrapper.get('.erp-user-copy small').text()).toBe('결재자');
-        expect(wrapper.get('[aria-controls="profile-actions-menu"]').attributes('aria-label')).toContain('user@nexerp.test');
+        expect(wrapper.get('[aria-controls="profile-actions-menu"]').attributes('aria-label')).toContain('user01');
     });
 
     it('keeps long profile text constrained while exposing each full value', async () => {
@@ -338,8 +338,8 @@ describe('ERP application shell', () => {
         expect(wrapper.get('[aria-controls="profile-actions-menu"]').attributes('aria-label')).toContain(`${longName} · ${longDepartment}`);
     });
 
-    it('falls back to generic Korean identity labels when profile and email are empty', async () => {
-        authStore.user.value = { id: 'user-1', email: '  ' };
+    it('falls back to generic Korean identity labels when profile is unavailable', async () => {
+        authStore.user.value = { id: 'user-1' };
         authStore.profile.value = null;
         const { wrapper } = await mountTopbar();
 

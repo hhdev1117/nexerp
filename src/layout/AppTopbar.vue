@@ -37,7 +37,7 @@ const menuToggleLabel = computed(() => (isMenuOpen.value ? '메뉴 닫기' : '�
 const mobileActionsLabel = computed(() => (mobileActionsOpen.value ? '업무 메뉴 닫기' : '업무 메뉴 열기'));
 const configLabel = computed(() => (configOpen.value ? '테마 설정 닫기' : '테마 설정 열기'));
 const roleLabels = { admin: '관리자', approver: '결재자', user: '사용자' };
-const displayName = computed(() => authStore.profile.value?.display_name?.trim() || authStore.user.value?.email?.trim() || '계정');
+const displayName = computed(() => authStore.profile.value?.display_name?.trim() || authStore.profile.value?.login_id || '계정');
 const department = computed(() => authStore.profile.value?.department?.trim() || roleLabels[authStore.profile.value?.role] || '사용자');
 const avatar = computed(() => [...displayName.value][0]?.toUpperCase() || '계');
 const profileMenuLabel = computed(() => `${displayName.value} · ${department.value} 계정 메뉴${signingOut.value ? ' 로그아웃 처리 중' : ''}`);

@@ -3,6 +3,7 @@ import { getBearerToken } from './auth';
 import { handleAdminAccountRequest } from './admin';
 import { handleInfrastructureUsageRequest } from './infrastructure';
 import { createAdminSupabaseClient, createUserSupabaseClient } from './supabase';
+import { internalEmailToLoginId, isValidLoginId } from '../shared/loginIdentity';
 
 const apiError = (status, code, message) => jsonResponse({ error: { code, message } }, { status });
 const upstreamAuthErrorNames = new Set(['AuthRetryableFetchError', 'AuthUnknownError']);
@@ -47,7 +48,7 @@ async function getCurrentUser(request, env, createSupabaseClient) {
 
     let profileResult;
     try {
-        profileResult = await supabase.from('profiles').select('id, email, display_name, department, role, is_active').eq('id', user.id).maybeSingle();
+        profileResult = await supabase.from('profiles').select('id, login_id, display_name, department, role, is_active').eq('id', user.id).maybeSingle();
     } catch {
         return apiError(502, 'upstream_error', '인증 서비스를 사용할 수 없습니다.');
     }
@@ -57,13 +58,13 @@ async function getCurrentUser(request, env, createSupabaseClient) {
     }
 
     const profile = profileResult?.data;
-    if (!profile || profile.is_active !== true) {
+    if (!profile || profile.is_active !== true || !isValidLoginId(profile.login_id) || internalEmailToLoginId(user.email) !== profile.login_id) {
         return apiError(403, 'inactive_user', '비활성화된 사용자입니다.');
     }
 
     return jsonResponse({
         id: user.id,
-        email: user.email,
+        loginId: profile.login_id,
         displayName: profile.display_name,
         department: profile.department,
         role: profile.role
