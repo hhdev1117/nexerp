@@ -9,6 +9,7 @@ const expectedMenuKeys = [
     'finance.journals',
     'finance.statements',
     'finance.summary',
+    'hr.core',
     'inventory.items',
     'inventory.movements',
     'inventory.stock',
@@ -33,12 +34,14 @@ const expectedMenuKeys = [
     'settings.accounts',
     'settings.audit',
     'settings.company',
+    'settings.enterprise-access',
+    'settings.hr-modules',
     'settings.infrastructure-usage',
     'settings.menu-permissions'
 ];
 
 describe('ERP template contract', () => {
-    it('contains the complete non-HR ERP navigation with unique routes', () => {
+    it('contains the complete ERP and HR ledger navigation with unique routes', () => {
         const routes = flattenMenuRoutes(erpMenu);
         const labels = routes.map((item) => item.label).join(' ');
 
@@ -46,7 +49,7 @@ describe('ERP template contract', () => {
         expect(labels).toContain('재고 현황');
         expect(labels).toContain('재무 현황');
         expect(labels).toContain('작업지시');
-        expect(labels).not.toMatch(/인사|급여/);
+        expect(labels).toContain('직원 · 인사발령');
         expect(new Set(routes.map((item) => item.to)).size).toBe(routes.length);
     });
 
@@ -58,13 +61,10 @@ describe('ERP template contract', () => {
         expect([...keys].sort()).toEqual(expectedMenuKeys);
     });
 
-    it('exposes one canonical partner master destination', () => {
+    it('keeps one unified partner maintenance menu', () => {
         const routes = flattenMenuRoutes(erpMenu);
-        const partnerEntry = routes.find((item) => item.menuKey === 'master.partners');
-
-        expect(partnerEntry).toMatchObject({ label: '거래처 관리', to: '/master/partners' });
-        expect(routes.some((item) => item.menuKey === 'sales.customers')).toBe(false);
-        expect(routes.some((item) => item.menuKey === 'purchasing.vendors')).toBe(false);
+        expect(routes.find((item) => item.menuKey === 'master.partners')).toMatchObject({ label: '거래처 관리', to: '/master/partners' });
+        expect(routes.some((item) => ['sales.customers', 'purchasing.vendors'].includes(item.menuKey))).toBe(false);
     });
 
     it('recursively removes denied leaves and parents left without visible children', () => {

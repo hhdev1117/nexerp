@@ -1,0 +1,119 @@
+import { PGlite } from '../../.cache/sql-check/node_modules/@electric-sql/pglite/dist/index.js';
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+let checks = 0;
+const check = {
+    equal: (...args) => {
+        assert.equal(...args);
+        checks++;
+    },
+    deepEqual: (...args) => {
+        assert.deepEqual(...args);
+        checks++;
+    },
+    ok: (...args) => {
+        assert.ok(...args);
+        checks++;
+    }
+};
+const db = new PGlite();
+await db.exec(`create role anon;create role authenticated;create schema auth;create schema private;
+create function auth.uid() returns uuid language sql as $$select current_setting('request.jwt.claim.sub',true)::uuid$$;
+create table profiles(id uuid primary key,role text,is_active boolean);
+create function private.is_aal2() returns boolean language sql as $$select true$$;
+create function private.is_admin() returns boolean language sql security definer as $$select exists(select 1 from public.profiles where id=auth.uid() and role='admin')$$;
+grant usage on schema auth,private to authenticated;
+insert into profiles values('61000000-0000-0000-0000-000000000001','admin',true),('61000000-0000-0000-0000-000000000002','user',true);
+set request.jwt.claim.sub='61000000-0000-0000-0000-000000000001';`);
+for (const f of fs.readdirSync('supabase/migrations').filter((f) => /^20260914000[1-4]/.test(f))) await db.exec(fs.readFileSync('supabase/migrations/' + f, 'utf8'));
+const company = '62000000-0000-0000-0000-000000000001',
+    actor = '61000000-0000-0000-0000-000000000002';
+await db.query("insert into companies(id,code,name) values($1,'C1','Company')", [company]);
+const policy = {
+    levels: Array.from({ length: 5 }, (_, i) => ({ id: i + 1, name: `L${i}`, permissions: i === 0 ? ['menu', 'read', 'create', 'update'].map((action) => ({ resource: 'hr.core', action, scope: 'company' })) : [] })),
+    members: [{ id: actor, name: 'HR', grade: '', position: '', level: 1, organizationId: null, siteId: null, active: true, from: null, to: null }],
+    mappings: [{ kind: 'grade', code: 'G', level: 1, from: null, to: null }],
+    roles: [],
+    overrides: []
+};
+await db.query("select enterprise_save_access_policy($1,$2,0,'setup')", [company, JSON.stringify(policy)]);
+await db.query("select enterprise_publish_access_policy($1,1,0,'setup')", [company]);
+// Pre-migration fixtures prove exact legacy employee, action and both policy sources.
+await db.query("insert into hr_employees(company_id,employee_no,name,hire_date,department,grade,position,created_by,updated_by,reason) values($1,'OLD','Old','2020-01-01',' Legacy ','OLDG','   ', $2,$2,'seed')", [company, actor]);
+await db.query(
+    "insert into hr_personnel_actions(company_id,employee_id,type,effective_date,department,grade,position,created_by,reason) select company_id,id,'transfer','2021-01-01','Historical','ACTIONG','ACTIONP',$2,'seed' from hr_employees where company_id=$1",
+    [company, actor]
+);
+policy.mappings.push({ kind: 'position', code: 'DRAFT', level: 1, from: null, to: null });
+await db.query("select enterprise_save_access_policy($1,$2,1,'draft')", [company, JSON.stringify(policy)]);
+const migration = 'supabase/migrations/20260914000500_hr_reference_catalog.sql';
+if (fs.existsSync(migration)) await db.exec(fs.readFileSync(migration, 'utf8'));
+const rpc = async (n, a) => (await db.query(`select ${n}(${a.map((_, i) => '$' + (i + 1)).join(',')}) result`, a)).rows[0].result;
+const login = async (id = actor) => db.exec(`reset role;set request.jwt.claim.sub='${id}';set role authenticated`);
+await login();
+const catalog = () => rpc('hr_reference_catalog', [company]);
+check.deepEqual((await catalog()).items.map((x) => x.code).sort(), [' Legacy ', 'OLDG', 'G', 'Historical', 'ACTIONG', 'ACTIONP', 'DRAFT', '   '].sort());
+const save = (doc, rev = 0) => rpc('hr_save_reference', [company, JSON.stringify(doc), rev, 'catalog update']);
+const doc = (code, kind = 'department', parentCode = null) => ({ id: null, kind, code, name: code, parentCode, isActive: true });
+const blank = (await catalog()).items.find((x) => x.code === '   ');
+await save({ ...blank, name: 'Legacy blank', companyId: undefined, revision: undefined }, 1);
+const d = await save(doc('D'));
+const child = await save(doc('CH', 'department', 'D'));
+const fail = async (f, code = '22023') => {
+    await assert.rejects(f, (e) => e.code === code);
+    checks++;
+};
+await fail(() => save({ ...doc('D'), id: d, parentCode: 'CH' }, 1));
+await fail(() => save(doc('BAD', 'department', 'foreign')));
+await fail(() => save({ ...doc('X'), id: d }, 1));
+await fail(() => save({ ...doc('D'), id: d }, 0), '40001');
+await fail(() => save({ ...doc('D'), id: d, isActive: false }, 1));
+await save({ ...doc('CH', 'department', 'D'), id: child, isActive: false }, 1);
+const employee = { employeeNo: 'E1', name: 'Original', profileId: null, hireDate: '2020-01-01', siteId: null, department: 'D', grade: 'G', position: '' };
+const create = (e) => rpc('hr_create_employee', [company, JSON.stringify(e), 'registration']);
+await fail(() => create({ ...employee, department: 'CH' }));
+const id = await create(employee);
+await fail(() => save({ ...doc('D'), id: d, isActive: false }, 1));
+const correct = (e, rev = 1) => rpc('hr_correct_employee', [company, id, rev, JSON.stringify(e), 'correction']);
+await correct({ name: 'Corrected', hireDate: '2021-01-01' });
+await fail(() => correct({ name: 'stale', hireDate: '2021-01-01' }), '40001');
+const history = await rpc('hr_employee_corrections', [company, id]);
+check.equal(history.length, 1);
+check.equal(history[0].before.name, 'Original');
+check.equal(history[0].after.name, 'Corrected');
+await fail(() => correct({ name: 'bad', hireDate: '2021-02-30' }, 2));
+await fail(() => db.query('select * from hr_reference_codes'), '42501');
+const future = (await db.query("select ((now() at time zone 'Asia/Seoul')::date+1)::text d")).rows[0].d;
+const beyond = (await db.query("select ((now() at time zone 'Asia/Seoul')::date+2)::text d")).rows[0].d;
+const futureRef = await save(doc('FUTURE'));
+const act = await rpc('hr_record_personnel_action', [company, id, 2, JSON.stringify({ type: 'transfer', effectiveDate: future, department: 'FUTURE', grade: 'G', position: '', siteId: null, reason: 'future' })]);
+await fail(() => save({ ...doc('FUTURE'), id: futureRef, isActive: false }, 1));
+await rpc('hr_cancel_personnel_action', [company, id, act, 3, 'cancel']);
+await save({ ...doc('FUTURE'), id: futureRef, isActive: false }, 1);
+await fail(() => correct({ name: 'Late', hireDate: beyond }, 4));
+await correct({ name: 'Boundary', hireDate: future }, 4);
+check.equal((await rpc('hr_directory', [company])).employees.find((e) => e.id === id).status, 'planned');
+await fail(() => rpc('hr_employee_corrections', [company, '62000000-0000-0000-0000-000000000099']));
+await fail(() => db.query('update hr_reference_codes set is_active=false'), '42501');
+await fail(() => db.query('insert into hr_employee_correction_audit default values'), '42501');
+// Inactive hierarchies remain editable without becoming assignable.
+const par = await save(doc('PARENT'));
+const kid = await save(doc('KID', 'department', 'PARENT'));
+await save({ ...doc('KID', 'department', 'PARENT'), id: kid, isActive: false }, 1);
+await save({ ...doc('PARENT'), id: par, isActive: false }, 1);
+await save({ ...doc('KID', 'department', 'PARENT'), id: kid, name: 'Renamed', isActive: false }, 2);
+await login('61000000-0000-0000-0000-000000000001');
+await fail(catalog, '42501');
+await db.exec('reset role');
+check.equal((await db.query('select count(*)::int n from hr_employee_correction_audit')).rows[0].n, 2);
+check.ok((await db.query('select count(*)::int n from hr_reference_audit')).rows[0].n >= 10);
+const readOnly = structuredClone(policy);
+readOnly.levels[0].permissions = readOnly.levels[0].permissions.filter((p) => p.action === 'read' || p.action === 'menu');
+await db.query('update enterprise_access_publications set policy=$2 where company_id=$1', [company, JSON.stringify(readOnly)]);
+await login();
+check.equal((await catalog()).canManage, false);
+await fail(() => save(doc('DENIED')), '42501');
+await fail(() => correct({ name: 'Denied', hireDate: future }, 5), '42501');
+check.equal((await rpc('hr_employee_corrections', [company, id])).length, 2);
+console.log(`HR reference: ${checks} PostgreSQL runtime assertions passed.`);
+await db.close();

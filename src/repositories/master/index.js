@@ -3,17 +3,7 @@ import { createDemoMasterRepository } from './demoMasterRepository';
 import { createSupabaseMasterRepository } from './supabaseMasterRepository';
 
 // Master-data sources implement this asynchronous contract. Records are deactivated, never deleted.
-export const MASTER_REPOSITORY_METHODS = Object.freeze([
-    'listCompanies',
-    'createCompany',
-    'updateCompany',
-    'listSites',
-    'createSite',
-    'updateSite',
-    'listPartners',
-    'createPartner',
-    'updatePartner'
-]);
+export const MASTER_REPOSITORY_METHODS = Object.freeze(['listCompanies', 'createCompany', 'updateCompany', 'listSites', 'createSite', 'updateSite', 'listPartners', 'createPartner', 'updatePartner']);
 
 const describeMethods = (methods) => `${methods.slice(0, -1).join(', ')}, and ${methods.at(-1)}`;
 

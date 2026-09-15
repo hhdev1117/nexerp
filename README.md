@@ -15,6 +15,8 @@ The administrator infrastructure screen additionally requires the Worker-only `S
 
 Detailed instructions:
 
+- [Enterprise access policy configuration and rollout status](docs/setup/enterprise-access.md)
+
 - [Cloudflare and Supabase operations](docs/setup/cloudflare-supabase.md)
 - [Fresh-machine setup and handoff](docs/setup/fresh-machine.md)
 - [Current state, conventions, and next tasks for parallel contributors](docs/HANDOFF.md)

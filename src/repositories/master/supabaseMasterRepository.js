@@ -4,7 +4,7 @@ import { MasterRepositoryError, masterError } from './errors';
 
 const COMPANY_FIELDS = 'id, code, name, business_number, representative, address, is_active, created_at, updated_at';
 const SITE_FIELDS = 'id, company_id, code, name, site_type, address, is_active, created_at, updated_at';
-const PARTNER_FIELDS = 'id, company_id, code, name, business_number, is_customer, is_vendor, representative, email, phone, address, is_active, created_at, updated_at';
+const PARTNER_FIELDS = 'id, company_id, code, name, business_number, is_customer, is_vendor, representative, contact_name, email, phone, address, payment_terms_days, credit_limit, is_active, created_at, updated_at';
 
 const companyColumns = Object.freeze({ code: 'code', name: 'name', businessNumber: 'business_number', representative: 'representative', address: 'address', isActive: 'is_active' });
 const siteColumns = Object.freeze({ companyId: 'company_id', code: 'code', name: 'name', siteType: 'site_type', address: 'address', isActive: 'is_active' });
@@ -16,13 +16,16 @@ const partnerColumns = Object.freeze({
     isCustomer: 'is_customer',
     isVendor: 'is_vendor',
     representative: 'representative',
+    contactName: 'contact_name',
     email: 'email',
     phone: 'phone',
     address: 'address',
+    paymentTermsDays: 'payment_terms_days',
+    creditLimit: 'credit_limit',
     isActive: 'is_active'
 });
 const partnerUpdateColumns = Object.freeze(Object.fromEntries(Object.entries(partnerColumns).filter(([key]) => key !== 'code')));
-const partnerTextFields = Object.freeze(['companyId', 'name', 'representative', 'email', 'phone', 'address']);
+const partnerTextFields = Object.freeze(['companyId', 'name', 'representative', 'contactName', 'email', 'phone', 'address']);
 
 const toCompany = (row) => ({
     id: row.id,
@@ -57,9 +60,12 @@ const toPartner = (row) => ({
     isCustomer: row.is_customer === true,
     isVendor: row.is_vendor === true,
     representative: row.representative ?? '',
+    contactName: row.contact_name ?? '',
     email: row.email ?? '',
     phone: row.phone ?? '',
     address: row.address ?? '',
+    paymentTermsDays: row.payment_terms_days ?? 30,
+    creditLimit: row.credit_limit ?? 0,
     isActive: row.is_active === true,
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null
@@ -84,7 +90,12 @@ const normalizePartnerValues = (values) => {
 };
 
 // Only keys the caller supplied become columns, so partial updates never overwrite other fields.
-const toRow = (columns, values) => Object.fromEntries(Object.entries(columns).filter(([key]) => values?.[key] !== undefined).map(([key, column]) => [column, values[key]]));
+const toRow = (columns, values) =>
+    Object.fromEntries(
+        Object.entries(columns)
+            .filter(([key]) => values?.[key] !== undefined)
+            .map(([key, column]) => [column, values[key]])
+    );
 
 // PostgREST surfaces PostgreSQL error codes; map them to stable application codes and never leak details.
 const failure = (operation, source) => {

@@ -24,6 +24,8 @@ const accessStore = {
 
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => authStore }));
 vi.mock('@/stores/access', () => ({ useAccessStore: () => accessStore }));
+const runtimeStore = { context: ref({ mode: 'legacy' }), canAccess: vi.fn(() => false) };
+vi.mock('@/stores/enterpriseRuntime', () => ({ useEnterpriseRuntimeStore: () => runtimeStore }));
 vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: toastAdd }) }));
 
 const readSource = (...segments) => readFileSync(resolve(process.cwd(), ...segments), 'utf8');
@@ -70,6 +72,8 @@ const submitPasswordForm = async () => {
 };
 
 beforeEach(() => {
+    runtimeStore.context.value = { mode: 'legacy' };
+    runtimeStore.canAccess.mockReset().mockReturnValue(false);
     Object.defineProperty(window, 'matchMedia', {
         configurable: true,
         value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
@@ -418,4 +422,28 @@ describe('ERP application shell', () => {
         expect(configuratorSource).toContain('주 색상');
         expect(configuratorSource).toContain('메뉴 모드');
     });
+});
+
+it('hides the HR ledger until published permissions are available', async () => {
+    accessStore.canAccess.mockReturnValue(true);
+    const wrapper = mount(AppMenu, { global: { stubs: { RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } });
+    wrappers.push(wrapper);
+    expect(wrapper.text()).not.toContain('직원 · 인사발령');
+    runtimeStore.context.value = { mode: 'active' };
+    runtimeStore.canAccess.mockImplementation((key) => key === 'hr.core');
+    await nextTick();
+    expect(wrapper.text()).toContain('직원 · 인사발령');
+    expect(wrapper.text()).not.toContain('수주 관리');
+});
+
+it('hides presentation-only menu keys without changing runtime route permission', async () => {
+    runtimeStore.context.value = { mode: 'active', hiddenMenuKeys: ['hr.core'] };
+    runtimeStore.canAccess.mockImplementation((key) => key === 'hr.core');
+    const wrapper = mount(AppMenu, { global: { stubs: { RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } });
+    wrappers.push(wrapper);
+    expect(wrapper.text()).not.toContain('직원 · 인사발령');
+    expect(runtimeStore.canAccess('hr.core')).toBe(true);
+    runtimeStore.context.value = { mode: 'active', hiddenMenuKeys: [] };
+    await nextTick();
+    expect(wrapper.text()).toContain('직원 · 인사발령');
 });

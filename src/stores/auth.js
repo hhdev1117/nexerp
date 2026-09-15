@@ -610,8 +610,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
                     }
                     const verifiedUser = verified?.data?.user;
                     const verificationFailedTransiently = verified?.error && !isInvalidSessionError(verified.error);
-                    const invalidStoredSession =
-                        !verificationFailedTransiently && (verified?.error || !verifiedUser || verifiedUser.id !== nextSession.user?.id);
+                    const invalidStoredSession = !verificationFailedTransiently && (verified?.error || !verifiedUser || verifiedUser.id !== nextSession.user?.id);
                     const rejectedKey = invalidStoredSession && authSessionKey(nextSession);
                     const explicitlyReauthenticated = identityVersion !== startingVersion && authSessionKey(session.value) === rejectedKey;
                     if (rejectedKey && !explicitlyReauthenticated) rejectedAuthSessions.add(rejectedKey);

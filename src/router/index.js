@@ -1,20 +1,24 @@
 import { erpMenu, flattenMenuRoutes } from '@/data/erp';
 import AppLayout from '@/layout/AppLayout.vue';
 import { useAccessStore } from '@/stores/access';
+import { useEnterpriseRuntimeStore } from '@/stores/enterpriseRuntime';
 import { useAuthStore } from '@/stores/auth';
 import { createRouter, createWebHistory } from 'vue-router';
 import { createAuthGuard } from './authGuard';
 
 const dedicatedViews = {
     '/': () => import('@/views/Dashboard.vue'),
+    '/hr/employees': () => import('@/views/hr/Employees.vue'),
     '/approvals': () => import('@/views/erp/Approvals.vue'),
     '/sales/orders': () => import('@/views/erp/SalesOrders.vue'),
     '/inventory/stock': () => import('@/views/erp/InventoryStock.vue'),
     '/finance/summary': () => import('@/views/erp/FinanceSummary.vue'),
-    '/master/partners': () => import('@/views/master/Partners.vue'),
     '/settings/company': () => import('@/views/master/CompanySites.vue'),
+    '/master/partners': () => import('@/views/master/Partners.vue'),
     '/settings/accounts': () => import('@/views/admin/AccountManagement.vue'),
     '/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue'),
+    '/settings/enterprise-access': () => import('@/views/admin/EnterpriseAccess.vue'),
+    '/settings/hr-modules': () => import('@/views/admin/HRModules.vue'),
     '/settings/infrastructure-usage': () => import('@/views/admin/InfrastructureUsage.vue')
 };
 
@@ -29,7 +33,8 @@ const erpRoutes = flattenMenuRoutes(erpMenu).map((item) => ({
         description: item.description,
         icon: item.icon,
         menuKey: item.menuKey,
-        ...(['/settings/accounts', '/settings/menu-permissions', '/settings/infrastructure-usage'].includes(item.to) ? { roles: ['admin'], fixedAccess: true } : {})
+        ...(item.menuKey === 'hr.core' ? { publishedAccessRequired: true } : {}),
+        ...(['/settings/accounts', '/settings/menu-permissions', '/settings/infrastructure-usage', '/settings/enterprise-access', '/settings/hr-modules'].includes(item.to) ? { roles: ['admin'], fixedAccess: true } : {})
     }
 }));
 
@@ -37,6 +42,8 @@ const router = createRouter({
     history: createWebHistory(),
     scrollBehavior: () => ({ top: 0 }),
     routes: [
+        { path: '/sales/customers', redirect: '/master/partners' },
+        { path: '/purchasing/vendors', redirect: '/master/partners' },
         {
             path: '/auth/login',
             name: 'login',
@@ -61,8 +68,6 @@ const router = createRouter({
             component: () => import('@/views/auth/AccessDeniedView.vue'),
             meta: { title: '접근 권한 없음' }
         },
-        { path: '/sales/customers', redirect: '/master/partners' },
-        { path: '/purchasing/vendors', redirect: '/master/partners' },
         {
             path: '/',
             component: AppLayout,
@@ -76,7 +81,7 @@ const router = createRouter({
     ]
 });
 
-router.beforeEach(createAuthGuard(useAuthStore(), useAccessStore()));
+router.beforeEach(createAuthGuard(useAuthStore(), useAccessStore(), useEnterpriseRuntimeStore()));
 
 router.afterEach((to) => {
     document.title = to.meta.title ? `${to.meta.title} | NEXERP` : 'NEXERP';

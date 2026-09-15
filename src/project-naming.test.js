@@ -44,9 +44,7 @@ describe('NEXERP project naming', () => {
         const workerConfig = JSON.parse(readProjectFile('wrangler.jsonc'));
 
         expect(workerConfig.keep_vars).toBe(true);
-        expect(workerConfig.secrets?.required).toEqual(
-            expect.arrayContaining(['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_MANAGEMENT_TOKEN', 'CLOUDFLARE_API_TOKEN'])
-        );
+        expect(workerConfig.secrets?.required).toEqual(expect.arrayContaining(['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_MANAGEMENT_TOKEN', 'CLOUDFLARE_API_TOKEN']));
         expect(workerConfig.secrets.required).toHaveLength(5);
     });
 

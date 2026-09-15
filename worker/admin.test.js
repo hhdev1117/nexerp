@@ -531,7 +531,7 @@ describe('administrator account API', () => {
         expect(JSON.stringify(body)).not.toContain('session-token');
     });
 
-    it('resets only another account\'s TOTP factors and returns no factor details', async () => {
+    it("resets only another account's TOTP factors and returns no factor details", async () => {
         const firstFactorId = '33333333-3333-4333-8333-333333333333';
         const secondFactorId = '44444444-4444-4444-8444-444444444444';
         const adminFixture = createAdminClientFixture({

@@ -223,9 +223,12 @@ describe('partner management screen', () => {
             isCustomer: true,
             isVendor: true,
             representative: '홍길동',
+            contactName: '',
             email: 'contact@example.com',
             phone: '02-1234-5678',
             address: '서울특별시',
+            paymentTermsDays: 30,
+            creditLimit: 0,
             isActive: true
         });
         expect(harness.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: '거래처 등록 완료' }));
@@ -251,9 +254,12 @@ describe('partner management screen', () => {
             isCustomer: true,
             isVendor: true,
             representative: '정지훈',
+            contactName: '',
             email: 'office@mirae.example',
             phone: '051-333-4444',
-            address: '부산광역시 강서구'
+            address: '부산광역시 강서구',
+            paymentTermsDays: 45,
+            creditLimit: 10000000
         });
         expect(harness.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: '거래처 수정 완료' }));
 

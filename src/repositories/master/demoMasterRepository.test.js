@@ -12,9 +12,12 @@ const partnerDraft = (overrides = {}) => ({
     isCustomer: true,
     isVendor: false,
     representative: '박서연',
+    contactName: '김담당',
     email: 'partner@nexerp.test',
     phone: '02-1234-5678',
     address: '대전광역시 유성구',
+    paymentTermsDays: 30,
+    creditLimit: 1000000,
     isActive: true,
     ...overrides
 });
@@ -138,9 +141,12 @@ describe('demo master repository', () => {
             isCustomer: true,
             isVendor: false,
             representative: '박서연',
+            contactName: '김담당',
             email: 'partner@nexerp.test',
             phone: '02-1234-5678',
             address: '대전광역시 유성구',
+            paymentTermsDays: 30,
+            creditLimit: 1000000,
             isActive: true,
             createdAt: '2026-09-14T09:00:00.000Z',
             updatedAt: '2026-09-14T09:00:00.000Z'
@@ -152,9 +158,7 @@ describe('demo master repository', () => {
         const repository = createDemoMasterRepository();
         const source = (await repository.listPartners()).find((partner) => partner.code === 'CUS-001');
 
-        const otherCompany = await repository.createPartner(
-            partnerDraft({ companyId: 'company-nxd', code: source.code, businessNumber: source.businessNumber, name: '타 회사 동일 식별자' })
-        );
+        const otherCompany = await repository.createPartner(partnerDraft({ companyId: 'company-nxd', code: source.code, businessNumber: source.businessNumber, name: '타 회사 동일 식별자' }));
         expect(otherCompany).toMatchObject({ companyId: 'company-nxd', code: source.code, businessNumber: source.businessNumber });
 
         await expect(repository.createPartner(partnerDraft({ code: 'cus-001', businessNumber: '5555500001' }))).rejects.toMatchObject({ code: 'duplicate_code' });
@@ -216,9 +220,7 @@ describe('demo master repository', () => {
     it('normalizes partner text fields on create and update', async () => {
         const repository = createDemoMasterRepository();
 
-        const created = await repository.createPartner(
-            partnerDraft({ name: ' 넥서스 거래처 ', representative: ' 박서연 ', email: ' partner@nexerp.test ', phone: ' 02-1234-5678 ', address: ' 대전광역시 유성구 ' })
-        );
+        const created = await repository.createPartner(partnerDraft({ name: ' 넥서스 거래처 ', representative: ' 박서연 ', email: ' partner@nexerp.test ', phone: ' 02-1234-5678 ', address: ' 대전광역시 유성구 ' }));
         expect(created).toMatchObject({
             name: '넥서스 거래처',
             representative: '박서연',

@@ -82,9 +82,12 @@ const route = (overrides = {}) => ({
 });
 
 describe('authentication route guard', () => {
-    it.each(['//evil.example', '\\evil', '/sales\\orders', 'https://evil.example', 'mailto:user@nexerp.test', '/auth/login', '/auth/login?redirect=/sales', '/auth/mfa', '/auth/mfa?redirect=/sales', '', null])('rejects unsafe or self-loop MFA redirect %j', (redirect) => {
-        expect(safeLocalRedirect(redirect)).toBe('/');
-    });
+    it.each(['//evil.example', '\\evil', '/sales\\orders', 'https://evil.example', 'mailto:user@nexerp.test', '/auth/login', '/auth/login?redirect=/sales', '/auth/mfa', '/auth/mfa?redirect=/sales', '', null])(
+        'rejects unsafe or self-loop MFA redirect %j',
+        (redirect) => {
+            expect(safeLocalRedirect(redirect)).toBe('/');
+        }
+    );
 
     it('sends active AAL1 users to MFA while preserving a protected local destination', async () => {
         const store = makeStore({ user: { id: 'user-1' }, profile: { role: 'user', is_active: true }, mfaStatus: 'challenge' });

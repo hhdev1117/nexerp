@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import CompanyAccessSelector from '@/layout/CompanyAccessSelector.vue';
 
 const authStore = useAuthStore();
 const route = useRoute();
@@ -60,6 +61,7 @@ const signOut = async () => {
 <template>
     <main class="auth-shell">
         <section class="auth-panel" aria-labelledby="access-title">
+            <CompanyAccessSelector v-if="authStore.profile.value?.is_active" />
             <span class="status-icon" aria-hidden="true"><i :class="recoverableProfileFailure ? 'pi pi-refresh' : 'pi pi-lock'"></i></span>
             <p class="brand">NEXERP</p>
             <h1 id="access-title">{{ recoverableProfileFailure ? '권한 정보를 불러오지 못했습니다' : '접근 권한이 없습니다' }}</h1>
@@ -67,16 +69,7 @@ const signOut = async () => {
             <p v-else>로그인한 계정에는 이 업무를 볼 권한이 없습니다. 필요한 경우 관리자에게 문의해 주세요.</p>
             <div v-if="displayedError" class="auth-alert" role="alert" aria-live="assertive">{{ displayedError }}</div>
             <div class="auth-actions">
-                <Button
-                    v-if="recoverableProfileFailure"
-                    label="다시 시도"
-                    icon="pi pi-refresh"
-                    aria-label="권한 정보 다시 불러오기"
-                    :loading="retrying"
-                    :disabled="retrying"
-                    :aria-busy="retrying ? 'true' : 'false'"
-                    @click="retryProfile"
-                />
+                <Button v-if="recoverableProfileFailure" label="다시 시도" icon="pi pi-refresh" aria-label="권한 정보 다시 불러오기" :loading="retrying" :disabled="retrying" :aria-busy="retrying ? 'true' : 'false'" @click="retryProfile" />
                 <Button
                     v-if="requiresSignOut"
                     label="로그아웃"

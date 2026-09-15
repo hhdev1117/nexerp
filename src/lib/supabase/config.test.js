@@ -35,9 +35,18 @@ describe('Supabase configuration', () => {
     });
 
     it.each([
-        [{ VITE_SUPABASE_URL: 42, VITE_SUPABASE_PUBLISHABLE_KEY: 'key' }, { configured: false, url: '', publishableKey: 'key' }],
-        [{ VITE_SUPABASE_URL: 'https://p.supabase.co', VITE_SUPABASE_PUBLISHABLE_KEY: false }, { configured: false, url: 'https://p.supabase.co', publishableKey: '' }],
-        [{ VITE_SUPABASE_URL: '   ', VITE_SUPABASE_PUBLISHABLE_KEY: ' key ' }, { configured: false, url: '', publishableKey: 'key' }]
+        [
+            { VITE_SUPABASE_URL: 42, VITE_SUPABASE_PUBLISHABLE_KEY: 'key' },
+            { configured: false, url: '', publishableKey: 'key' }
+        ],
+        [
+            { VITE_SUPABASE_URL: 'https://p.supabase.co', VITE_SUPABASE_PUBLISHABLE_KEY: false },
+            { configured: false, url: 'https://p.supabase.co', publishableKey: '' }
+        ],
+        [
+            { VITE_SUPABASE_URL: '   ', VITE_SUPABASE_PUBLISHABLE_KEY: ' key ' },
+            { configured: false, url: '', publishableKey: 'key' }
+        ]
     ])('normalizes invalid browser values without throwing', (env, expected) => {
         expect(readSupabaseConfig(env)).toEqual(expected);
     });

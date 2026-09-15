@@ -1,0 +1,51 @@
+.access-page { color: var(--text-color); max-width: 1500px; margin: 0 auto; padding-bottom: 2rem; }
+.access-page .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.access-page h1 { font-size: 1.75rem; margin: .25rem 0 .6rem; }
+.access-page h2 { font-size: 1.25rem; margin: .5rem 0; }
+.access-page p { line-height: 1.6; }
+.access-page .eyebrow { font-size: .8rem; color: var(--text-color-secondary); margin: 0; }
+.access-heading, .access-section-heading, .access-actions { display: flex; justify-content: space-between; gap: 1.5rem; align-items: center; }
+.access-heading > div:first-child { flex: 1; }
+.access-page label { display: flex; flex-direction: column; gap: .45rem; font-size: .9rem; }
+.access-page input, .access-page select, .access-page textarea, .access-page button { font: inherit; min-height: 44px; border: 1px solid var(--surface-border); border-radius: 6px; padding: .65rem .8rem; color: var(--text-color); background: var(--surface-card); max-width: 100%; }
+.access-page input, .access-page select, .access-page textarea { width: 100%; }
+.access-page button { cursor: pointer; }
+.access-page button:hover:not(:disabled) { background: var(--surface-hover); }
+.access-page button:disabled { opacity: .55; cursor: not-allowed; }
+.access-page :focus-visible { outline: 3px solid var(--primary-color); outline-offset: 3px; }
+.access-page .primary { background: var(--primary-color); color: var(--primary-contrast-color, white); border-color: var(--primary-color); }
+.access-page .primary:hover:not(:disabled) { filter: brightness(.9); background: var(--primary-color); }
+.access-banner { background: var(--surface-card); border-left: 4px solid var(--primary-color); padding: 1rem; border-radius: 6px; margin: 1.5rem 0; }
+.access-error { border: 1px solid var(--p-red-600, #dc2626); padding: 1rem; border-radius: 6px; margin: 1rem 0; }
+.access-empty { text-align: center; padding: 3rem 1rem; border: 1px dashed var(--surface-border); border-radius: 8px; }
+.access-tabs { display: flex; flex-wrap: wrap; gap: .5rem; padding: .5rem 0 1rem; }
+.access-tabs [aria-selected=true] { border-color: var(--primary-color); box-shadow: inset 0 -3px var(--primary-color); font-weight: 700; }
+.access-editor { margin: 0; padding: 1.5rem; border: 1px solid var(--surface-border); background: var(--surface-card); border-radius: 10px; min-width: 0; }
+.access-level-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 1.5rem; }
+.access-level-layout aside { display: flex; flex-direction: column; gap: .5rem; }
+.access-page .level-item { text-align: left; display: flex; flex-direction: column; gap: .5rem; padding: 1rem; }
+.access-page .level-item.selected { border: 2px solid var(--primary-color); background: var(--surface-hover); }
+.access-help { color: var(--text-color-secondary); font-size: .9rem; }
+.access-record { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; padding: 1rem 0; border-bottom: 1px solid var(--surface-border); }
+.access-record > label { flex: 1 1 170px; min-width: 0; }
+.permission-row { display: flex; align-items: center; gap: 1rem; padding: .75rem 0; border-bottom: 1px solid var(--surface-border); }
+.permission-row > div { flex: 1; min-width: 0; }
+.permission-row small { display: block; color: var(--text-color-secondary); overflow-wrap: anywhere; margin-top: .3rem; }
+.permission-row > label { min-width: 170px; }
+.scope-picker { min-width: 180px; max-width: 50%; }
+.scope-picker summary { cursor: pointer; padding: .75rem; min-height: 44px; border: 1px solid var(--surface-border); border-radius: 6px; }
+.scope-picker label { padding: 0 .75rem; }
+.access-person { border: 1px solid var(--surface-border); border-radius: 8px; padding: 1rem; margin: 1rem 0; min-width: 0; }
+.access-person fieldset { border: 1px solid var(--surface-border); margin: 1rem 0; }
+.access-page .access-check { flex-direction: row; align-items: center; min-height: 44px; gap: .6rem; }
+.access-page .access-check input { width: 20px; height: 20px; min-height: 20px; }
+.access-result { display: flex; gap: 1rem; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--surface-border); flex-wrap: wrap; }
+.access-result strong { min-width: 150px; }
+.access-status { padding: .3rem .7rem; border: 1px solid var(--surface-border); border-radius: 20px; }
+.access-status.allowed { border-color: var(--primary-color); font-weight: 700; }
+.access-review { background: var(--surface-card); border: 2px solid var(--primary-color); border-radius: 8px; padding: 1.5rem; margin-top: 1rem; }
+.access-review textarea { margin-bottom: 1rem; }
+.access-actions { padding: 1rem 0; flex-wrap: wrap; }
+.access-actions > div { display: flex; gap: .75rem; }
+@media (max-width: 1023px) { .access-level-layout { grid-template-columns: minmax(0, 1fr); } .access-level-layout aside { flex-direction: row; flex-wrap: wrap; } .access-page .level-item { flex: 1 1 120px; } }
+@media (max-width: 767px) { .access-heading, .access-section-heading { align-items: stretch; flex-direction: column; gap: .5rem; } .access-editor { padding: 1rem; } .access-tabs > button { flex: 1 1 40%; } .permission-row { align-items: stretch; flex-direction: column; } .access-result { gap: .5rem; } .access-actions > div { width: 100%; } .access-actions button { flex: 1; } }

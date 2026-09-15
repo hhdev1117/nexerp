@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { MASTER_MESSAGES, SITE_TYPE, companyPayload, createCompanyDraft, createSiteDraft, formatBusinessNumber, normalizeBusinessNumber, normalizeCode, sitePayload, siteTypeLabel, siteTypeOptions, validateCompanyDraft, validatePartnerDraft, validateSiteDraft } from './master';
+import {
+    MASTER_MESSAGES,
+    SITE_TYPE,
+    companyPayload,
+    createCompanyDraft,
+    createSiteDraft,
+    formatBusinessNumber,
+    normalizeBusinessNumber,
+    normalizeCode,
+    sitePayload,
+    siteTypeLabel,
+    siteTypeOptions,
+    validateCompanyDraft,
+    validatePartnerDraft,
+    validateSiteDraft
+} from './master';
 
 describe('company master rules', () => {
     it('normalizes codes and business registration numbers', () => {
@@ -107,7 +122,21 @@ describe('site master rules', () => {
 
     it('builds site drafts and normalized payloads', () => {
         expect(createSiteDraft(null, 'company-nxm')).toEqual({ companyId: 'company-nxm', code: '', name: '', siteType: SITE_TYPE.OTHER, address: '', isActive: true });
-        expect(createSiteDraft({ companyId: 'c1', code: 'ICN', name: '인천 공장', siteType: 'factory', address: '인천', isActive: false })).toEqual({ companyId: 'c1', code: 'ICN', name: '인천 공장', siteType: 'factory', address: '인천', isActive: false });
-        expect(sitePayload({ companyId: ' c1 ', code: ' icn ', name: ' 인천 공장 ', siteType: 'factory', address: ' 인천 ', isActive: true })).toEqual({ companyId: 'c1', code: 'ICN', name: '인천 공장', siteType: 'factory', address: '인천', isActive: true });
+        expect(createSiteDraft({ companyId: 'c1', code: 'ICN', name: '인천 공장', siteType: 'factory', address: '인천', isActive: false })).toEqual({
+            companyId: 'c1',
+            code: 'ICN',
+            name: '인천 공장',
+            siteType: 'factory',
+            address: '인천',
+            isActive: false
+        });
+        expect(sitePayload({ companyId: ' c1 ', code: ' icn ', name: ' 인천 공장 ', siteType: 'factory', address: ' 인천 ', isActive: true })).toEqual({
+            companyId: 'c1',
+            code: 'ICN',
+            name: '인천 공장',
+            siteType: 'factory',
+            address: '인천',
+            isActive: true
+        });
     });
 });

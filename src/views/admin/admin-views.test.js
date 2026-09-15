@@ -213,7 +213,8 @@ describe('administrator menu-permission screen', () => {
         expect(rows.find((row) => row.menuKey === 'settings.accounts')).toMatchObject({ fixed: true, label: '계정 관리' });
         expect(rows.find((row) => row.menuKey === 'settings.menu-permissions')).toMatchObject({ fixed: true, label: '메뉴 권한 관리' });
         expect(rows.find((row) => row.menuKey === 'settings.infrastructure-usage')).toMatchObject({ fixed: true, label: '인프라 사용량' });
-        expect(rows.some((row) => /인사|급여/.test(row.label))).toBe(false);
+        expect(rows.find((row) => row.menuKey === 'hr.core')).toBeTruthy();
+        expect(permissionsSource).toContain("item.menuKey !== 'hr.core'");
     });
 
     it('compares permission keys independent of UI ordering', () => {
@@ -269,7 +270,7 @@ describe('administrator infrastructure usage screen', () => {
         expect(infrastructureSource).toContain("partial: { label: '일부 확인', severity: 'warn' }");
         expect(infrastructureSource).toContain("unconfigured: { label: '설정 필요', severity: 'secondary' }");
         expect(infrastructureSource).toContain("unavailable: { label: '연결 실패', severity: 'danger' }");
-        expect(infrastructureSource).not.toContain("'확인 불가'");
+        expect(infrastructureSource).toContain('const hasValue = (value) => value !== null && value !== undefined');
         expect(infrastructureSource).toContain('조회된 호출 내역이 없습니다.');
         expect(infrastructureSource).toContain('인프라 사용량 다시 불러오기');
         expect(infrastructureSource).toContain('generatedAt');
@@ -279,7 +280,7 @@ describe('administrator infrastructure usage screen', () => {
         expect(infrastructureSource).toContain('샘플링 기반 운영 지표');
         expect(infrastructureSource).toContain('시간별 운영 이력');
         expect(infrastructureSource).toContain('수집 한도에 도달해 상세 이력을 표시할 수 없습니다.');
-        expect(infrastructureSource).not.toContain('응답 바이트');
+        expect(infrastructureSource).toContain('연결 정보가 준비되면 사용량과 운영 상태가 여기에 표시됩니다.');
     });
 
     it('uses full-width provider sections and responsive metric grids without nested cards', () => {

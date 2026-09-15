@@ -5,17 +5,7 @@ import { MASTER_REPOSITORY_METHODS, assertMasterRepository, createDefaultMasterR
 
 describe('master repository contract', () => {
     it('declares the complete asynchronous contract', () => {
-        expect(MASTER_REPOSITORY_METHODS).toEqual([
-            'listCompanies',
-            'createCompany',
-            'updateCompany',
-            'listSites',
-            'createSite',
-            'updateSite',
-            'listPartners',
-            'createPartner',
-            'updatePartner'
-        ]);
+        expect(MASTER_REPOSITORY_METHODS).toEqual(['listCompanies', 'createCompany', 'updateCompany', 'listSites', 'createSite', 'updateSite', 'listPartners', 'createPartner', 'updatePartner']);
         for (const method of MASTER_REPOSITORY_METHODS) expect(createDemoMasterRepository()[method]).toEqual(expect.any(Function));
     });
 
@@ -35,9 +25,7 @@ describe('master repository contract', () => {
         }
     ])('rejects an incomplete repository %#', (repository) => {
         expect(() => assertMasterRepository(repository)).toThrow(TypeError);
-        expect(() => assertMasterRepository(repository)).toThrow(
-            'listCompanies, createCompany, updateCompany, listSites, createSite, updateSite, listPartners, createPartner, and updatePartner'
-        );
+        expect(() => assertMasterRepository(repository)).toThrow('listCompanies, createCompany, updateCompany, listSites, createSite, updateSite, listPartners, createPartner, and updatePartner');
     });
 
     it('returns the same complete repository it validated', () => {

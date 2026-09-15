@@ -23,9 +23,7 @@ const deferred = () => {
 
 const jwtSession = (sessionId, issuedAt = 1789257600, userId = 'user-1') => {
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-    const payload = Buffer.from(
-        JSON.stringify({ iss: 'https://auth.nexerp.test/auth/v1', aud: 'authenticated', sub: userId, role: 'authenticated', session_id: sessionId, iat: issuedAt, exp: issuedAt + 3600 })
-    ).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ iss: 'https://auth.nexerp.test/auth/v1', aud: 'authenticated', sub: userId, role: 'authenticated', session_id: sessionId, iat: issuedAt, exp: issuedAt + 3600 })).toString('base64url');
     const signature = createHmac('sha256', 'test-fixture-signing-key').update(`${header}.${payload}`).digest('base64url');
     return { access_token: `${header}.${payload}.${signature}`, user: { id: userId, email: `${userId}@nexerp.test` } };
 };
@@ -516,33 +514,27 @@ describe('Supabase auth store', () => {
         expect(store.loading.value).toBe(false);
     });
 
-    it.each([
-        'not-a-jwt',
-        'header.%.signature',
-        'header.bm90LWpzb24.signature',
-        'header.bnVsbA.signature',
-        jwtSession(null).access_token,
-        jwtSession({}).access_token,
-        jwtSession('').access_token,
-        jwtSession(undefined).access_token
-    ])('rejects an unidentifiable session safely without exposing credentials (case %#)', async (accessToken) => {
-        const session = { access_token: accessToken, user: { id: 'user-1', email: 'approver@nexerp.test' } };
-        const fixture = createClient({
-            session,
-            profiles: { 'user-1': { data: approverProfile, error: null } },
-            getUserResult: { data: { user: null }, error: { code: 'bad_jwt', message: accessToken } }
-        });
-        const store = createAuthStore({ client: fixture.client, configured: true });
+    it.each(['not-a-jwt', 'header.%.signature', 'header.bm90LWpzb24.signature', 'header.bnVsbA.signature', jwtSession(null).access_token, jwtSession({}).access_token, jwtSession('').access_token, jwtSession(undefined).access_token])(
+        'rejects an unidentifiable session safely without exposing credentials (case %#)',
+        async (accessToken) => {
+            const session = { access_token: accessToken, user: { id: 'user-1', email: 'approver@nexerp.test' } };
+            const fixture = createClient({
+                session,
+                profiles: { 'user-1': { data: approverProfile, error: null } },
+                getUserResult: { data: { user: null }, error: { code: 'bad_jwt', message: accessToken } }
+            });
+            const store = createAuthStore({ client: fixture.client, configured: true });
 
-        await expect(store.initialize()).resolves.toBeUndefined();
-        await fixture.emit('TOKEN_REFRESHED', session);
+            await expect(store.initialize()).resolves.toBeUndefined();
+            await fixture.emit('TOKEN_REFRESHED', session);
 
-        expect(store.role.value).toBeNull();
-        expect(store.session.value).toBeNull();
-        expect(store.error.value).toBe('로그인 시간이 만료되었습니다. 다시 로그인해 주세요.');
-        expect(fixture.profileRequests).toHaveLength(0);
-        expect(fixture.client.auth.signOut).not.toHaveBeenCalled();
-    });
+            expect(store.role.value).toBeNull();
+            expect(store.session.value).toBeNull();
+            expect(store.error.value).toBe('로그인 시간이 만료되었습니다. 다시 로그인해 주세요.');
+            expect(fixture.profileRequests).toHaveLength(0);
+            expect(fixture.client.auth.signOut).not.toHaveBeenCalled();
+        }
+    );
 
     it('keeps an explicit new login when the old JWT verification finishes and its token refresh arrives', async () => {
         const userLookup = deferred();

@@ -1,0 +1,21 @@
+# HR Reference Data and Employee Corrections
+
+Continue approved HR implementation. Company-scoped department/grade/position catalogs replace free code entry; immutable codes preserve published permission mapping and historical actions. Department parent hierarchy is current-state only, no dated organization versions yet. HR remains explicit company-wide hr.core grants, no technical admin bypass. Basic corrections cover name and hireDate only; account/employeeNo and assignment histories unchanged.
+
+## SQL/API
+
+Migration005 only; prior migrations immutable. hr_reference_codes: id,company_id,kind(department|grade|position),code,name,parent_code(null unless department),is_active,revision, audit fields. Unique(company,kind,code); same-company department parent reference validated, no self/cycle. Code/kind immutable after insert. Backfill distinct nonempty employee/action codes AND grade/position mapping codes from saved/published policy to preserve compatibility; name initially code, active true. Empty code remains optional/unassigned.
+
+hr_reference_catalog(target_company) -> {items:[{id,companyId,kind,code,name,parentCode:null|string,isActive:boolean,revision}],canManage:boolean}. Explicit hr.core read; canManage hr.core update. All active/inactive rows readable within same company.
+hr_save_reference(target_company,reference_document,expected_revision,change_reason) -> UUID. document {id:null|uuid,kind,code,name,parentCode:null|string,isActive:boolean}; create expected0; edit expected revision. hr.core update required. Name/code max150 nonempty trimmed, reason1..2000. Reject deactivation if active children or CURRENT effective/PLANNED employees or uncancelled FUTURE transfer uses code. Historic refs preserved. Prevent assigning inactive code to new employee/transfer, but allow terminate inactive refs. Serialize catalog changes and new assignment writes through company row lock to prevent deactivate/assign races. Use triggers to apply validation to old RPC insert operations without changing prior migration files; ensure audit not bypassable by direct grants. Cross-company/cycle/revision defenses and no direct table writes.
+
+hr_correct_employee(target_company,target_employee,expected_revision,correction_document,change_reason) -> null. document exactly{name,hireDate}. Requires hr.core update, row lock/revision. hireDate valid YYYY-MM-DD and cannot be later than ANY recorded action date (even cancelled). Store correction id, company/employee FK, before/after JSON, reason, actor,time,increment employee revision. Preserve profileId,employeeNo and initial assignment. Runtime current active/planned reacts on next request to corrected hire date.
+hr_employee_corrections(target_company,target_employee) -> [{id,before:{name,hireDate},after:{name,hireDate},reason,createdAt}] under hr.core read, exact company/employee check. No broad employee data through reference catalog.
+
+## Client/UI
+
+Extend HR repository with loadReferences(company),saveReference(company,doc,revision,reason),correctEmployee(company,employee,revision,doc,reason),loadCorrections(company,employee). Store core mutation correctEmployee(doc) follows existing acknowledged-write logic. Separate useHrReferenceStore provides catalog/loading/saving/error,load(company),reset(),save(doc,revision,reason) race-safe and permission gated.
+
+Employee page loads references with same identity/company reset and replaces department/grade/position inputs with selects showing names+codes, options active only; preserve selected inactive legacy code visually but disallow transfer until new active selection (termination unaffected). ReferenceCatalog.vue inside employee screen provides list/filter kind, create/edit dialog, parent dropdown department only, enable/disable with required reason and impact. Employee detail correction button/dialog name+hireDate, before/after and reason with explicit confirmation if hire date changes; history view per employee via dedicated RPC reset on selection/company/user. Existing history unchanged; after correction refresh runtime.
+
+Use existing PrimeVue tokens, readable labels, keyboard/modal behavior and mobile layout. No payroll/module switches/dated org restructuring in this increment. No deployment or production DB apply.

@@ -226,7 +226,13 @@ describe('login view', () => {
 
 describe('supporting auth views', () => {
     it('keeps enrollment secrets hidden until explicitly revealed and validates a six-digit code', async () => {
-        const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/auth/mfa', name: 'mfa', component: MfaView }, { path: '/', component: { template: '<main />' } }] });
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [
+                { path: '/auth/mfa', name: 'mfa', component: MfaView },
+                { path: '/', component: { template: '<main />' } }
+            ]
+        });
         await router.push('/auth/mfa');
         await router.isReady();
         const wrapper = mount(MfaView, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
@@ -280,7 +286,14 @@ describe('supporting auth views', () => {
     });
 
     it('does not navigate after verification when authoritative MFA state is not ready', async () => {
-        const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/auth/mfa', name: 'mfa', component: MfaView }, { path: '/approvals', component: { template: '<main />' } }, { path: '/', component: { template: '<main />' } }] });
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [
+                { path: '/auth/mfa', name: 'mfa', component: MfaView },
+                { path: '/approvals', component: { template: '<main />' } },
+                { path: '/', component: { template: '<main />' } }
+            ]
+        });
         await router.push('/auth/mfa?redirect=/approvals');
         await router.isReady();
         authStore.mfaStatus.value = 'challenge';
@@ -299,7 +312,13 @@ describe('supporting auth views', () => {
 
     it('keeps the MFA screen stable when sign-out fails', async () => {
         authStore.signOut.mockRejectedValueOnce(new Error('network'));
-        const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/auth/mfa', name: 'mfa', component: MfaView }, { path: '/', component: { template: '<main />' } }] });
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [
+                { path: '/auth/mfa', name: 'mfa', component: MfaView },
+                { path: '/', component: { template: '<main />' } }
+            ]
+        });
         await router.push('/auth/mfa');
         await router.isReady();
         const wrapper = mount(MfaView, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
@@ -318,7 +337,13 @@ describe('supporting auth views', () => {
     it('shows only a retry action for a failed MFA lookup', async () => {
         authStore.mfaStatus.value = 'error';
         authStore.refreshMfaState.mockRejectedValueOnce(new Error('network'));
-        const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/auth/mfa', name: 'mfa', component: MfaView }, { path: '/', component: { template: '<main />' } }] });
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [
+                { path: '/auth/mfa', name: 'mfa', component: MfaView },
+                { path: '/', component: { template: '<main />' } }
+            ]
+        });
         await router.push('/auth/mfa');
         await router.isReady();
         const wrapper = mount(MfaView, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
@@ -337,7 +362,13 @@ describe('supporting auth views', () => {
             { id: 'factor-backup', friendly_name: 'Backup authenticator' }
         ];
         authStore.refreshMfaState.mockResolvedValue({ status: 'challenge' });
-        const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/auth/mfa', name: 'mfa', component: MfaView }, { path: '/', component: { template: '<main />' } }] });
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [
+                { path: '/auth/mfa', name: 'mfa', component: MfaView },
+                { path: '/', component: { template: '<main />' } }
+            ]
+        });
         await router.push('/auth/mfa');
         await router.isReady();
         const wrapper = mount(MfaView, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });

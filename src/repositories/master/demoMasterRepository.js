@@ -2,14 +2,64 @@ import { MASTER_CODE_PATTERN, SITE_TYPE, normalizeBusinessNumber, normalizeCode,
 import { masterError } from './errors';
 
 export const demoCompanies = Object.freeze([
-    Object.freeze({ id: 'company-nxm', code: 'NXM', name: '넥서스 제조', businessNumber: '1208812345', representative: '김정호', address: '인천광역시 남동구 남동대로 100', isActive: true, createdAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z' }),
-    Object.freeze({ id: 'company-nxd', code: 'NXD', name: '넥서스 유통', businessNumber: '2148867890', representative: '이수민', address: '서울특별시 강남구 테헤란로 200', isActive: true, createdAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z' })
+    Object.freeze({
+        id: 'company-nxm',
+        code: 'NXM',
+        name: '넥서스 제조',
+        businessNumber: '1208812345',
+        representative: '김정호',
+        address: '인천광역시 남동구 남동대로 100',
+        isActive: true,
+        createdAt: '2026-01-05T00:00:00.000Z',
+        updatedAt: '2026-01-05T00:00:00.000Z'
+    }),
+    Object.freeze({
+        id: 'company-nxd',
+        code: 'NXD',
+        name: '넥서스 유통',
+        businessNumber: '2148867890',
+        representative: '이수민',
+        address: '서울특별시 강남구 테헤란로 200',
+        isActive: true,
+        createdAt: '2026-01-05T00:00:00.000Z',
+        updatedAt: '2026-01-05T00:00:00.000Z'
+    })
 ]);
 
 export const demoSites = Object.freeze([
-    Object.freeze({ id: 'site-nxm-hq', companyId: 'company-nxm', code: 'HQ', name: '서울 본사', siteType: SITE_TYPE.HEAD_OFFICE, address: '서울특별시 중구 세종대로 1', isActive: true, createdAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z' }),
-    Object.freeze({ id: 'site-nxm-icn', companyId: 'company-nxm', code: 'ICN', name: '인천 공장', siteType: SITE_TYPE.FACTORY, address: '인천광역시 남동구 남동대로 100', isActive: true, createdAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z' }),
-    Object.freeze({ id: 'site-nxd-bsn', companyId: 'company-nxd', code: 'BSN', name: '부산 물류센터', siteType: SITE_TYPE.WAREHOUSE, address: '부산광역시 강서구 녹산산단로 50', isActive: true, createdAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z' })
+    Object.freeze({
+        id: 'site-nxm-hq',
+        companyId: 'company-nxm',
+        code: 'HQ',
+        name: '서울 본사',
+        siteType: SITE_TYPE.HEAD_OFFICE,
+        address: '서울특별시 중구 세종대로 1',
+        isActive: true,
+        createdAt: '2026-01-05T00:00:00.000Z',
+        updatedAt: '2026-01-05T00:00:00.000Z'
+    }),
+    Object.freeze({
+        id: 'site-nxm-icn',
+        companyId: 'company-nxm',
+        code: 'ICN',
+        name: '인천 공장',
+        siteType: SITE_TYPE.FACTORY,
+        address: '인천광역시 남동구 남동대로 100',
+        isActive: true,
+        createdAt: '2026-01-05T00:00:00.000Z',
+        updatedAt: '2026-01-05T00:00:00.000Z'
+    }),
+    Object.freeze({
+        id: 'site-nxd-bsn',
+        companyId: 'company-nxd',
+        code: 'BSN',
+        name: '부산 물류센터',
+        siteType: SITE_TYPE.WAREHOUSE,
+        address: '부산광역시 강서구 녹산산단로 50',
+        isActive: true,
+        createdAt: '2026-01-05T00:00:00.000Z',
+        updatedAt: '2026-01-05T00:00:00.000Z'
+    })
 ]);
 
 export const demoPartners = Object.freeze([
@@ -22,9 +72,12 @@ export const demoPartners = Object.freeze([
         isCustomer: true,
         isVendor: false,
         representative: '이민수',
+        contactName: '박소영',
         email: 'sales@hanbit.example',
         phone: '02-1111-2222',
         address: '서울특별시 송파구',
+        paymentTermsDays: 30,
+        creditLimit: 5000000,
         isActive: true,
         createdAt: '2026-01-05T00:00:00.000Z',
         updatedAt: '2026-01-05T00:00:00.000Z'
@@ -38,9 +91,12 @@ export const demoPartners = Object.freeze([
         isCustomer: false,
         isVendor: true,
         representative: '최서윤',
+        contactName: '',
         email: 'supply@daesung.example',
         phone: '031-222-3333',
         address: '경기도 화성시',
+        paymentTermsDays: 30,
+        creditLimit: 0,
         isActive: true,
         createdAt: '2026-01-05T00:00:00.000Z',
         updatedAt: '2026-01-05T00:00:00.000Z'
@@ -54,9 +110,12 @@ export const demoPartners = Object.freeze([
         isCustomer: true,
         isVendor: true,
         representative: '정지훈',
+        contactName: '',
         email: 'office@mirae.example',
         phone: '051-333-4444',
         address: '부산광역시 강서구',
+        paymentTermsDays: 45,
+        creditLimit: 10000000,
         isActive: true,
         createdAt: '2026-01-05T00:00:00.000Z',
         updatedAt: '2026-01-05T00:00:00.000Z'
@@ -74,8 +133,8 @@ const withoutIdentity = (fields) => {
     return draft;
 };
 
-const PARTNER_WRITABLE_FIELDS = Object.freeze(['companyId', 'code', 'name', 'businessNumber', 'isCustomer', 'isVendor', 'representative', 'email', 'phone', 'address', 'isActive']);
-const PARTNER_TEXT_FIELDS = Object.freeze(['companyId', 'name', 'representative', 'email', 'phone', 'address']);
+const PARTNER_WRITABLE_FIELDS = Object.freeze(['companyId', 'code', 'name', 'businessNumber', 'isCustomer', 'isVendor', 'representative', 'contactName', 'email', 'phone', 'address', 'paymentTermsDays', 'creditLimit', 'isActive']);
+const PARTNER_TEXT_FIELDS = Object.freeze(['companyId', 'name', 'representative', 'contactName', 'email', 'phone', 'address']);
 const PARTNER_BOOLEAN_FIELDS = Object.freeze(['isCustomer', 'isVendor', 'isActive']);
 const partnerFields = (values) => Object.fromEntries(PARTNER_WRITABLE_FIELDS.filter((key) => values?.[key] !== undefined).map((key) => [key, values[key]]));
 const BUSINESS_NUMBER_PATTERN = /^\d{10}$/;
@@ -128,6 +187,7 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
         if (PARTNER_BOOLEAN_FIELDS.some((key) => typeof partner[key] !== 'boolean')) throw masterError('invalid_value');
         if (!partner.isCustomer && !partner.isVendor) throw masterError('invalid_value');
         if (partner.businessNumber && !BUSINESS_NUMBER_PATTERN.test(partner.businessNumber)) throw masterError('invalid_value');
+        if (!Number.isInteger(partner.paymentTermsDays) || partner.paymentTermsDays < 0 || typeof partner.creditLimit !== 'number' || partner.creditLimit < 0) throw masterError('invalid_value');
 
         const company = findCompany(partner.companyId);
         if (!company) throw masterError('not_found');
@@ -151,6 +211,8 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
             fields.businessNumber = normalizeBusinessNumber(fields.businessNumber);
             if (hasValue && !fields.businessNumber) throw masterError('invalid_value');
         }
+        if (fields.paymentTermsDays !== undefined && (!Number.isInteger(fields.paymentTermsDays) || fields.paymentTermsDays < 0)) throw masterError('invalid_value');
+        if (fields.creditLimit !== undefined && (typeof fields.creditLimit !== 'number' || fields.creditLimit < 0)) throw masterError('invalid_value');
         return fields;
     };
 
@@ -258,9 +320,12 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
                 isCustomer: fields.isCustomer === true,
                 isVendor: fields.isVendor === true,
                 representative: fields.representative ?? '',
+                contactName: fields.contactName ?? '',
                 email: fields.email ?? '',
                 phone: fields.phone ?? '',
                 address: fields.address ?? '',
+                paymentTermsDays: fields.paymentTermsDays ?? 30,
+                creditLimit: fields.creditLimit ?? 0,
                 isActive: fields.isActive !== false
             };
             assertPartner(candidate);

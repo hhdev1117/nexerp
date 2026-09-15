@@ -82,7 +82,12 @@ export function createWorkerApp({ createSupabaseClient = createUserSupabaseClien
             const accountMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)$/);
             const passwordMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/password$/);
             const mfaResetMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/mfa-reset$/);
-            if ((pathname === '/api/admin/accounts' && (request.method === 'GET' || request.method === 'POST')) || (accountMatch && request.method === 'PATCH') || (passwordMatch && request.method === 'POST') || (mfaResetMatch && request.method === 'POST')) {
+            if (
+                (pathname === '/api/admin/accounts' && (request.method === 'GET' || request.method === 'POST')) ||
+                (accountMatch && request.method === 'PATCH') ||
+                (passwordMatch && request.method === 'POST') ||
+                (mfaResetMatch && request.method === 'POST')
+            ) {
                 return handleAdminAccountRequest(request, env, {
                     accountId: accountMatch?.[1] ?? passwordMatch?.[1] ?? mfaResetMatch?.[1] ?? null,
                     passwordReset: Boolean(passwordMatch),

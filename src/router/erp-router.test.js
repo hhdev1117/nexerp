@@ -22,12 +22,21 @@ describe('ERP router', () => {
         expect(router.resolve('/approvals').name).toBe('approvals');
         expect(router.resolve('/finance/summary').name).toBe('finance-summary');
         expect(routerSource).toContain("'/settings/company': () => import('@/views/master/CompanySites.vue')");
-        expect(router.resolve('/settings/company').name).toBe('settings-company');
         expect(routerSource).toContain("'/master/partners': () => import('@/views/master/Partners.vue')");
         expect(router.resolve('/master/partners').name).toBe('master-partners');
+        expect(router.resolve('/settings/company').name).toBe('settings-company');
+        expect(router.resolve('/hr/employees').meta).toMatchObject({ menuKey: 'hr.core', publishedAccessRequired: true });
+        expect(routerSource).toContain("'/hr/employees': () => import('@/views/hr/Employees.vue')");
+    });
+
+    it('redirects legacy customer and vendor links to the unified partner screen', () => {
+        expect(router.resolve('/sales/customers').redirectedFrom).toBeUndefined();
+        expect(routerSource).toContain("path: '/sales/customers', redirect: '/master/partners'");
+        expect(routerSource).toContain("path: '/purchasing/vendors', redirect: '/master/partners'");
     });
 
     it('uses dedicated administrator screens instead of the generic module', () => {
+        expect(router.resolve('/settings/enterprise-access').meta).toMatchObject({ roles: ['admin'], menuKey: 'settings.enterprise-access', fixedAccess: true });
         expect(routerSource).toContain("'/settings/accounts': () => import('@/views/admin/AccountManagement.vue')");
         expect(routerSource).toContain("'/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue')");
         expect(routerSource).toContain("'/settings/infrastructure-usage': () => import('@/views/admin/InfrastructureUsage.vue')");
@@ -56,16 +65,14 @@ describe('ERP router', () => {
         }
     });
 
-    it('redirects legacy customer and vendor bookmarks to the partner master', () => {
-        const routes = router.getRoutes();
-
-        expect(routes.find((route) => route.path === '/sales/customers')?.redirect).toBe('/master/partners');
-        expect(routes.find((route) => route.path === '/purchasing/vendors')?.redirect).toBe('/master/partners');
-    });
-
     it('uses the canonical NEXERP browser title', () => {
         expect(routerSource).toContain('`${to.meta.title} | NEXERP`');
         expect(routerSource).toContain(" : 'NEXERP'");
         expect(routerSource).not.toContain('Sakai ERP');
     });
+});
+
+it('keeps HR module management as an administrator recovery route', () => {
+    expect(router.resolve('/settings/hr-modules').meta).toMatchObject({ menuKey: 'settings.hr-modules', roles: ['admin'], fixedAccess: true });
+    expect(routerSource).toContain("'/settings/hr-modules': () => import('@/views/admin/HRModules.vue')");
 });

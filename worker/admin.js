@@ -354,11 +354,7 @@ async function resetAccountMfa(env, accountId, createAdminClient) {
     return failed ? upstreamError() : new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 }
 
-export async function handleAdminAccountRequest(
-    request,
-    env,
-    { accountId = null, passwordReset = false, mfaReset = false, createSupabaseClient = createUserSupabaseClient, createAdminClient = createAdminSupabaseClient } = {}
-) {
+export async function handleAdminAccountRequest(request, env, { accountId = null, passwordReset = false, mfaReset = false, createSupabaseClient = createUserSupabaseClient, createAdminClient = createAdminSupabaseClient } = {}) {
     const authorization = await authorizeAdministrator(request, env, createSupabaseClient);
     if (authorization.response) return authorization.response;
 

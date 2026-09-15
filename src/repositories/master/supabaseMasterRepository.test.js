@@ -3,7 +3,7 @@ import { createSupabaseMasterRepository } from './supabaseMasterRepository';
 
 const COMPANY_FIELDS = 'id, code, name, business_number, representative, address, is_active, created_at, updated_at';
 const SITE_FIELDS = 'id, company_id, code, name, site_type, address, is_active, created_at, updated_at';
-const PARTNER_FIELDS = 'id, company_id, code, name, business_number, is_customer, is_vendor, representative, email, phone, address, is_active, created_at, updated_at';
+const PARTNER_FIELDS = 'id, company_id, code, name, business_number, is_customer, is_vendor, representative, contact_name, email, phone, address, payment_terms_days, credit_limit, is_active, created_at, updated_at';
 
 const companyRow = { id: 'c-1', code: 'NXM', name: '넥서스 제조', business_number: '1208812345', representative: '김정호', address: '인천', is_active: true, created_at: '2026-09-14T00:00:00.000Z', updated_at: '2026-09-14T01:00:00.000Z' };
 const company = { id: 'c-1', code: 'NXM', name: '넥서스 제조', businessNumber: '1208812345', representative: '김정호', address: '인천', isActive: true, createdAt: '2026-09-14T00:00:00.000Z', updatedAt: '2026-09-14T01:00:00.000Z' };
@@ -18,9 +18,12 @@ const partnerRow = {
     is_customer: true,
     is_vendor: false,
     representative: '이민수',
+    contact_name: '박소영',
     email: 'sales@example.com',
     phone: '02-1111-2222',
     address: '서울',
+    payment_terms_days: 30,
+    credit_limit: 5000000,
     is_active: true,
     created_at: '2026-09-14T00:00:00.000Z',
     updated_at: '2026-09-14T01:00:00.000Z'
@@ -34,9 +37,12 @@ const partner = {
     isCustomer: true,
     isVendor: false,
     representative: '이민수',
+    contactName: '박소영',
     email: 'sales@example.com',
     phone: '02-1111-2222',
     address: '서울',
+    paymentTermsDays: 30,
+    creditLimit: 5000000,
     isActive: true,
     createdAt: '2026-09-14T00:00:00.000Z',
     updatedAt: '2026-09-14T01:00:00.000Z'
@@ -122,13 +128,12 @@ describe('Supabase master repository', () => {
     });
 
     it('lists partners ordered by code and maps every persisted field', async () => {
-        const fixture = makeClient({ list: { data: [partnerRow, { ...partnerRow, id: 'p-2', business_number: null, representative: null, email: null, phone: null, address: null, is_customer: false, is_vendor: true, is_active: false }], error: null } });
+        const fixture = makeClient({
+            list: { data: [partnerRow, { ...partnerRow, id: 'p-2', business_number: null, representative: null, email: null, phone: null, address: null, is_customer: false, is_vendor: true, is_active: false }], error: null }
+        });
         const repository = createSupabaseMasterRepository(fixture.client);
 
-        await expect(repository.listPartners()).resolves.toEqual([
-            partner,
-            { ...partner, id: 'p-2', businessNumber: null, representative: '', email: '', phone: '', address: '', isCustomer: false, isVendor: true, isActive: false }
-        ]);
+        await expect(repository.listPartners()).resolves.toEqual([partner, { ...partner, id: 'p-2', businessNumber: null, representative: '', email: '', phone: '', address: '', isCustomer: false, isVendor: true, isActive: false }]);
         expect(fixture.from).toHaveBeenCalledWith('partners');
         expect(fixture.select).toHaveBeenCalledWith(PARTNER_FIELDS);
         expect(fixture.order).toHaveBeenCalledWith('code');
@@ -147,9 +152,12 @@ describe('Supabase master repository', () => {
                 isCustomer: true,
                 isVendor: false,
                 representative: ' 이민수 ',
+                contactName: ' 박소영 ',
                 email: ' sales@example.com ',
                 phone: ' 02-1111-2222 ',
                 address: ' 서울 ',
+                paymentTermsDays: 30,
+                creditLimit: 5000000,
                 isActive: true,
                 id: 'ignored',
                 createdAt: 'ignored',
@@ -164,9 +172,12 @@ describe('Supabase master repository', () => {
             is_customer: true,
             is_vendor: false,
             representative: '이민수',
+            contact_name: '박소영',
             email: 'sales@example.com',
             phone: '02-1111-2222',
             address: '서울',
+            payment_terms_days: 30,
+            credit_limit: 5000000,
             is_active: true
         });
         expect(fixture.writeSelect).toHaveBeenCalledWith(PARTNER_FIELDS);

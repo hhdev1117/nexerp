@@ -55,13 +55,17 @@ const createPartnerDraft = (partner = null) => ({
     isCustomer: partner?.isCustomer === true,
     isVendor: partner?.isVendor === true,
     representative: partner?.representative ?? '',
+    contactName: partner?.contactName ?? '',
     email: partner?.email ?? '',
     phone: partner?.phone ?? '',
-    address: partner?.address ?? ''
+    address: partner?.address ?? '',
+    paymentTermsDays: partner?.paymentTermsDays ?? 30,
+    creditLimit: partner?.creditLimit ?? 0
 });
 
 const partnerDraft = ref(createPartnerDraft());
 const validation = computed(() => validatePartnerDraft(partnerDraft.value));
+const numericInvalid = computed(() => !Number.isInteger(partnerDraft.value.paymentTermsDays) || partnerDraft.value.paymentTermsDays < 0 || typeof partnerDraft.value.creditLimit !== 'number' || partnerDraft.value.creditLimit < 0);
 const dialogTitle = computed(() => (partnerMode.value === 'create' ? '거래처 등록' : '거래처 정보 수정'));
 const companyOptions = computed(() =>
     companies.value.map((company) => ({
@@ -80,13 +84,14 @@ const filteredPartners = computed(() => {
     return partnersFor(selectedCompanyId.value).filter((partner) => {
         const matchesKeyword =
             !query ||
-            [partner.code, partner.name, formatBusinessNumber(partner.businessNumber)].some((value) => String(value || '').toLocaleLowerCase('ko-KR').includes(query)) ||
+            [partner.code, partner.name, formatBusinessNumber(partner.businessNumber)].some((value) =>
+                String(value || '')
+                    .toLocaleLowerCase('ko-KR')
+                    .includes(query)
+            ) ||
             Boolean(digitQuery && partner.businessNumber?.includes(digitQuery));
         const matchesRole =
-            selectedRole.value === 'all' ||
-            (selectedRole.value === 'customer' && partner.isCustomer) ||
-            (selectedRole.value === 'vendor' && partner.isVendor) ||
-            (selectedRole.value === 'dual' && partner.isCustomer && partner.isVendor);
+            selectedRole.value === 'all' || (selectedRole.value === 'customer' && partner.isCustomer) || (selectedRole.value === 'vendor' && partner.isVendor) || (selectedRole.value === 'dual' && partner.isCustomer && partner.isVendor);
         const matchesStatus = selectedStatus.value === 'all' || (selectedStatus.value === 'active' && partner.isActive) || (selectedStatus.value === 'inactive' && !partner.isActive);
         return matchesKeyword && matchesRole && matchesStatus;
     });
@@ -114,9 +119,12 @@ const partnerEditPayload = (draft) => ({
     isCustomer: draft.isCustomer === true,
     isVendor: draft.isVendor === true,
     representative: normalizeText(draft.representative),
+    contactName: normalizeText(draft.contactName),
     email: normalizeText(draft.email),
     phone: normalizeText(draft.phone),
-    address: normalizeText(draft.address)
+    address: normalizeText(draft.address),
+    paymentTermsDays: draft.paymentTermsDays,
+    creditLimit: draft.creditLimit
 });
 const partnerCreatePayload = (draft) => ({ ...partnerEditPayload(draft), code: normalizeCode(draft.code), isActive: true });
 
@@ -157,8 +165,9 @@ function openEditPartner(partner) {
 async function savePartner() {
     if (saving.value) return;
     submitted.value = true;
-    if (!validation.value.isValid) {
+    if (!validation.value.isValid || numericInvalid.value) {
         await focusFirstError();
+        if (validation.value.isValid) document.getElementById('partner-paymentTermsDays')?.focus();
         return;
     }
 
@@ -262,20 +271,12 @@ function setDialogVisible(visible) {
                 </div>
             </div>
 
-            <DataTable
-                :value="filteredPartners"
-                dataKey="id"
-                :loading="loading"
-                size="small"
-                responsiveLayout="scroll"
-                tableStyle="min-width: 62rem"
-                :tableProps="{ 'aria-label': '거래처 목록' }"
-                stripedRows
-                scrollable
-            >
+            <DataTable :value="filteredPartners" dataKey="id" :loading="loading" size="small" responsiveLayout="scroll" tableStyle="min-width: 62rem" :tableProps="{ 'aria-label': '거래처 목록' }" stripedRows scrollable>
                 <template #empty>조건에 맞는 거래처가 없습니다.</template>
                 <Column field="code" header="코드" sortable>
-                    <template #body="slotProps"><span class="font-medium text-primary">{{ slotProps.data.code }}</span></template>
+                    <template #body="slotProps"
+                        ><span class="font-medium text-primary">{{ slotProps.data.code }}</span></template
+                    >
                 </Column>
                 <Column field="name" header="거래처명" sortable style="min-width: 11rem" />
                 <Column header="역할" style="min-width: 10rem">
@@ -329,17 +330,7 @@ function setDialogVisible(visible) {
             </DataTable>
         </section>
 
-        <Dialog
-            :visible="partnerDialog"
-            modal
-            :header="dialogTitle"
-            :style="{ width: '44rem' }"
-            :breakpoints="{ '768px': '94vw' }"
-            :closable="!saving"
-            :closeOnEscape="!saving"
-            :dismissableMask="!saving"
-            @update:visible="setDialogVisible"
-        >
+        <Dialog :visible="partnerDialog" modal :header="dialogTitle" :style="{ width: '44rem' }" :breakpoints="{ '768px': '94vw' }" :closable="!saving" :closeOnEscape="!saving" :dismissableMask="!saving" @update:visible="setDialogVisible">
             <form id="partner-form" class="grid grid-cols-12 gap-4" novalidate :aria-busy="saving" @submit.prevent="savePartner">
                 <div class="col-span-12 md:col-span-6">
                     <label id="partner-company-label" for="partner-company" class="block mb-2 font-medium">회사</label>
@@ -375,16 +366,7 @@ function setDialogVisible(visible) {
                 </div>
                 <div class="col-span-12">
                     <label for="partner-name" class="block mb-2 font-medium">거래처명</label>
-                    <InputText
-                        id="partner-name"
-                        v-model="partnerDraft.name"
-                        required
-                        placeholder="거래처명을 입력하세요"
-                        aria-describedby="partner-name-error"
-                        :invalid="submitted && validation.errors.name"
-                        :disabled="saving"
-                        fluid
-                    />
+                    <InputText id="partner-name" v-model="partnerDraft.name" required placeholder="거래처명을 입력하세요" aria-describedby="partner-name-error" :invalid="submitted && validation.errors.name" :disabled="saving" fluid />
                     <small v-if="errorMessage('name')" id="partner-name-error" class="text-red-700 dark:text-red-400" role="alert">{{ errorMessage('name') }}</small>
                 </div>
                 <fieldset id="partner-roles" class="col-span-12" aria-describedby="partner-roles-error">
@@ -421,17 +403,12 @@ function setDialogVisible(visible) {
                 </div>
                 <div class="col-span-12 md:col-span-6">
                     <label for="partner-email" class="block mb-2 font-medium">담당 이메일</label>
-                    <InputText
-                        id="partner-email"
-                        v-model="partnerDraft.email"
-                        type="email"
-                        placeholder="contact@example.com"
-                        aria-describedby="partner-email-error"
-                        :invalid="submitted && validation.errors.email"
-                        :disabled="saving"
-                        fluid
-                    />
+                    <InputText id="partner-email" v-model="partnerDraft.email" type="email" placeholder="contact@example.com" aria-describedby="partner-email-error" :invalid="submitted && validation.errors.email" :disabled="saving" fluid />
                     <small v-if="errorMessage('email')" id="partner-email-error" class="text-red-700 dark:text-red-400" role="alert">{{ errorMessage('email') }}</small>
+                </div>
+                <div class="col-span-12 md:col-span-6">
+                    <label for="partner-contactName" class="block mb-2 font-medium">담당자</label>
+                    <InputText id="partner-contactName" v-model="partnerDraft.contactName" placeholder="담당자명을 입력하세요" :disabled="saving" fluid />
                 </div>
                 <div class="col-span-12 md:col-span-6">
                     <label for="partner-phone" class="block mb-2 font-medium">대표 전화</label>
@@ -440,6 +417,14 @@ function setDialogVisible(visible) {
                 <div class="col-span-12">
                     <label for="partner-address" class="block mb-2 font-medium">주소</label>
                     <InputText id="partner-address" v-model="partnerDraft.address" placeholder="주소를 입력하세요" :disabled="saving" fluid />
+                </div>
+                <div class="col-span-12 md:col-span-6">
+                    <label for="partner-paymentTermsDays" class="block mb-2 font-medium">결제 조건(일)</label>
+                    <InputNumber inputId="partner-paymentTermsDays" v-model="partnerDraft.paymentTermsDays" :min="0" :useGrouping="false" :invalid="submitted && numericInvalid" :disabled="saving" fluid />
+                </div>
+                <div class="col-span-12 md:col-span-6">
+                    <label for="partner-creditLimit" class="block mb-2 font-medium">여신 한도</label>
+                    <InputNumber inputId="partner-creditLimit" v-model="partnerDraft.creditLimit" :min="0" mode="currency" currency="KRW" locale="ko-KR" :disabled="saving" fluid />
                 </div>
                 <div class="flex justify-end gap-2 pt-2 col-span-12">
                     <Button type="button" label="취소" severity="secondary" text :disabled="saving" @click="partnerDialog = false" />
