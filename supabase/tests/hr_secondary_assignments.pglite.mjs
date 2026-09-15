@@ -41,7 +41,7 @@ await db.query("insert into sites(id,company_id,code,name,site_type) values($1,$
 const grants = ['menu', 'read', 'create', 'update'].map(action => ({ resource: 'hr.core', action, scope: 'company' }));
 const member = (id, name, extra = {}) => ({ id, name, grade: '', position: '', level: null, organizationId: null, siteId: null, active: true, from: null, to: null, ...extra });
 const policy = {
-    levels: Array.from({ length: 5 }, (_, index) => ({ id: index + 1, name: `L${index + 1}`, permissions: index === 4 ? grants : [] })),
+    levels: Array.from({ length: 5 }, (_, index) => ({ id: index + 1, name: `L${index + 1}`, permissions: index === 4 ? grants : index === 3 ? [{ resource: 'sales.orders', action: 'read', scope: 'company' }] : [] })),
     members: [member(hr, 'HR', { level: 5 }), member(employeeAccount, 'Employee')],
     mappings: [
         { kind: 'grade', code: 'STAFF', level: 1, from: null, to: null },
@@ -119,7 +119,7 @@ await fails(() => createSecondary(employee, 2, {
     employmentId: employment,
     siteId: mainSite,
     department: 'DEV',
-    position: 'MEMBER',
+    position: 'TEAM_LEAD',
     startDate: tomorrow,
     endDate: dayAfterTomorrow
 }), '22023', 'secondary_overlap');
@@ -141,7 +141,7 @@ result = await createSecondary(employee, 3, {
     employmentId: employment,
     siteId: mainSite,
     department: 'SALES',
-    position: 'MEMBER',
+    position: 'TEAM_LEAD',
     startDate: today,
     endDate: null
 });
@@ -151,6 +151,16 @@ await fails(() => cancelSecondary(employee, active.id, 4, 1), '22023', 'planned_
 result = await endSecondary(employee, active.id, 4, 1, tomorrow);
 eq(result.assignments.at(-1).endDate, tomorrow);
 eq(result.assignments.at(-1).revision, 2);
+
+await login(employeeAccount);
+eq(await rpc('enterprise_granted_for_target', [company, 'sales.orders', 'read', mainSite, 'SALES']), true);
+eq(await rpc('enterprise_granted_for_target', [company, 'sales.orders', 'read', mainSite, 'DEV']), false);
+const explanation = await rpc('enterprise_explain_scoped_access', [company, employeeAccount, today, 'sales.orders', 'read', mainSite, 'SALES']);
+eq(explanation.allowed, true);
+eq(explanation.baseLevel, { level: 1, source: 'grade' });
+eq(explanation.sources[0].type, 'secondary');
+eq(explanation.sources[0].position, 'TEAM_LEAD');
+await login();
 
 await db.exec('reset role');
 eq((await db.query("select count(*)::int c from information_schema.role_table_grants where table_name='hr_secondary_assignments' and grantee='authenticated'")).rows[0].c, 0);

@@ -296,6 +296,65 @@ language sql stable security definer set search_path='' as $$
   and r.kind='department' and r.is_active and r.parent_code=reference_code));
 $$;
 
+create function public.enterprise_explain_scoped_access(target_company uuid,target_profile uuid,as_of date,resource_key text,action_key text,target_site uuid,target_department text) returns jsonb
+language plpgsql stable security definer set search_path='' as $$
+declare document jsonb; member jsonb; employee uuid; base_level integer; base_source text; sources jsonb:='[]'::jsonb; denies jsonb:='[]'::jsonb; base_grants jsonb:='[]'::jsonb; secondary_sources jsonb:='[]'::jsonb;
+begin
+ if target_profile<>auth.uid() and not private.enterprise_granted(target_company,'settings.enterprise-access','read','company') then raise exception 'access_denied' using errcode='42501';end if;
+ if target_profile<>auth.uid() then raise exception 'access_denied' using errcode='42501';end if;
+ select policy into document from public.enterprise_access_publications where company_id=target_company order by revision desc limit 1;
+ member:=private.enterprise_member(target_company,document);
+ if member is null then return jsonb_build_object('allowed',false,'baseLevel',null,'target',jsonb_build_object('siteId',target_site,'department',target_department),'sources','[]'::jsonb,'denies','[]'::jsonb);end if;
+ base_level:=nullif(member->>'level','')::integer;base_source:='direct';
+ if base_level is null then
+  select (m->>'level')::integer,m->>'kind' into base_level,base_source from jsonb_array_elements(document->'mappings')m
+  where private.enterprise_valid_now(m) and ((m->>'kind'='position' and m->>'code'=member->>'position') or (m->>'kind'='grade' and m->>'code'=member->>'grade'))
+  order by case when m->>'kind'='position' then 0 else 1 end limit 1;
+ end if;
+ select coalesce(jsonb_agg(o),'[]'::jsonb) into denies from jsonb_array_elements(document->'overrides')o
+ where o->>'actorId'=target_profile::text and private.enterprise_valid_now(o) and o->>'effect'='deny' and o->>'resource'=resource_key and o->>'action'=action_key;
+ select coalesce(jsonb_agg(jsonb_build_object('type','base','level',base_level,'scope',p->>'scope')),'[]'::jsonb) into base_grants
+ from jsonb_array_elements(document->'levels')l cross join lateral jsonb_array_elements(l->'permissions')p
+ where (l->>'id')::integer=base_level and p->>'resource'=resource_key and p->>'action'=action_key and (
+  p->>'scope'='company' or
+  (p->>'scope'='site' and member->>'siteId'=target_site::text) or
+  (p->>'scope'='organization' and member->>'organizationId'=target_department) or
+  (p->>'scope'='organization_tree' and (member->>'organizationId'=target_department or exists(
+   with recursive tree(code,path) as (
+    select r.code,array[r.code] from public.hr_reference_codes r where r.company_id=target_company and r.kind='department' and r.is_active and r.code=member->>'organizationId'
+    union all select r.code,t.path||r.code from tree t join public.hr_reference_codes r on r.company_id=target_company and r.kind='department' and r.is_active and r.parent_code=t.code where not r.code=any(t.path)
+   ) select 1 from tree where code=target_department)))
+ );
+ select e.id into employee from public.hr_employees e where e.company_id=target_company and e.profile_id=target_profile;
+ if employee is not null then
+  select coalesce(jsonb_agg(jsonb_build_object('type','secondary','assignmentId',q.assignment_id,'position',q.position,'level',q.level,'department',q.department,'scope',q.scope)),'[]'::jsonb)
+  into secondary_sources from (
+   select distinct s.id assignment_id,s.position,(mapping.value->>'level')::integer level,s.department,
+    case when p->>'scope'='company' then 'organization_tree' else p->>'scope' end scope
+   from public.hr_secondary_assignments s
+   join lateral (select value from jsonb_array_elements(document->'mappings') where value->>'kind'='position' and value->>'code'=s.position and private.enterprise_valid_now(value) limit 1)mapping on true
+   join lateral jsonb_array_elements(document->'levels')l on l->>'id'=mapping.value->>'level'
+   join lateral jsonb_array_elements(l->'permissions')p on p->>'resource'=resource_key and p->>'action'=action_key
+   where s.company_id=target_company and s.employee_id=employee and s.cancelled_at is null and s.start_date<=as_of and (s.end_date is null or s.end_date>as_of)
+   and p->>'scope' in ('company','organization','organization_tree','site') and target_department is not null
+   and (s.department=target_department or (p->>'scope'<>'organization' and exists(
+    with recursive tree(code,path) as (select s.department,array[s.department] union all select r.code,t.path||r.code from tree t join public.hr_reference_codes r on r.company_id=target_company and r.kind='department' and r.is_active and r.parent_code=t.code where not r.code=any(t.path)) select 1 from tree where code=target_department)))
+   and (p->>'scope'<>'site' or s.site_id=target_site)
+  )q;
+ end if;
+ sources:=base_grants||secondary_sources;
+ return jsonb_build_object('allowed',jsonb_array_length(sources)>0 and jsonb_array_length(denies)=0,
+  'baseLevel',case when base_level is null then null else jsonb_build_object('level',base_level,'source',base_source) end,
+  'target',jsonb_build_object('siteId',target_site,'department',target_department),'sources',sources,'denies',denies);
+end;$$;
+
+create function private.enterprise_granted_for_target(target_company uuid,resource_key text,action_key text,target_site uuid,target_department text) returns boolean
+language sql stable security definer set search_path='' as $$
+ select coalesce((public.enterprise_explain_scoped_access(target_company,auth.uid(),(now() at time zone 'Asia/Seoul')::date,resource_key,action_key,target_site,target_department)->>'allowed')::boolean,false);
+$$;
+create function public.enterprise_granted_for_target(target_company uuid,resource_key text,action_key text,target_site uuid,target_department text) returns boolean
+language sql stable security definer set search_path='' as $$ select private.enterprise_granted_for_target(target_company,resource_key,action_key,target_site,target_department); $$;
+
 alter function private.hr_secondary_status(date,date,date,timestamptz) owner to postgres;
 alter function private.hr_secondary_cancel_allowed(uuid) owner to postgres;
 alter function private.hr_authorize_secondary_cancel(uuid) owner to postgres;
@@ -309,6 +368,9 @@ alter function public.hr_cancel_secondary_assignment(uuid,uuid,uuid,integer,inte
 alter function private.hr_module_pending(uuid) owner to postgres;
 alter function private.hr_reference_in_use(uuid,text,text) owner to postgres;
 alter function public.hr_record_personnel_action(uuid,uuid,integer,jsonb) owner to postgres;
+alter function public.enterprise_explain_scoped_access(uuid,uuid,date,text,text,uuid,text) owner to postgres;
+alter function public.enterprise_granted_for_target(uuid,text,text,uuid,text) owner to postgres;
+alter function private.enterprise_granted_for_target(uuid,text,text,uuid,text) owner to postgres;
 
 revoke all on function private.hr_secondary_status(date,date,date,timestamptz),private.hr_secondary_cancel_allowed(uuid),
  private.hr_authorize_secondary_cancel(uuid),private.hr_secondary_assignment_history_document(uuid,uuid) from public,anon,authenticated;
@@ -318,3 +380,6 @@ revoke all on function public.hr_secondary_assignment_history(uuid,uuid),public.
 grant execute on function public.hr_secondary_assignment_history(uuid,uuid),public.hr_prepare_secondary_assignment(uuid,uuid),
  public.hr_create_secondary_assignment(uuid,uuid,integer,jsonb,text),public.hr_end_secondary_assignment(uuid,uuid,uuid,integer,integer,date,text),
  public.hr_cancel_secondary_assignment(uuid,uuid,uuid,integer,integer,text) to authenticated;
+revoke all on function public.enterprise_explain_scoped_access(uuid,uuid,date,text,text,uuid,text),public.enterprise_granted_for_target(uuid,text,text,uuid,text) from public,anon,authenticated;
+revoke all on function private.enterprise_granted_for_target(uuid,text,text,uuid,text) from public,anon,authenticated;
+grant execute on function public.enterprise_explain_scoped_access(uuid,uuid,date,text,text,uuid,text),public.enterprise_granted_for_target(uuid,text,text,uuid,text) to authenticated;

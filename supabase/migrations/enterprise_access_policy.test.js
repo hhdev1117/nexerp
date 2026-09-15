@@ -35,3 +35,13 @@ it('keeps employment cycles in a forward-only migration', () => {
     expect(migration).toContain('hr_create_reemployment');
     expect(migration).not.toMatch(/drop table|truncate/i);
 });
+
+it('adds RPC-only secondary assignments and target-aware access', () => {
+    const migration = readFileSync(new URL('./20260915000900_hr_secondary_assignments.sql', import.meta.url), 'utf8');
+    expect(migration).toContain('create table public.hr_secondary_assignments');
+    expect(migration).toContain('private.enterprise_granted_for_target');
+    expect(migration).toContain('public.enterprise_explain_scoped_access');
+    expect(migration).toContain('enable row level security');
+    expect(migration).toContain('revoke all on public.hr_secondary_assignments');
+    expect(migration).not.toMatch(/drop table|truncate/i);
+});

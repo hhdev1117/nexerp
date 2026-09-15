@@ -7,12 +7,15 @@ const emit=defineEmits(['changed'])
 const repository=createHrSecondaryAssignmentRepository()
 const history=ref(null), preparation=ref(null), loading=ref(false), error=ref(''), mode=ref(''), saving=ref(false)
 const draft=ref({employmentId:'',siteId:'',department:'',position:'',startDate:'',endDate:'',reason:''})
+const actionTarget=ref(null), actionReason=ref(''), actionEndDate=ref('')
 let version=0
 const statusLabel=s=>({planned:'예정',active:'진행 중',ended:'종료',cancelled:'취소'})[s]||s
 async function load(){const v=++version; loading.value=true;error.value='';try{const [h,p]=await Promise.all([repository.loadHistory(props.companyId,props.employeeId),repository.prepare(props.companyId,props.employeeId)]);if(v===version){history.value=h;preparation.value=p}}catch(e){if(v===version)error.value=e.message}finally{if(v===version)loading.value=false}}
 function openCreate(){const cycle=preparation.value?.employmentCycles.find(x=>!x.endDate)||preparation.value?.employmentCycles.at(-1);draft.value={employmentId:cycle?.id||'',siteId:'',department:'',position:'',startDate:'',endDate:'',reason:''};mode.value='create'}
-async function create(){error.value='';if(!draft.value.siteId||!draft.value.department||!draft.value.position||!draft.value.startDate||!draft.value.reason.trim()){error.value='필수 항목을 입력해 주세요.';return}saving.value=true;try{history.value=await repository.create(props.companyId,props.employeeId,history.value.employeeRevision,{employmentId:draft.value.employmentId,siteId:draft.value.siteId,department:draft.value.department,position:draft.value.position,startDate:draft.value.startDate,endDate:draft.value.endDate||null},draft.value.reason);mode.value='';emit('changed')}catch(e){error.value=e.message}finally{saving.value=false}}
-async function cancel(row){const reason=window.prompt('예정 취소 사유를 입력해 주세요.');if(!reason)return;saving.value=true;try{history.value=await repository.cancel(props.companyId,props.employeeId,row.id,history.value.employeeRevision,row.revision,reason);emit('changed')}catch(e){error.value=e.message}finally{saving.value=false}}
+function reviewCreate(){error.value='';if(!draft.value.siteId||!draft.value.department||!draft.value.position||!draft.value.startDate||!draft.value.reason.trim()){error.value='필수 항목을 입력해 주세요.';return}mode.value='review'}
+async function create(){saving.value=true;try{history.value=await repository.create(props.companyId,props.employeeId,history.value.employeeRevision,{employmentId:draft.value.employmentId,siteId:draft.value.siteId,department:draft.value.department,position:draft.value.position,startDate:draft.value.startDate,endDate:draft.value.endDate||null},draft.value.reason);mode.value='';emit('changed')}catch(e){error.value=e.message}finally{saving.value=false}}
+function openAction(row,type){actionTarget.value=row;actionReason.value='';actionEndDate.value='';mode.value=type}
+async function saveAction(){if(!actionReason.value.trim()||(mode.value==='end'&&!actionEndDate.value)){error.value='종료일과 사유를 입력해 주세요.';return}saving.value=true;try{history.value=mode.value==='end'?await repository.end(props.companyId,props.employeeId,actionTarget.value.id,history.value.employeeRevision,actionTarget.value.revision,actionEndDate.value,actionReason.value):await repository.cancel(props.companyId,props.employeeId,actionTarget.value.id,history.value.employeeRevision,actionTarget.value.revision,actionReason.value);mode.value='';emit('changed')}catch(e){error.value=e.message}finally{saving.value=false}}
 watch(()=>[props.companyId,props.employeeId],()=>{mode.value='';load()},{immediate:true});onBeforeUnmount(()=>version++)
 </script>
 
@@ -23,7 +26,7 @@ watch(()=>[props.companyId,props.employeeId],()=>{mode.value='';load()},{immedia
   <div v-for="row in history?.assignments" :key="row.id" class="assignment" :data-testid="`secondary-assignment-${row.status}`">
    <strong>{{ preparation?.references.find(x=>x.kind==='department'&&x.code===row.department)?.name || row.department }}</strong>
    <span>{{ row.position }} · 개인 직급 {{ row.grade }} · {{ statusLabel(row.status) }}</span><span>{{ row.startDate }} ~ {{ row.endDate || '계속' }}</span>
-   <button v-if="row.status==='planned'&&history.permissions.cancel" :disabled="saving" @click="cancel(row)">예정 취소</button>
+   <button v-if="row.status==='planned'&&history.permissions.cancel" :disabled="saving" @click="openAction(row,'cancel')">예정 취소</button><button v-if="row.status==='active'&&history.permissions.end" :disabled="saving" @click="openAction(row,'end')">겸직 종료</button>
   </div>
   <form v-if="mode==='create'" @submit.prevent="create">
    <label for="secondary-site">사업장</label><select id="secondary-site" v-model="draft.siteId"><option value="">선택</option><option v-for="x in preparation.sites" :key="x.id" :value="x.id">{{ x.name }}</option></select>
@@ -31,8 +34,10 @@ watch(()=>[props.companyId,props.employeeId],()=>{mode.value='';load()},{immedia
    <label for="secondary-position">직책</label><select id="secondary-position" v-model="draft.position"><option value="">선택</option><option v-for="x in preparation.references.filter(x=>x.kind==='position')" :key="x.code" :value="x.code">{{ x.name }}</option></select>
    <label for="secondary-start-date">시작일</label><input id="secondary-start-date" v-model="draft.startDate" type="date"><label for="secondary-end-date">종료일(선택)</label><input id="secondary-end-date" v-model="draft.endDate" type="date">
    <label for="secondary-reason">등록 사유</label><textarea id="secondary-reason" v-model="draft.reason" maxlength="2000" />
-   <div><button type="button" @click="mode=''">닫기</button><button data-testid="secondary-review" :disabled="saving">{{ saving?'저장 중':'등록' }}</button></div>
+   <div><button type="button" @click="mode=''">닫기</button><button type="button" data-testid="secondary-review" @click="reviewCreate">검토</button></div>
   </form>
+  <div v-if="mode==='review'" data-testid="secondary-review-panel" class="review"><strong>등록 내용 확인</strong><p>개인 직급 {{ preparation.primary.grade }} 유지 · {{ draft.department }} 겸직</p><p>{{ draft.startDate }} ~ {{ draft.endDate || '계속' }}</p><button @click="mode='create'">수정</button><button :disabled="saving" @click="create">{{ saving?'저장 중':'확정 등록' }}</button></div>
+  <form v-if="mode==='end'||mode==='cancel'" @submit.prevent="saveAction"><template v-if="mode==='end'"><label for="secondary-action-end">종료일</label><input id="secondary-action-end" v-model="actionEndDate" type="date"></template><label for="secondary-action-reason">{{ mode==='end'?'종료':'취소' }} 사유</label><textarea id="secondary-action-reason" v-model="actionReason" maxlength="2000"/><div><button type="button" @click="mode=''">닫기</button><button :disabled="saving">{{ saving?'저장 중':'확정' }}</button></div></form>
  </section>
 </template>
 <style scoped>
