@@ -37,6 +37,7 @@ export const MASTER_MESSAGES = Object.freeze({
 
 export const normalizeCode = (value) => (typeof value === 'string' ? value.trim().toUpperCase() : '');
 export const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '');
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function normalizeBusinessNumber(value) {
     const digits = typeof value === 'string' ? value.replace(/\D/g, '') : '';
@@ -47,6 +48,20 @@ export function formatBusinessNumber(value) {
     const digits = normalizeBusinessNumber(value);
     if (!digits) return '';
     return digits.length === 10 ? `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}` : digits;
+}
+
+export function validatePartnerDraft(draft = {}) {
+    const businessNumber = normalizeBusinessNumber(draft.businessNumber);
+    const email = normalizeText(draft.email);
+    const errors = {
+        companyId: !normalizeText(draft.companyId),
+        code: !MASTER_CODE_PATTERN.test(normalizeCode(draft.code)),
+        name: !normalizeText(draft.name),
+        roles: draft.isCustomer !== true && draft.isVendor !== true,
+        businessNumber: Boolean(businessNumber && !BUSINESS_NUMBER_PATTERN.test(businessNumber)),
+        email: Boolean(email && !EMAIL_PATTERN.test(email))
+    };
+    return { errors, isValid: !Object.values(errors).some(Boolean) };
 }
 
 export function createCompanyDraft(company = null) {

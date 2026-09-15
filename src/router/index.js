@@ -41,6 +41,8 @@ const router = createRouter({
     history: createWebHistory(),
     scrollBehavior: () => ({ top: 0 }),
     routes: [
+        { path: '/sales/customers', redirect: '/master/partners' },
+        { path: '/purchasing/vendors', redirect: '/master/partners' },
         {
             path: '/auth/login',
             name: 'login',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MASTER_MESSAGES, SITE_TYPE, companyPayload, createCompanyDraft, createSiteDraft, formatBusinessNumber, normalizeBusinessNumber, normalizeCode, sitePayload, siteTypeLabel, siteTypeOptions, validateCompanyDraft, validateSiteDraft } from './master';
+import { MASTER_MESSAGES, SITE_TYPE, companyPayload, createCompanyDraft, createSiteDraft, formatBusinessNumber, normalizeBusinessNumber, normalizeCode, sitePayload, siteTypeLabel, siteTypeOptions, validateCompanyDraft, validatePartnerDraft, validateSiteDraft } from './master';
 
 describe('company master rules', () => {
     it('normalizes codes and business registration numbers', () => {
@@ -42,6 +42,14 @@ describe('company master rules', () => {
             isActive: false
         });
         expect(createCompanyDraft()).toEqual({ code: '', name: '', businessNumber: '', representative: '', address: '', isActive: true });
+    });
+});
+
+describe('partner master rules', () => {
+    it('validates every database-facing field', () => {
+        expect(validatePartnerDraft({})).toEqual({ errors: { companyId: true, code: true, name: true, roles: true, businessNumber: false, email: false }, isValid: false });
+        expect(validatePartnerDraft({ companyId: 'c1', code: 'partner', name: '거래처', isCustomer: true, isVendor: false, businessNumber: '120-88-12345', email: 'sales@example.com' })).toEqual({ errors: { companyId: false, code: false, name: false, roles: false, businessNumber: false, email: false }, isValid: true });
+        expect(validatePartnerDraft({ companyId: 'c1', code: '_', name: ' ', isCustomer: false, isVendor: false, businessNumber: '123', email: 'invalid' }).errors).toEqual({ companyId: false, code: true, name: true, roles: true, businessNumber: true, email: true });
     });
 });
 

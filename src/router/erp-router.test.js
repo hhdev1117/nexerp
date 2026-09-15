@@ -27,6 +27,12 @@ describe('ERP router', () => {
         expect(routerSource).toContain("'/hr/employees': () => import('@/views/hr/Employees.vue')");
     });
 
+    it('redirects legacy customer and vendor links to the unified partner screen', () => {
+        expect(router.resolve('/sales/customers').redirectedFrom).toBeUndefined();
+        expect(routerSource).toContain("path: '/sales/customers', redirect: '/master/partners'");
+        expect(routerSource).toContain("path: '/purchasing/vendors', redirect: '/master/partners'");
+    });
+
     it('uses dedicated administrator screens instead of the generic module', () => {
         expect(router.resolve('/settings/enterprise-access').meta).toMatchObject({ roles: ['admin'], menuKey: 'settings.enterprise-access', fixedAccess: true });
         expect(routerSource).toContain("'/settings/accounts': () => import('@/views/admin/AccountManagement.vue')");
