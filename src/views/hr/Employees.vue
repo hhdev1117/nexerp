@@ -69,7 +69,7 @@ function close() {
 }
 function correct() {
     close();
-    draft.value = { name: selected.value.name, hireDate: selected.value.hireDate };
+    draft.value = { name: selected.value.name };
     dialog.value = 'correct';
 }
 function load(page = 1) {
@@ -131,10 +131,6 @@ async function save() {
         validation.value = '접근 권한에 미치는 영향을 확인해 주세요.';
         return;
     }
-    if (dialog.value === 'correct' && draft.value.hireDate !== selected.value?.hireDate && !confirmed.value) {
-        validation.value = '입사일 변경 영향을 확인해 주세요.';
-        return;
-    }
     if ((dialog.value === 'register' || (dialog.value === 'action' && draft.value.type === 'transfer')) && (references.loading.value || references.error.value || Object.keys(kinds).some(inactive))) {
         validation.value = '사용 중인 기준정보를 선택해 주세요.';
         return;
@@ -149,7 +145,7 @@ async function save() {
         const employee = selected.value;
         success =
             dialog.value === 'correct'
-                ? await hr.correctEmployee(employee.id, employee.revision, { name: draft.value.name.trim(), hireDate: draft.value.hireDate }, reason.value.trim())
+                ? await hr.correctEmployee(employee.id, employee.revision, { name: draft.value.name.trim() }, reason.value.trim())
                 : dialog.value === 'cancel'
                   ? await hr.cancelAction(employee.id, cancelTarget.value.id, employee.revision, reason.value.trim())
                   : await hr.recordAction(employee.id, employee.revision, { ...draft.value, siteId: draft.value.siteId || null, reason: reason.value.trim() });
@@ -287,13 +283,9 @@ async function employmentChanged() {
         >
             <form data-testid="save-action" class="hr-form" @submit.prevent="save">
                 <template v-if="dialog === 'correct'">
-                    <p class="hr-note">정정 전: {{ selected?.name }} · 입사일 {{ selected?.hireDate }}</p>
+                    <p class="hr-note">정정 전 이름: {{ selected?.name }}</p>
                     <label for="correction-name">정정 후 이름<input id="correction-name" v-model="draft.name" required maxlength="100" /></label>
-                    <label for="correction-date">정정 후 입사일<input id="correction-date" v-model="draft.hireDate" type="date" required /></label>
-                    <p class="hr-note">입사일 변경은 재직 상태와 연결 계정의 접근 시작일에 영향을 줍니다. 모든 발령일(취소 포함)보다 늦은 입사일은 저장할 수 없습니다.</p>
-                    <label v-if="draft.hireDate !== selected?.hireDate" for="correction-confirm" class="hr-confirm"
-                        ><input id="correction-confirm" v-model="confirmed" type="checkbox" />입사일 변경에 따른 재직 상태와 접근 권한 영향을 확인했습니다.</label
-                    >
+                    <p class="hr-note">입사일은 고용 이력에서 관리되며 기본정보 정정으로 변경할 수 없습니다.</p>
                 </template>
                 <template v-if="dialog === 'register'">
                     <label for="employee-no">사번 (등록 후 변경 불가)<input id="employee-no" v-model="draft.employeeNo" required maxlength="100" /></label>
@@ -305,7 +297,7 @@ async function employmentChanged() {
                             <option v-for="account in directory?.accounts || []" :key="account.id" :value="account.id">{{ account.name }}</option>
                         </select></label
                     >
-                    <p id="profile-help" class="hr-note">전사 권한관리에서 회사에 연결한 계정을 선택합니다. 등록 후 계정 연결을 변경할 수 없습니다. 입사 예정 계정은 입사일부터 접근할 수 있습니다.</p>
+                    <p id="profile-help" class="hr-note">전사 권한관리에서 회사에 연결한 계정을 선택합니다. 등록 후 직원 상세에서 연결을 변경할 수 있습니다. 입사 예정 계정은 입사일부터 접근할 수 있습니다.</p>
                 </template>
                 <template v-if="dialog === 'action'"
                     ><label for="action-type"

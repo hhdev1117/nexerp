@@ -42,7 +42,7 @@ const validDirectory = (data, company) =>
     data.sites.every((site) => site && uuid(site.id) && text(site.name));
 
 const failure = (source) => {
-    const trusted = ['reference_in_use', 'invalid_parent', 'immutable_reference', 'invalid_correction_date'];
+    const trusted = ['reference_in_use', 'invalid_parent', 'immutable_reference', 'invalid_correction_date', 'invalid_correction', 'future_employment_exists'];
     const code = source?.code === '40001' || source?.code === 'revision_conflict' ? 'revision_conflict' : source?.code === '22023' && trusted.includes(source.message) ? source.message : 'hr_request_failed';
     const error = new Error(hrErrorMessage(code));
     error.code = code;
@@ -99,5 +99,7 @@ export const hrErrorMessage = (code) =>
         reference_in_use: '현재 또는 예정된 직원·발령에서 사용 중이거나 활성 하위 부서가 있어 비활성화할 수 없습니다.',
         invalid_parent: '상위 부서를 확인해 주세요. 비활성 부서나 순환 관계는 지정할 수 없습니다.',
         immutable_reference: '등록된 코드와 종류는 변경할 수 없습니다.',
-        invalid_correction_date: '입사일은 취소된 이력을 포함한 기존 발령일보다 늦을 수 없습니다.'
+        invalid_correction_date: '입사일은 취소된 이력을 포함한 기존 발령일보다 늦을 수 없습니다.',
+        invalid_correction: '이름과 변경 사유를 확인해 주세요. 입사일은 고용 이력에서 관리합니다.',
+        future_employment_exists: '예정된 재입사 회차를 먼저 취소한 뒤 퇴사 발령을 취소해 주세요.'
     })[code] || '인사 정보를 처리하지 못했습니다. 권한과 입력 내용을 확인하고 다시 시도해 주세요.';

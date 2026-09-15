@@ -92,7 +92,7 @@ describe('reference and correction RPC contracts', () => {
         await repo.saveReference(company, doc, 2, 'rename');
         expect(rpc).toHaveBeenLastCalledWith('hr_save_reference', { target_company: company, reference_document: doc, expected_revision: 2, change_reason: 'rename' });
         rpc.mockResolvedValue({ data: null });
-        const correction = { name: 'Kim', hireDate: '2026-01-01' };
+        const correction = { name: 'Kim' };
         await repo.correctEmployee(company, id, 3, correction, 'fix');
         expect(rpc).toHaveBeenLastCalledWith('hr_correct_employee', { target_company: company, target_employee: id, expected_revision: 3, correction_document: correction, change_reason: 'fix' });
         rpc.mockResolvedValue({ data: {} });
@@ -112,7 +112,7 @@ describe('reference and correction RPC contracts', () => {
     });
 });
 
-it.each(['reference_in_use', 'invalid_parent', 'immutable_reference', 'invalid_correction_date'])('only maps trusted database error %s', async (message) => {
+it.each(['reference_in_use', 'invalid_parent', 'immutable_reference', 'invalid_correction_date', 'invalid_correction', 'future_employment_exists'])('only maps trusted database error %s', async (message) => {
     const repo = createHrRepository({ rpc: async () => ({ error: { code: '22023', message } }) });
     await expect(repo.loadReferences(company)).rejects.toMatchObject({ code: message });
     const unsafe = createHrRepository({ rpc: async () => ({ error: { code: 'other', message } }) });

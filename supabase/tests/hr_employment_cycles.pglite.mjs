@@ -70,6 +70,7 @@ eq(result.employments.length, 1);
 eq(result.employments[0].sequenceNo, 1);
 eq(result.employments[0].endDate, today);
 eq(result.employments[0].status, 'terminated');
+await fails(() => rpc('hr_correct_employee', [company, terminated, 2, JSON.stringify({ name: '퇴사자', hireDate: '2020-01-02' }), 'old contract']), '22023', 'invalid_correction');
 eq((await prepare(active)).eligible, false);
 eq((await prepare(terminated)).eligible, true);
 eq((await prepare(terminated)).earliestHireDate, tomorrow);

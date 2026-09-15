@@ -251,6 +251,26 @@ language sql stable security definer set search_path='' as $$
  or (reference_kind='department' and exists(select 1 from public.hr_reference_codes r where r.company_id=target_company and r.kind='department' and r.is_active and r.parent_code=reference_code));
 $$;
 
+create or replace function public.hr_correct_employee(target_company uuid,target_employee uuid,expected_revision integer,correction_document jsonb,change_reason text) returns void
+language plpgsql security definer set search_path='' as $$
+declare employee public.hr_employees; first_hire date; before_doc jsonb; after_doc jsonb;
+begin
+ perform private.hr_authorize(target_company,'update');
+ select * into employee from public.hr_employees where company_id=target_company and id=target_employee for update;
+ if not found then raise exception 'invalid_employee' using errcode='22023';end if;
+ if expected_revision is distinct from employee.revision then raise exception 'revision_conflict' using errcode='40001';end if;
+ if not private.enterprise_object(correction_document,array['name'])
+ or jsonb_typeof(correction_document->'name')<>'string' or length(btrim(correction_document->>'name')) not between 1 and 100
+ or change_reason is null or length(btrim(change_reason)) not between 1 and 2000
+ then raise exception 'invalid_correction' using errcode='22023';end if;
+ select hire_date into first_hire from public.hr_employment_cycles where company_id=target_company and employee_id=target_employee order by sequence_no limit 1;
+ before_doc:=jsonb_build_object('name',employee.name,'hireDate',first_hire);
+ after_doc:=jsonb_build_object('name',btrim(correction_document->>'name'),'hireDate',first_hire);
+ update public.hr_employees set name=btrim(correction_document->>'name'),revision=revision+1,updated_at=now(),updated_by=auth.uid() where id=target_employee;
+ insert into public.hr_employee_correction_audit(company_id,employee_id,before_document,after_document,reason,created_by)
+ values(target_company,target_employee,before_doc,after_doc,btrim(change_reason),auth.uid());
+end;$$;
+
 alter function private.hr_active_employment(uuid,uuid,date) owner to postgres;
 alter function private.hr_employee_state(uuid,uuid) owner to postgres;
 alter function private.hr_employment_cancel_allowed(uuid) owner to postgres;

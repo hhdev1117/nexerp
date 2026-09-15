@@ -161,20 +161,17 @@ it('does not refresh another identity after an in-flight mutation', async () => 
     expect(mocks.runtime.refresh).not.toHaveBeenCalled();
 });
 
-it('corrects basic information with date impact confirmation and reason', async () => {
+it('corrects the employee name while employment dates remain cycle-owned', async () => {
     mocks.hr.directory.value.employees = [{ ...employee, hireDate: '2026-01-01' }];
     const w = setup();
     await w.get('[data-testid="employee-detail"]').trigger('click');
     await w.get('[data-testid="correct-employee"]').trigger('click');
     await w.get('#correction-name').setValue('김직원');
-    await w.get('#correction-date').setValue('2026-01-02');
+    expect(w.find('#correction-date').exists()).toBe(false);
     await w.get('#action-reason').setValue('입력 오류 정정');
     await w.get('[data-testid="save-action"]').trigger('submit');
-    expect(mocks.hr.correctEmployee).not.toHaveBeenCalled();
-    await w.get('#correction-confirm').setValue(true);
-    await w.get('[data-testid="save-action"]').trigger('submit');
     await flushPromises();
-    expect(mocks.hr.correctEmployee).toHaveBeenCalledWith('employee', 3, { name: '김직원', hireDate: '2026-01-02' }, '입력 오류 정정');
+    expect(mocks.hr.correctEmployee).toHaveBeenCalledWith('employee', 3, { name: '김직원' }, '입력 오류 정정');
 });
 it('rejects stale correction history after employee changes', async () => {
     let done;
@@ -244,9 +241,8 @@ it('refreshes access after correction while audit history is still pending', asy
     await w.get('[data-testid="employee-detail"]').trigger('click');
     await flushPromises();
     await w.get('[data-testid="correct-employee"]').trigger('click');
-    await w.get('#correction-date').setValue('2026-01-02');
-    await w.get('#action-reason').setValue('입사일 정정');
-    await w.get('#correction-confirm').setValue(true);
+    await w.get('#correction-name').setValue('김직원');
+    await w.get('#action-reason').setValue('이름 정정');
     await w.get('[data-testid="save-action"]').trigger('submit');
     await flushPromises();
     expect(mocks.hr.correctEmployee).toHaveBeenCalled();
