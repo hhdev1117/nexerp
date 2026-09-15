@@ -28,3 +28,10 @@ it('registers every ERP menu resource and restricts permission resources', () =>
     expect(sql).toContain('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
     expect(sql).toContain('daterange(');
 });
+
+it('keeps employment cycles in a forward-only migration', () => {
+    const migration = readFileSync(new URL('./20260915000800_hr_employment_cycles.sql', import.meta.url), 'utf8');
+    expect(migration).toContain('create table public.hr_employment_cycles');
+    expect(migration).toContain('hr_create_reemployment');
+    expect(migration).not.toMatch(/drop table|truncate/i);
+});
