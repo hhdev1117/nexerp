@@ -256,7 +256,7 @@ onBeforeUnmount(() => ++sequence);
             <h4 class="font-semibold">재입사 등록 확인</h4>
             <p>{{ review.beforeEndDate }} 퇴사 → {{ review.hireDate }} 재입사</p>
             <p>{{ siteName(review.siteId) }} / {{ referenceName('department', review.department) }} / {{ referenceName('grade', review.grade) }} / {{ referenceName('position', review.position) }}</p>
-            <p>로그인 계정: {{ accountName }} · {{ levelText(review.preview) }}</p>
+            <p>로그인 계정: {{ review.accountName }} · {{ levelText(review.preview) }}</p>
             <p>사유: {{ review.reason }}</p>
             <Button data-testid="rehire-save" label="확인하고 등록" :disabled="saving" @click="saveRehire" />
         </section>
