@@ -10,6 +10,8 @@ The Worker uses `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for user-scoped re
 
 The administrator-only infrastructure screen uses `SUPABASE_MANAGEMENT_TOKEN` for allowlisted Supabase Management API health and usage reads, and `CLOUDFLARE_API_TOKEN` for Cloudflare Workers analytics and allowlisted script settings. Both are Worker-only secrets. The Cloudflare token needs the narrow analytics-read permission and `Workers Scripts Read` for the configured account, while the Supabase token needs project, health, analytics usage, and disk configuration read permissions. The nonsecret Cloudflare account and Worker names are committed as Worker vars.
 
+`SUPABASE_MANAGEMENT_TOKEN` is therefore read-scoped on purpose and cannot change the database. Confirmed on 2026-09-15: `POST /v1/projects/<ref>/database/query` connects as `supabase_read_only_user` with `transaction_read_only=on`, so every DDL statement fails with `25006: cannot execute ... in a read-only transaction` regardless of a `read_only` request field, and the migration-applying endpoint `POST /v1/projects/<ref>/database/migrations` returns `403`. Do not widen this token to apply schema changes. Schema changes belong to an authorized operator working in the Supabase SQL Editor, and the same token still serves every verification read afterwards.
+
 For local development, create ignored files from the committed examples:
 
 ```powershell
@@ -31,9 +33,22 @@ npx supabase db push
 
 ### Production Migration-History Blocker
 
-The current production project is `mehhrnbaiojivesnobpv` (`nexerp`). Migration `20260914000200_add_partners.sql` was applied through the authorized SQL Editor and its resulting schema was verified from PostgreSQL catalogs. That direct SQL execution did not establish CLI migration history. A subsequent read of `supabase_migrations.schema_migrations` reported that the table was absent, and the available management token reached the linked project but failed during CLI login-role initialization with HTTP `403`.
+The current production project is `mehhrnbaiojivesnobpv` (`nexerp`). Several migrations were applied through the authorized SQL Editor and their resulting schema was verified from PostgreSQL catalogs. That direct SQL execution did not establish CLI migration history, and the available management token reached the linked project but failed during CLI login-role initialization with HTTP `403`.
 
-Do not run `npx supabase db push` against `mehhrnbaiojivesnobpv` until an authorized operator has reconciled every manually applied version. First compare each committed migration with the live catalog. For each version confirmed as already applied, use the official tracking-only command `npx supabase migration repair --status applied <VERSION>`, then require `npx supabase migration list --linked` to succeed and show the expected local/remote versions. The local migration inventory currently contains `20260911000100`, `20260912000100`, `20260913000100`, `20260913000200`, `20260913000300`, `20260914000100`, and `20260914000200`; this inventory is not proof that every version is present remotely. Do not fabricate `supabase_migrations` tables or rows, and do not mark a version applied without the catalog comparison.
+A 2026-09-15 read through `GET /v1/projects/<ref>/database/migrations` supersedes the earlier report that `supabase_migrations.schema_migrations` was absent. A ledger now exists, and it disagrees with the live schema in both directions, so neither source may be trusted alone:
+
+| Divergence | Versions |
+|---|---|
+| Recorded in the ledger but with no committed migration file | `20260915000100 add_login_ids`, `20260915000200 bootstrap_first_admin`, `20260915000300 add_provisioning_nonces`. `public.login_ids` does not exist in the live schema |
+| Present in the live schema but absent from the ledger | `20260914000300`, `20260914000400`, `20260914000500`, `20260914000600`, `20260914000700`, `20260915000800`, `20260915000900`, `20260915001100` |
+
+Do not run `npx supabase db push` against `mehhrnbaiojivesnobpv` until an authorized operator has reconciled every manually applied version; a push against the ledger above would replay eight migrations that are already live. First compare each committed migration with the live catalog. For each version confirmed as already applied, use the official tracking-only command `npx supabase migration repair --status applied <VERSION>`, then require `npx supabase migration list --linked` to succeed and show the expected local/remote versions. Investigate the three ledger-only versions before repairing anything, because a version recorded as applied whose objects are missing indicates either a rollback or a ledger written from another branch. The repository now carries eighteen migration files; that inventory is not proof that every version is present remotely. Do not fabricate `supabase_migrations` tables or rows, and do not mark a version applied without the catalog comparison.
+
+### Applying a Pending Migration
+
+Until CLI history is reconciled, an authorized operator applies a committed migration by pasting the whole file into the Supabase SQL Editor as one execution, in ascending version order. Two migrations are pending as of 2026-09-15: `20260915001200_add_audit_logs.sql` then `20260915001300_add_document_sequences.sql`. The first creates the shared change ledger and attaches `private.record_audit()` to `companies`, `sites` and `partners`; the second creates `public.document_sequences` and `private.next_document_number()`. Both are safe to apply while the three master tables hold no rows.
+
+Verify afterwards with catalog reads, which the read-scoped management token can perform: `public.audit_logs` and `public.document_sequences` exist with row-level security enabled, `authenticated` holds no `INSERT`, `UPDATE` or `DELETE` grant on either table, each table has exactly one select policy, three triggers reference `private.record_audit`, and `authenticated` cannot execute `private.next_document_number`.
 
 The migrations create `profiles`, the `admin`/`approver`/`user` role type, account and menu-permission RPCs, signup triggers, explicit grants, and RLS policies. New accounts always begin with the `user` role until an authorized administrator assigns another role.
 

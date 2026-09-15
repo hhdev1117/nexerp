@@ -8,7 +8,7 @@
 |---|---|
 | 스택 | Vue 3 + PrimeVue 4 + Tailwind, Cloudflare Workers Static Assets, Supabase (Auth + Postgres + RLS), Vitest |
 | 최신 구현 커밋 | `19e66fb feat: add server-side document numbering` |
-| 작업 트리 | 로컬 `main`에 감사 로그·문서 채번 커밋 7개가 원격보다 앞서 있음. 푸시 미실행 |
+| 작업 트리 | 로컬·원격 `main` 모두 `e3756a0`으로 동기화 완료 |
 | 검증 | Vitest 81개 파일 913개 통과, ESLint 통과, production build 성공(PWA precache 57개). pglite 런타임 SQL 단언 114개 통과 |
 | Supabase 운영 프로젝트 | `mehhrnbaiojivesnobpv` (`nexerp`). 이전 문서·계획의 `kctewzpeymlncibgyosz`는 오래된 프로젝트 식별자이므로 사용하지 않음 |
 | 운영 스키마 / CLI 이력 | 회사·사업장·거래처와 전사 권한 및 HR 마이그레이션 002~009를 운영 프로젝트에 적용하고 카탈로그 검증 완료. `20260915001200`(감사 로그)과 `20260915001300`(문서 채번)은 로컬에만 존재하며 운영 미적용. CLI migration history는 미복구이며 복구 전 `db push` 금지 |
@@ -142,6 +142,8 @@ npm run build
 - 대신 `supabase/tests/*.pglite.mjs`가 pglite로 실제 PostgreSQL을 띄워 마이그레이션을 적용하고 런타임 단언을 실행합니다. Docker 없이 `node supabase/tests/<name>.pglite.mjs`로 돌아갑니다. 의존성은 `.cache/sql-check`에 격리돼 있고 gitignore 대상이라 새 PC에서는 `npm install @electric-sql/pglite`로 다시 설치해야 합니다. 이 러너가 `lpad`의 잘림 때문에 1000번째 문서번호가 `SO-260915-100`으로 나오던 버그를 잡았으므로, 새 마이그레이션마다 함께 작성하는 것을 권합니다.
 - Vitest는 `vite.config.mjs`의 `test.exclude`로 `.worktrees`를 제외합니다. 워크트리를 추가·정리해도 이 설정을 지우지 마세요. 지우면 다른 브랜치의 옛 테스트가 함께 돌아 결과가 오염됩니다.
 - 저장소 루트 `.env.local`, `.dev.vars`에 운영 Supabase 프로젝트 `mehhrnbaiojivesnobpv` 자격증명이 있습니다. 커밋 금지. `SUPABASE_SECRET_KEY`, `SUPABASE_MANAGEMENT_TOKEN`, `CLOUDFLARE_API_TOKEN`은 Worker 전용입니다. 이전 계획에 남은 `kctewzpeymlncibgyosz`를 운영 대상으로 사용하지 마세요.
+- **`SUPABASE_MANAGEMENT_TOKEN`으로는 스키마를 바꿀 수 없습니다.** 설계상 읽기 전용이며(`docs/setup/cloudflare-supabase.md`의 Credential Boundaries: project·health·analytics usage·disk 읽기 권한), 2026-09-15 실측으로 `POST /database/query`가 `supabase_read_only_user`·`transaction_read_only=on`으로 연결되고 `POST /database/migrations`는 `403`을 반환함을 확인했습니다. DDL을 시도하면 `25006`으로 거부됩니다. 마이그레이션 적용은 권한 있는 운영자가 SQL Editor에서 수행하고, 적용 후 검증 읽기는 이 토큰으로 충분합니다. 토큰 권한을 넓혀 우회하지 마세요.
+- 원격 migration ledger는 존재하지만 실물 스키마와 어긋납니다. 원장에만 있는 3건(`add_login_ids`, `bootstrap_first_admin`, `add_provisioning_nonces`)과 원장에 없는 실제 적용 8건이 있습니다. 근거와 대조표는 `docs/setup/cloudflare-supabase.md`의 Production Migration-History Blocker에 있습니다.
 - 격리 Git 워크트리는 `.env.local`을 자동으로 공유하지 않습니다. 그 워크트리에서 Vite 운영 빌드나 `npm run deploy`를 실행하기 전에 루트의 커밋 제외 `.env.local`을 워크트리 루트로 복사하거나 같은 `VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY`를 환경변수로 주입하세요. 빌드 후 생성 자산에 프로젝트 ID `mehhrnbaiojivesnobpv`가 포함됐는지 확인한 다음 배포해야 합니다.
 - 회사·사업장과 거래처 스키마는 2026-09-14 운영 프로젝트에 적용됐지만 CLI migration history는 아직 복구되지 않았습니다. 거래처 `20260914000200`은 SQL Editor로 직접 적용했고, `supabase_migrations.schema_migrations` 조회 시 테이블이 없었습니다. 현재 토큰으로 프로젝트 link는 성공했으나 CLI login-role 초기화가 HTTP 403으로 막혀 `migration list`/repair를 완료하지 못했습니다.
 - 권한 있는 운영자가 실제 카탈로그와 각 로컬 파일을 대조한 뒤, 이미 적용된 버전마다 공식 `npx supabase migration repair --status applied <VERSION>`을 실행하고 `npx supabase migration list --linked`의 local/remote 일치를 확인해야 합니다. 그 전에는 운영 프로젝트에 `npx supabase db push`를 실행하지 마세요. 원격 migration ledger를 수동으로 만들거나 행을 직접 삽입해서는 안 됩니다.
@@ -179,10 +181,10 @@ npm run build
 - [x] 전사 권한 및 HR 마이그레이션 002~009 운영 적용. 대상 테이블 13개 존재, RLS 13개 활성, 핵심 RPC 11종 존재, DELETE grant 0개를 카탈로그에서 확인.
 - [x] 최신 `main` Cloudflare Worker 배포. 버전 `a6e74fee-404f-4f98-a5fc-7f12fd075af9`; `/api/health`, `/settings/enterprise-access`, `/hr/employees`, manifest, service worker HTTP 200 확인.
 - [x] `git push origin main` 및 로컬/원격 HEAD 일치 확인.
-- [ ] 감사 로그 `20260915001200_add_audit_logs.sql`을 운영 프로젝트 `mehhrnbaiojivesnobpv`에 적용. 적용 후 `audit_logs` 존재, RLS 활성, `authenticated`의 insert/update/delete grant 0개, 정책 1개(select), `companies`·`sites`·`partners` 트리거 3개를 카탈로그에서 확인.
-- [ ] 문서 채번 `20260915001300_add_document_sequences.sql`을 운영 적용. `document_sequences` 존재, RLS 활성, 쓰기 grant 0개, `private.next_document_number` 존재와 `authenticated` execute 권한 없음을 확인.
-- [ ] 두 마이그레이션 적용 후 최신 `main`을 Cloudflare에 배포하고 관리자 계정으로 `/settings/audit`에서 회사 수정 1건이 즉시 이력으로 보이는지 확인.
-- [ ] `git push origin main` (감사 로그·문서 채번 커밋 7개 미푸시).
+- [ ] **권한 있는 운영자 작업.** SQL Editor에서 `20260915001200_add_audit_logs.sql`, 이어서 `20260915001300_add_document_sequences.sql`을 각각 파일 전체를 한 번에 실행. 세 기준정보 테이블이 0건이므로 지금 적용해도 기존 데이터 영향 없음. 저장소 토큰으로는 불가능하며 시도해도 `403`/`25006`으로 막힙니다.
+- [ ] 적용 후 검증: `audit_logs`·`document_sequences` 존재와 RLS 활성, `authenticated`의 insert/update/delete grant 0개, 각 테이블 select 정책 1개, `private.record_audit` 참조 트리거 3개, `private.next_document_number` 존재와 `authenticated` execute 권한 없음. 읽기 전용 토큰으로 수행 가능.
+- [ ] 검증 통과 후 최신 `main`을 Cloudflare에 배포하고 관리자 계정으로 `/settings/audit`에서 회사 수정 1건이 즉시 이력으로 보이는지 확인.
+- [x] `git push origin main`. `730f95e..e3756a0`, 로컬/원격 HEAD 일치 확인.
 
 ### 7.2 1단계 기준정보 마무리
 
