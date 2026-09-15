@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const migrationPath = resolve(process.cwd(), 'supabase/migrations/20260913000300_enforce_totp_and_gmail_provisioning.sql');
-const loginIdentityMigrationPath = resolve(process.cwd(), 'supabase/migrations/20260914000200_add_login_ids.sql');
+const loginIdentityMigrationPath = resolve(process.cwd(), 'supabase/migrations/20260915000100_add_login_ids.sql');
 const configPath = resolve(process.cwd(), 'supabase/config.toml');
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, 'utf8') : '';
 const loginIdentityMigration = existsSync(loginIdentityMigrationPath) ? readFileSync(loginIdentityMigrationPath, 'utf8') : '';

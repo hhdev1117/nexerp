@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const migrationPath = resolve(process.cwd(), 'supabase/migrations/20260914000200_add_login_ids.sql');
+const migrationPath = resolve(process.cwd(), 'supabase/migrations/20260915000100_add_login_ids.sql');
 const sql = existsSync(migrationPath) ? readFileSync(migrationPath, 'utf8') : '';
 const existingRlsFixturePaths = [
     'supabase/tests/profiles_rls.test.sql',

@@ -6,6 +6,7 @@ const documentationPaths = ['README.md', 'docs/setup/cloudflare-supabase.md', 'd
 const operationsPath = 'docs/setup/cloudflare-supabase.md';
 const deploymentGuidePaths = [operationsPath, 'docs/setup/fresh-machine.md'];
 const requiredCommands = ['npm ci', 'npm test -- --run', 'npm run dev', 'npm run dev:cloudflare', 'npx supabase db push', 'npx wrangler secret put', 'npm run deploy', 'git pull --ff-only origin main'];
+const orderedAuthenticationMigrationVersions = ['20260915000100', '20260915000200', '20260915000300'];
 
 const readDocument = (path) => {
     const absolutePath = resolve(process.cwd(), path);
@@ -74,5 +75,12 @@ describe('setup documentation', () => {
         expect(operations).toContain('supabase_migrations.schema_migrations');
         expect(operations).toContain('migration repair --status applied');
         expect(operations).toMatch(/403[\s\S]*Do not run `npx supabase db push`/i);
+    });
+
+    it('lists the login authentication migrations in dependency order', () => {
+        const operations = readDocument(operationsPath);
+        const orderedVersions = orderedAuthenticationMigrationVersions.join('[\\s\\S]*');
+
+        expect(operations).toMatch(new RegExp(orderedVersions));
     });
 });

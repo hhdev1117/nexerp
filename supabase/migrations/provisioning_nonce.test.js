@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const migration = fs.readFileSync(path.join(import.meta.dirname, '20260915000100_add_provisioning_nonces.sql'), 'utf8');
+const migration = fs.readFileSync(path.join(import.meta.dirname, '20260915000300_add_provisioning_nonces.sql'), 'utf8');
 
 describe('one-time user provisioning migration', () => {
     it('requires and consumes a server-staged nonce before creating a profile', () => {

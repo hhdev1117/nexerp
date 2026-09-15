@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const migrationPath = resolve(process.cwd(), 'supabase/migrations/20260914000300_bootstrap_first_admin.sql');
+const migrationPath = resolve(process.cwd(), 'supabase/migrations/20260915000200_bootstrap_first_admin.sql');
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, 'utf8') : '';
 const definition = migration.match(/create\s+(?:or\s+replace\s+)?function\s+public\.bootstrap_first_admin\b[\s\S]*?\$\$;/i)?.[0] ?? '';
 

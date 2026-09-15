@@ -78,7 +78,7 @@ git commit -m "feat: add login ID identity rules"
 ### Task 2: Database login ID migration
 
 **Files:**
-- Create: `supabase/migrations/20260914000200_add_login_ids.sql`
+- Create: `supabase/migrations/20260915000100_add_login_ids.sql`
 - Create: `supabase/migrations/login_ids.test.js`
 - Create: `supabase/tests/login_ids_rls.test.sql`
 
@@ -153,7 +153,7 @@ Expected: new test PASS; update the old Gmail policy test to assert replacement 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/20260914000200_add_login_ids.sql supabase/migrations/login_ids.test.js supabase/migrations/mandatory_totp_gmail.test.js supabase/tests/login_ids_rls.test.sql
+git add supabase/migrations/20260915000100_add_login_ids.sql supabase/migrations/login_ids.test.js supabase/migrations/mandatory_totp_gmail.test.js supabase/tests/login_ids_rls.test.sql
 git commit -m "feat: store login IDs in profiles"
 ```
 
