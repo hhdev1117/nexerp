@@ -8,6 +8,7 @@ import { createHrRepository } from '@/repositories/hr/hrRepository';
 import ReferenceCatalog from './ReferenceCatalog.vue';
 import EmployeeAccount from './EmployeeAccount.vue';
 import EmployeeEmployment from './EmployeeEmployment.vue';
+import EmployeeSecondaryAssignments from './EmployeeSecondaryAssignments.vue';
 const references = useHrReferenceStore();
 const repository = createHrRepository();
 const kinds = { department: '부서', grade: '직급', position: '직책' };
@@ -239,6 +240,7 @@ async function employmentChanged() {
             </div>
             <p class="my-4">입사일 {{ selected.hireDate }} · 로그인 계정 {{ selected.profileId ? '연결됨' : '연결 없음' }}</p>
             <EmployeeEmployment :key="`${company}:${selected.id}`" :company-id="company" :employee-id="selected.id" @changed="employmentChanged" />
+            <EmployeeSecondaryAssignments :key="`${company}:${selected.id}:${detailVersion}`" :company-id="company" :employee-id="selected.id" @changed="employmentChanged" />
             <EmployeeAccount :key="`${company}:${selected.id}:${detailVersion}`" :company-id="company" :employee-id="selected.id" @changed="accountChanged" />
             <h3 class="font-semibold">기본정보 정정 이력</h3>
             <p v-if="correctionsLoading" role="status">정정 이력을 불러오는 중입니다.</p>
