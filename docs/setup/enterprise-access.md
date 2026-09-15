@@ -24,7 +24,7 @@
 
 ## 데이터베이스 적용
 
-마이그레이션 순서는 `20260914000100_add_companies_and_sites.sql`, `20260914000200_enterprise_access_policy.sql`, `20260914000300_enterprise_access_activation.sql`이다. 001이 적용된 환경에는 002와 003을 순서대로 적용한다. **이번 작업에서 운영 DB 적용이나 배포는 하지 않았다.** 신규 RPC가 없는 환경은 조회 오류를 표시하므로 배포 전에 마이그레이션을 적용해야 한다.
+마이그레이션 순서는 `20260914000100_add_companies_and_sites.sql`, `20260914000200_enterprise_access_policy.sql`, `20260914000300_enterprise_access_activation.sql`이다. 001이 적용된 환경에는 002와 003을 순서대로 적용한다. 2026-09-15 운영 프로젝트 `mehhrnbaiojivesnobpv`에 002와 003을 적용하고 최신 Worker를 배포했다. 정책 발행본은 아직 0건이므로 최초 발행 전까지 기존 권한 호환 모드가 유지된다.
 
 정책 저장·발행·복원은 활성 기술 관리자 및 AAL2를 검증하는 RPC로 제한한다. 클라이언트에 직접 정책 쓰기 권한은 없다. 런타임 RPC는 임의 사용자 ID를 받지 않고 로그인 계정으로 판정하며 전체 정책을 노출하지 않는다. 회사 신규 생성은 기술 관리자 작업으로 유지한다.
 
@@ -36,6 +36,6 @@
 
 ## 검증
 
-2026-09-14: Vitest 58개 파일·696개 테스트 통과. PostgreSQL 보조 검증에서 실제 001~003 마이그레이션을 실행해 40개 단언을 통과했다. 발행 충돌, 거부 우선순위, 회사 경계, 비활성화 이후 정책 저장·재발행·재활성화 등을 포함한다. Auth 헬퍼를 대체한 PGlite 검증이므로 전체 Supabase 통합 검증과는 구분한다.
+2026-09-15: 전체 Vitest 75개 파일·868개 테스트, ESLint, production build를 통과했다. 운영 카탈로그에서 전사 권한 및 HR 대상 테이블 13개, RLS 13개, 핵심 RPC 11종과 DELETE grant 0개를 확인했다. PostgreSQL 보조 검증은 발행 충돌, 거부 우선순위, 회사 경계, 비활성화 이후 정책 저장·재발행·재활성화를 포함한다.
 
 전체 ESLint와 production build를 확인한다. 발행 화면과 회사 선택기는 1440px/375px에서 격리된 예시 데이터로 렌더링해 가로 넘침과 페이지 오류가 없음을 확인했다. `supabase/tests/enterprise_access_policy_rls.test.sql` 및 `enterprise_access_activation_rls.test.sql`의 전체 pgTAP 실행은 별도 Supabase 환경에서 필요하다.

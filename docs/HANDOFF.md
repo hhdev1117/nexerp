@@ -1,20 +1,20 @@
 # NEXERP 인수인계 문서
 
-> 기준 시점: 2026-09-15, `feature/partner-master` 브랜치에서 거래처 기준정보 운영 적용 후 최종 검토 수정까지 반영. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다. 작업 단위를 끝낼 때마다 "현재 상태"와 "다음 할 일"을 갱신하고 함께 커밋해 주세요.
+> 기준 시점: 2026-09-15, 전사 권한관리와 인사 원장·기준정보·계정 연결·재직 이력·겸직 범위 권한을 `main`에 통합하고 운영 Supabase 및 Cloudflare에 적용한 상태입니다. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다.
 
 ## 1. 한눈에 보기
 
 | 항목 | 상태 |
 |---|---|
 | 스택 | Vue 3 + PrimeVue 4 + Tailwind, Cloudflare Workers Static Assets, Supabase (Auth + Postgres + RLS), Vitest |
-| 최신 구현 커밋 | `e864340 fix: enforce partner master contracts`, 운영 문서 `fef951c docs: record Supabase migration history blocker` |
-| 작업 트리 | 최종 수정 브랜치 `feature/partner-master`. 원격 푸시는 컨트롤러 최종 재검토와 main 통합 후 진행 |
-| 검증 | 최종 수정 후 Vitest 47개 파일 654개 통과, ESLint 무결, `npm run build` 성공(PWA precache 50개), 운영 의존성 취약점 0개, Wrangler dry-run 성공 |
+| 최신 구현 커밋 | `86128f8 Merge branch 'codex/enterprise-access' into main` |
+| 작업 트리 | 로컬·원격 `main` 동기화 완료. 운영 문서 최신화 커밋만 후속 반영 |
+| 검증 | Vitest 75개 파일 868개 통과, ESLint 통과, production build 성공(PWA precache 56개), Wrangler dry-run 및 실제 배포 성공 |
 | Supabase 운영 프로젝트 | `mehhrnbaiojivesnobpv` (`nexerp`). 이전 문서·계획의 `kctewzpeymlncibgyosz`는 오래된 프로젝트 식별자이므로 사용하지 않음 |
-| 운영 스키마 / CLI 이력 | 회사·사업장 및 거래처 스키마는 2026-09-14 운영 프로젝트에 적용하고 카탈로그 검증 완료. 단, CLI migration history는 미복구이며 복구 전 `db push` 금지 |
+| 운영 스키마 / CLI 이력 | 회사·사업장·거래처와 전사 권한 및 HR 마이그레이션 002~009를 운영 프로젝트에 적용하고 카탈로그 검증 완료. CLI migration history는 미복구이며 복구 전 `db push` 금지 |
 | 미실행 테스트 | pgTAP `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 38개. 이 PC에 Docker가 없어 실행 불가 |
 | 확정된 결정 | 다회사·다사업장. 모든 업무 테이블은 `company_id`를 가지며 고객/공급처는 `master.partners`에서 통합 관리 |
-| 운영 배포 | 현재 Cloudflare Worker 버전 `61f5266c-d201-48c9-940a-eeb22fc7de05`, 진입 자산 `index-Cbfjxbkr.js`, `https://nexerp.merciful-chips.workers.dev`. 최종 검토 수정 재배포 대기 |
+| 운영 배포 | Cloudflare Worker 버전 `3dedd823-282e-4327-9a51-bbc9439717a9`, 진입 자산 `index-DFGDZqNf.js`, `https://nexerp.nexerp.workers.dev` |
 
 ## 2. 현재 구현 상태
 
@@ -25,10 +25,12 @@
 | 계정 관리, 메뉴 권한 관리, 인프라 사용량, 2단계 인증 관리 | 완료 (Worker API + RPC) | `src/views/admin/*`, `worker/admin.js`, `worker/infrastructure.js` |
 | **회사 · 사업장 기준정보** | 구현·운영 마이그레이션·배포 완료. 관리자 MFA 등록 후 실제 등록 점검 대기 | `src/views/master/CompanySites.vue`, `src/stores/master.js`, `src/repositories/master/*` |
 | **거래처 통합 기준정보** | 구현·운영 마이그레이션·배포 완료. 고객/공급처 레거시 경로 통합, 관리자 MFA 후 실제 CRUD 및 역할별 UI 점검 대기 | `src/views/master/Partners.vue`, `src/stores/master.js`, `src/repositories/master/*` |
+| **전사 권한관리** | 구현·운영 마이그레이션·배포 완료. 레벨 1~5, 직급·직책 매칭, 회사·사업장 범위, 정책 초안·발행·복원 지원 | `src/views/admin/EnterpriseAccess.vue`, `src/repositories/access/*`, `supabase/migrations/20260914000200_enterprise_access_policy.sql` |
+| **인사관리** | 직원 원장, 인사발령, 기준정보, 모듈 설정, 계정 연결, 재직 이력, 겸직 부서·직책 범위를 구현하고 운영 적용 완료 | `src/views/hr/*`, `src/repositories/hr/*`, `supabase/migrations/20260914000400_hr_employee_ledger.sql` 이후 |
 | 결재함, 수주 관리, 재고 현황, 재무 현황, 통합 대시보드 | 데모 (메모리 리포지토리) | `src/views/erp/*`, `src/views/Dashboard.vue`, `src/stores/erp.js` |
 | 나머지 27개 메뉴 (견적, 발주, 입고, BOM, 전표 등) | 플레이스홀더 공용 화면 | `src/views/erp/GenericModule.vue` |
 
-Supabase에 존재하는 앱 테이블은 `profiles`, `role_menu_permissions`, `companies`, `sites`, `partners` 다섯 개입니다. 나머지 업무 데이터는 아직 테이블이 없습니다.
+Supabase에는 기존 인증·권한·회사·사업장·거래처 테이블과 함께 전사 권한 3개 테이블, HR 10개 테이블이 운영 적용되어 있습니다. 신규 운영 테이블 13개는 모두 RLS가 활성화되어 있고 `authenticated` 역할의 DELETE 권한은 없습니다. 정책 발행본과 직원·겸직 데이터는 현재 0건입니다.
 
 ## 3. 이번 세션에서 한 일
 
@@ -125,7 +127,7 @@ npm run build
 - 삭제 대신 비활성화. 기준정보 코드는 등록 후 불변.
 - `/approvals` 라우트에 `roles` 없음. 메뉴 권한 = 조회, 역할 = 처리.
 - 상태 값은 영문 코드 저장, 한글 라벨 표시.
-- HR/급여는 ERP 메뉴에서 제외(기존 설계 문서 결정).
+- 인사관리는 ERP 메뉴에 포함합니다. 급여는 현재 모듈 설정 범위이며 급여 원장·계산·신고 업무 테이블은 후속 구현입니다.
 
 **미결 (사용자 확인 필요)**
 - 품목 메뉴 통합: `inventory.items` / `master.items`. 권장안은 `master.items`에서 원장을 관리하고 재고 업무 화면에서는 조회·선택만 하는 것. 통합할 때 `src/data/erp.js`와 `role_menu_permissions` 권한 키를 함께 이전해야 합니다.
@@ -146,8 +148,9 @@ npm run build
 - [ ] `user` 역할로 `/master/partners`의 등록·수정·상태 전환 버튼이 숨겨지는지 운영 확인. 마운트 테스트에서는 조회 전용 동작 통과.
 - [x] 운영 브라우저에서 두 레거시 경로 확인. 비로그인 상태에서 `/sales/customers`, `/purchasing/vendors` 모두 `/auth/login?redirect=/master/partners`로 끝나 통합 경로를 보존함. PWA 업데이트 적용 완료, 브라우저 개발 로그 비어 있음.
 - [ ] Docker가 있는 환경에서 `npx supabase test db` 실행. 기대: `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 38개 통과.
-- [ ] 최종 검토 수정 포함 Cloudflare Worker 재배포. 현재 운영 버전 `61f5266c-d201-48c9-940a-eeb22fc7de05`에서는 `/api/health` HTTP 200, Supabase `configured`; 레거시 2경로, 통합 경로, manifest, service worker HTTP 200을 확인했지만 `e864340` 이후 자산은 아직 배포하지 않음.
-- [ ] 최종 전체 브랜치 검토 후 `git push origin main` 및 로컬/원격 HEAD 일치 확인.
+- [x] 전사 권한 및 HR 마이그레이션 002~009 운영 적용. 대상 테이블 13개 존재, RLS 13개 활성, 핵심 RPC 11종 존재, DELETE grant 0개를 카탈로그에서 확인.
+- [x] 최신 `main` Cloudflare Worker 배포. 버전 `3dedd823-282e-4327-9a51-bbc9439717a9`; `/api/health`, `/settings/enterprise-access`, `/hr/employees`, manifest, service worker HTTP 200 확인.
+- [x] `git push origin main` 및 로컬/원격 HEAD 일치 확인.
 
 ### 7.2 1단계 기준정보 마무리
 
