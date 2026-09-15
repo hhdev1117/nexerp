@@ -10,6 +10,7 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
 
     const companies = ref([]);
     const sites = ref([]);
+    const partners = ref([]);
     const loading = ref(false);
     const loaded = ref(false);
     const error = ref(null);
@@ -18,6 +19,7 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
 
     const activeCompanies = computed(() => companies.value.filter((company) => company.isActive));
     const activeSites = computed(() => sites.value.filter((site) => site.isActive));
+    const activePartners = computed(() => partners.value.filter((partner) => partner.isActive));
     const siteCountByCompany = computed(() =>
         sites.value.reduce((counts, site) => {
             counts[site.companyId] = (counts[site.companyId] || 0) + 1;
@@ -27,15 +29,17 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
 
     const companyById = (id) => companies.value.find((company) => company.id === id) || null;
     const sitesFor = (companyId) => sites.value.filter((site) => site.companyId === companyId);
+    const partnersFor = (companyId) => partners.value.filter((partner) => partner.companyId === companyId);
 
     async function load() {
         const sequence = ++loadSequence;
         loading.value = true;
         try {
-            const [nextCompanies, nextSites] = await Promise.all([repository.listCompanies(), repository.listSites()]);
+            const [nextCompanies, nextSites, nextPartners] = await Promise.all([repository.listCompanies(), repository.listSites(), repository.listPartners()]);
             if (sequence !== loadSequence) return;
             companies.value = byCode(nextCompanies);
             sites.value = byCode(nextSites);
+            partners.value = byCode(nextPartners);
             loaded.value = true;
             error.value = null;
         } catch {
@@ -89,23 +93,40 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
         return updated;
     }
 
+    async function createPartner(draft) {
+        const created = await repository.createPartner(draft);
+        partners.value = byCode([...partners.value, created]);
+        return created;
+    }
+
+    async function updatePartner(id, changes) {
+        const updated = await repository.updatePartner(id, changes);
+        partners.value = byCode(replaceById(partners.value, updated));
+        return updated;
+    }
+
     return {
         companies,
         sites,
+        partners,
         activeCompanies,
         activeSites,
+        activePartners,
         siteCountByCompany,
         loading,
         loaded,
         error,
         companyById,
         sitesFor,
+        partnersFor,
         ensureLoaded,
         reload,
         createCompany,
         updateCompany,
         createSite,
-        updateSite
+        updateSite,
+        createPartner,
+        updatePartner
     };
 }
 
