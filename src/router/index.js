@@ -19,7 +19,8 @@ const dedicatedViews = {
     '/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue'),
     '/settings/enterprise-access': () => import('@/views/admin/EnterpriseAccess.vue'),
     '/settings/hr-modules': () => import('@/views/admin/HRModules.vue'),
-    '/settings/infrastructure-usage': () => import('@/views/admin/InfrastructureUsage.vue')
+    '/settings/infrastructure-usage': () => import('@/views/admin/InfrastructureUsage.vue'),
+    '/settings/audit': () => import('@/views/admin/AuditLogs.vue')
 };
 
 const routeName = (path) => (path === '/' ? 'dashboard' : path.slice(1).replaceAll('/', '-'));
