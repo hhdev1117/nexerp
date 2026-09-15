@@ -17,6 +17,7 @@ const dedicatedViews = {
     '/master/partners': () => import('@/views/master/Partners.vue'),
     '/master/items': () => import('@/views/master/Items.vue'),
     '/inventory/warehouses': () => import('@/views/master/Warehouses.vue'),
+    '/master/accounts': () => import('@/views/master/Accounts.vue'),
     '/settings/accounts': () => import('@/views/admin/AccountManagement.vue'),
     '/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue'),
     '/settings/enterprise-access': () => import('@/views/admin/EnterpriseAccess.vue'),

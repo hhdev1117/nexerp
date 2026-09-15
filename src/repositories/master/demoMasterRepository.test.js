@@ -1,6 +1,6 @@
-import { ITEM_TYPE, SITE_TYPE, WAREHOUSE_TYPE } from '@/data/master';
+import { ACCOUNT_TYPE, ITEM_TYPE, SITE_TYPE, WAREHOUSE_TYPE } from '@/data/master';
 import { describe, expect, it } from 'vitest';
-import { createDemoMasterRepository, demoCompanies, demoItems, demoPartners, demoSites, demoWarehouses } from './demoMasterRepository';
+import { createDemoMasterRepository, demoAccounts, demoCompanies, demoItems, demoPartners, demoSites, demoWarehouses } from './demoMasterRepository';
 
 const companyDraft = (overrides = {}) => ({ code: 'NXT', name: '넥서스 테크', businessNumber: '3018800001', representative: '박서연', address: '대전광역시 유성구', isActive: true, ...overrides });
 const siteDraft = (overrides = {}) => ({ companyId: 'company-nxm', code: 'DJ', name: '대전 지점', siteType: SITE_TYPE.BRANCH, address: '대전광역시 유성구', isActive: true, ...overrides });
@@ -321,5 +321,43 @@ describe('demo warehouse master', () => {
         await repository.updateCompany('company-nxd', { isActive: false });
         const afterCompany = await repository.listWarehouses();
         expect(afterCompany.some((warehouse) => warehouse.isActive)).toBe(false);
+    });
+});
+
+const accountDraft = (overrides = {}) => ({ companyId: 'company-nxm', parentId: 'account-110', code: '113', name: '단기금융상품', accountType: ACCOUNT_TYPE.ASSET, isPostable: true, isActive: true, ...overrides });
+
+describe('demo chart of accounts', () => {
+    it('seeds a usable Korean chart with summary and postable accounts', async () => {
+        const listed = await createDemoMasterRepository().listAccounts();
+        expect(listed).toHaveLength(demoAccounts.length);
+        expect(listed.filter((account) => account.isPostable).map((account) => account.code)).toEqual(['111', '112', '211', '311', '411', '511']);
+    });
+
+    it('refuses a parent from another type, a postable parent and a missing parent', async () => {
+        const repository = createDemoMasterRepository();
+
+        await expect(repository.createAccount(accountDraft({ accountType: ACCOUNT_TYPE.REVENUE }))).rejects.toMatchObject({ code: 'parent_type_mismatch' });
+        await expect(repository.createAccount(accountDraft({ parentId: 'account-111' }))).rejects.toMatchObject({ code: 'parent_is_postable' });
+        await expect(repository.createAccount(accountDraft({ parentId: 'missing' }))).rejects.toMatchObject({ code: 'parent_not_found' });
+        await expect(repository.createAccount(accountDraft())).resolves.toMatchObject({ code: '113', parentId: 'account-110' });
+    });
+
+    it('refuses a loop, including an account pointing at itself', async () => {
+        const repository = createDemoMasterRepository();
+
+        await expect(repository.updateAccount('account-110', { parentId: 'account-110' })).rejects.toMatchObject({ code: 'invalid_parent' });
+        await expect(repository.updateAccount('account-100', { parentId: 'account-111' })).rejects.toMatchObject({ code: 'parent_is_postable' });
+        await expect(repository.updateAccount('account-100', { parentId: 'account-110' })).rejects.toMatchObject({ code: 'invalid_parent' });
+    });
+
+    it('deactivates every descendant and blocks reviving a child alone', async () => {
+        const repository = createDemoMasterRepository();
+
+        await repository.updateAccount('account-100', { isActive: false });
+        const listed = await repository.listAccounts();
+        expect(listed.filter((account) => ['account-100', 'account-110', 'account-111', 'account-112'].includes(account.id)).every((account) => !account.isActive)).toBe(true);
+        expect(listed.find((account) => account.id === 'account-200').isActive).toBe(true);
+
+        await expect(repository.updateAccount('account-111', { isActive: true })).rejects.toMatchObject({ code: 'parent_inactive' });
     });
 });

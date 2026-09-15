@@ -18,7 +18,10 @@ export const MASTER_REPOSITORY_METHODS = Object.freeze([
     'updateItem',
     'listWarehouses',
     'createWarehouse',
-    'updateWarehouse'
+    'updateWarehouse',
+    'listAccounts',
+    'createAccount',
+    'updateAccount'
 ]);
 
 const describeMethods = (methods) => `${methods.slice(0, -1).join(', ')}, and ${methods.at(-1)}`;

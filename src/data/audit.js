@@ -6,7 +6,7 @@ const actionLabels = Object.freeze({ insert: '등록', update: '수정', delete:
 const actionSeverities = Object.freeze({ insert: 'success', update: 'info', delete: 'danger' });
 
 // Tables the shared trigger currently watches. Add an entry whenever a new trigger is attached.
-const auditedTables = Object.freeze({ companies: '회사', sites: '사업장', partners: '거래처', items: '품목', warehouses: '창고' });
+const auditedTables = Object.freeze({ companies: '회사', sites: '사업장', partners: '거래처', items: '품목', warehouses: '창고', accounts: '계정과목' });
 
 const fieldLabels = Object.freeze({
     code: '코드',
@@ -29,7 +29,10 @@ const fieldLabels = Object.freeze({
     safety_stock: '안전재고',
     standard_price: '표준단가',
     site_id: '사업장',
-    warehouse_type: '창고 유형'
+    warehouse_type: '창고 유형',
+    account_type: '계정 유형',
+    parent_id: '상위 계정',
+    is_postable: '전표 입력 가능'
 });
 
 // The trigger stores a full row snapshot; these columns carry no review value on their own.

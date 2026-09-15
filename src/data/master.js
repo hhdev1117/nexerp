@@ -68,9 +68,33 @@ export function warehouseTypeLabel(code) {
     return warehouseTypeLabels[code] ?? (typeof code === 'string' ? code : '');
 }
 
+export const ACCOUNT_TYPE = Object.freeze({
+    ASSET: 'asset',
+    LIABILITY: 'liability',
+    EQUITY: 'equity',
+    REVENUE: 'revenue',
+    EXPENSE: 'expense'
+});
+
+const accountTypeLabels = Object.freeze({
+    asset: '자산',
+    liability: '부채',
+    equity: '자본',
+    revenue: '수익',
+    expense: '비용'
+});
+
+export const accountTypeOptions = Object.freeze(Object.entries(accountTypeLabels).map(([value, label]) => Object.freeze({ value, label })));
+
+export function accountTypeLabel(code) {
+    return accountTypeLabels[code] ?? (typeof code === 'string' ? code : '');
+}
+
 // Mirrors the database check constraints so users see the problem before a round trip.
 export const MASTER_CODE_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
 export const ITEM_UNIT_PATTERN = /^[A-Z]{1,8}$/;
+// Account codes are numeric, unlike every other master code.
+export const ACCOUNT_CODE_PATTERN = /^[0-9]{3,10}$/;
 const BUSINESS_NUMBER_PATTERN = /^\d{10}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -88,7 +112,10 @@ export const MASTER_MESSAGES = Object.freeze({
     standardPrice: '표준단가는 0 이상의 숫자여야 합니다.',
     site: '사업장을 선택해 주세요.',
     warehouseName: '창고명을 입력해 주세요.',
-    warehouseType: '창고 유형을 선택해 주세요.'
+    warehouseType: '창고 유형을 선택해 주세요.',
+    accountCode: '계정 코드는 숫자 3자 이상 10자 이하여야 합니다.',
+    accountName: '계정과목명을 입력해 주세요.',
+    accountType: '계정 유형을 선택해 주세요.'
 });
 
 export const normalizeCode = (value) => (typeof value === 'string' ? value.trim().toUpperCase() : '');
@@ -264,4 +291,69 @@ export function warehousePayload(draft) {
         warehouseType: draft.warehouseType,
         isActive: draft.isActive === true
     };
+}
+
+export function createAccountDraft(account = null, companyId = '') {
+    return {
+        companyId: account?.companyId ?? companyId ?? '',
+        parentId: account?.parentId ?? null,
+        code: account?.code ?? '',
+        name: account?.name ?? '',
+        accountType: account?.accountType ?? ACCOUNT_TYPE.ASSET,
+        isPostable: account ? account.isPostable === true : true,
+        isActive: account ? account.isActive === true : true
+    };
+}
+
+export function validateAccountDraft(draft) {
+    const errors = {};
+    if (!normalizeText(draft?.companyId)) errors.companyId = MASTER_MESSAGES.company;
+    if (!ACCOUNT_CODE_PATTERN.test(normalizeText(draft?.code))) errors.code = MASTER_MESSAGES.accountCode;
+    if (!normalizeText(draft?.name)) errors.name = MASTER_MESSAGES.accountName;
+    if (!Object.hasOwn(accountTypeLabels, draft?.accountType)) errors.accountType = MASTER_MESSAGES.accountType;
+    return errors;
+}
+
+export function accountPayload(draft) {
+    return {
+        companyId: normalizeText(draft.companyId),
+        parentId: normalizeText(draft.parentId) || null,
+        code: normalizeText(draft.code),
+        name: normalizeText(draft.name),
+        accountType: draft.accountType,
+        isPostable: draft.isPostable === true,
+        isActive: draft.isActive === true
+    };
+}
+
+// Flattens the chart into display order: each parent immediately followed by its children, with a
+// depth for indentation. Rows whose parent is missing, and any cycle, still appear exactly once.
+export function accountOutline(accounts) {
+    const rows = Array.isArray(accounts) ? accounts : [];
+    const byParent = new Map();
+    for (const account of rows) {
+        const key = account.parentId ?? '';
+        if (!byParent.has(key)) byParent.set(key, []);
+        byParent.get(key).push(account);
+    }
+    for (const list of byParent.values()) list.sort((a, b) => String(a.code).localeCompare(String(b.code)));
+
+    const ordered = [];
+    const seen = new Set();
+    const walk = (parentKey, depth) => {
+        for (const account of byParent.get(parentKey) ?? []) {
+            if (seen.has(account.id)) continue;
+            seen.add(account.id);
+            ordered.push({ ...account, depth });
+            walk(account.id, depth + 1);
+        }
+    };
+
+    walk('', 0);
+    for (const account of rows) {
+        if (seen.has(account.id)) continue;
+        seen.add(account.id);
+        ordered.push({ ...account, depth: 0 });
+    }
+    return ordered;
 }

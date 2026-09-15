@@ -1,4 +1,4 @@
-import { ITEM_TYPE, ITEM_UNIT_PATTERN, MASTER_CODE_PATTERN, SITE_TYPE, WAREHOUSE_TYPE, normalizeBusinessNumber, normalizeCode, normalizeText, normalizeUnit } from '@/data/master';
+import { ACCOUNT_CODE_PATTERN, ACCOUNT_TYPE, ITEM_TYPE, ITEM_UNIT_PATTERN, MASTER_CODE_PATTERN, SITE_TYPE, WAREHOUSE_TYPE, normalizeBusinessNumber, normalizeCode, normalizeText, normalizeUnit } from '@/data/master';
 import { masterError } from './errors';
 
 export const demoCompanies = Object.freeze([
@@ -146,6 +146,24 @@ export const demoWarehouses = Object.freeze(
     ].map((warehouse) => Object.freeze({ ...warehouse, isActive: true, createdAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z' }))
 );
 
+// A small Korean standard chart: summary accounts group children, leaves accept journal lines.
+export const demoAccounts = Object.freeze(
+    [
+        { id: 'account-100', parentId: null, code: '100', name: '자산', accountType: ACCOUNT_TYPE.ASSET, isPostable: false },
+        { id: 'account-110', parentId: 'account-100', code: '110', name: '유동자산', accountType: ACCOUNT_TYPE.ASSET, isPostable: false },
+        { id: 'account-111', parentId: 'account-110', code: '111', name: '현금및현금성자산', accountType: ACCOUNT_TYPE.ASSET, isPostable: true },
+        { id: 'account-112', parentId: 'account-110', code: '112', name: '매출채권', accountType: ACCOUNT_TYPE.ASSET, isPostable: true },
+        { id: 'account-200', parentId: null, code: '200', name: '부채', accountType: ACCOUNT_TYPE.LIABILITY, isPostable: false },
+        { id: 'account-211', parentId: 'account-200', code: '211', name: '매입채무', accountType: ACCOUNT_TYPE.LIABILITY, isPostable: true },
+        { id: 'account-300', parentId: null, code: '300', name: '자본', accountType: ACCOUNT_TYPE.EQUITY, isPostable: false },
+        { id: 'account-311', parentId: 'account-300', code: '311', name: '자본금', accountType: ACCOUNT_TYPE.EQUITY, isPostable: true },
+        { id: 'account-400', parentId: null, code: '400', name: '매출', accountType: ACCOUNT_TYPE.REVENUE, isPostable: false },
+        { id: 'account-411', parentId: 'account-400', code: '411', name: '제품매출', accountType: ACCOUNT_TYPE.REVENUE, isPostable: true },
+        { id: 'account-500', parentId: null, code: '500', name: '비용', accountType: ACCOUNT_TYPE.EXPENSE, isPostable: false },
+        { id: 'account-511', parentId: 'account-500', code: '511', name: '급여', accountType: ACCOUNT_TYPE.EXPENSE, isPostable: true }
+    ].map((account) => Object.freeze({ ...account, companyId: 'company-nxm', isActive: true, createdAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z' }))
+);
+
 const withoutIdentity = (fields) => {
     const draft = { ...fields };
     delete draft.id;
@@ -164,15 +182,18 @@ const ITEM_WRITABLE_FIELDS = Object.freeze(['companyId', 'code', 'name', 'itemTy
 const itemFields = (values) => Object.fromEntries(ITEM_WRITABLE_FIELDS.filter((key) => values?.[key] !== undefined).map((key) => [key, values[key]]));
 const WAREHOUSE_WRITABLE_FIELDS = Object.freeze(['companyId', 'siteId', 'code', 'name', 'warehouseType', 'isActive']);
 const warehouseFields = (values) => Object.fromEntries(WAREHOUSE_WRITABLE_FIELDS.filter((key) => values?.[key] !== undefined).map((key) => [key, values[key]]));
+const ACCOUNT_WRITABLE_FIELDS = Object.freeze(['companyId', 'parentId', 'code', 'name', 'accountType', 'isPostable', 'isActive']);
+const accountFields = (values) => Object.fromEntries(ACCOUNT_WRITABLE_FIELDS.filter((key) => values?.[key] !== undefined).map((key) => [key, values[key]]));
 
 // In-memory implementation that mirrors the database rules (unique codes, active-company
 // requirement, cascade deactivation) so the UI behaves the same before Supabase is connected.
-export function createDemoMasterRepository({ companies = demoCompanies, sites = demoSites, partners = demoPartners, items = demoItems, warehouses = demoWarehouses, now = () => new Date() } = {}) {
+export function createDemoMasterRepository({ companies = demoCompanies, sites = demoSites, partners = demoPartners, items = demoItems, warehouses = demoWarehouses, accounts = demoAccounts, now = () => new Date() } = {}) {
     const companyState = cloneRows(companies);
     const siteState = cloneRows(sites);
     const partnerState = cloneRows(partners);
     const itemState = cloneRows(items);
     const warehouseState = cloneRows(warehouses);
+    const accountState = cloneRows(accounts);
     let sequence = 0;
 
     const nextId = (prefix) => `${prefix}-${String(++sequence).padStart(3, '0')}`;
@@ -182,6 +203,7 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
     const findPartner = (id) => partnerState.find((partner) => partner.id === id);
     const findItem = (id) => itemState.find((row) => row.id === id);
     const findWarehouse = (id) => warehouseState.find((row) => row.id === id);
+    const findAccount = (id) => accountState.find((row) => row.id === id);
 
     const assertCompanyUnique = (code, businessNumber, exceptId) => {
         if (companyState.some((company) => company.id !== exceptId && company.code === code)) throw masterError('duplicate_code');
@@ -205,6 +227,70 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
         for (const row of warehouseState) {
             if (row.siteId === siteId && row.isActive) Object.assign(row, { isActive: false, updatedAt: stamp() });
         }
+    };
+
+    const assertAccountUnique = (companyId, code, exceptId) => {
+        if (accountState.some((row) => row.id !== exceptId && row.companyId === companyId && row.code === code)) throw masterError('duplicate_code');
+    };
+
+    // The database refuses loops through a recursive check; walk the same chain here.
+    const accountLoops = (id, parentId) => {
+        const visited = new Set();
+        let cursor = parentId;
+        while (cursor) {
+            if (cursor === id || visited.has(cursor)) return true;
+            visited.add(cursor);
+            cursor = findAccount(cursor)?.parentId ?? null;
+        }
+        return false;
+    };
+
+    const deactivateAccountDescendants = (accountId) => {
+        const queue = [accountId];
+        while (queue.length) {
+            const parentId = queue.shift();
+            for (const row of accountState) {
+                if (row.parentId !== parentId || !row.isActive) continue;
+                Object.assign(row, { isActive: false, updatedAt: stamp() });
+                queue.push(row.id);
+            }
+        }
+    };
+
+    const assertAccount = (row) => {
+        if (!ACCOUNT_CODE_PATTERN.test(row.code)) throw masterError('invalid_value');
+        if (typeof row.companyId !== 'string' || !row.companyId) throw masterError('invalid_value');
+        if (typeof row.name !== 'string' || !row.name) throw masterError('invalid_value');
+        if (!Object.values(ACCOUNT_TYPE).includes(row.accountType)) throw masterError('invalid_value');
+
+        const company = findCompany(row.companyId);
+        if (!company) throw masterError('not_found');
+        if (row.isActive && !company.isActive) throw masterError('company_inactive');
+
+        if (!row.parentId) return;
+        if (row.parentId === row.id) throw masterError('invalid_parent');
+
+        const parent = findAccount(row.parentId);
+        if (!parent) throw masterError('parent_not_found');
+        if (parent.companyId !== row.companyId) throw masterError('parent_company_mismatch');
+        if (parent.accountType !== row.accountType) throw masterError('parent_type_mismatch');
+        if (parent.isPostable) throw masterError('parent_is_postable');
+        if (row.isActive && !parent.isActive) throw masterError('parent_inactive');
+        if (accountLoops(row.id, row.parentId)) throw masterError('invalid_parent');
+    };
+
+    const normalizeAccountFields = (values) => {
+        const fields = accountFields(values);
+        for (const key of ['companyId', 'code', 'name']) {
+            if (fields[key] === undefined) continue;
+            if (typeof fields[key] !== 'string') throw masterError('invalid_value');
+            fields[key] = normalizeText(fields[key]);
+        }
+        if (fields.parentId !== undefined) fields.parentId = typeof fields.parentId === 'string' && fields.parentId.trim() ? fields.parentId.trim() : null;
+        for (const key of ['isPostable', 'isActive']) {
+            if (fields[key] !== undefined && typeof fields[key] !== 'boolean') throw masterError('invalid_value');
+        }
+        return fields;
     };
 
     const assertPartnerUnique = (companyId, code, businessNumber, exceptId) => {
@@ -526,6 +612,47 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
             assertWarehouse(next);
             assertWarehouseUnique(next.companyId, next.code, id);
             Object.assign(row, next, { updatedAt: stamp() });
+            return { ...row };
+        },
+
+        async listAccounts() {
+            return cloneRows(byCode(accountState));
+        },
+
+        async createAccount(draft) {
+            const fields = normalizeAccountFields(withoutIdentity(draft));
+            const candidate = {
+                companyId: fields.companyId,
+                parentId: fields.parentId ?? null,
+                code: fields.code,
+                name: fields.name,
+                accountType: fields.accountType,
+                isPostable: fields.isPostable !== false,
+                isActive: fields.isActive !== false
+            };
+            assertAccount(candidate);
+            assertAccountUnique(candidate.companyId, candidate.code);
+
+            const timestamp = stamp();
+            const created = { id: nextId('account'), ...candidate, createdAt: timestamp, updatedAt: timestamp };
+            accountState.push(created);
+            return { ...created };
+        },
+
+        async updateAccount(id, changes) {
+            const row = findAccount(id);
+            if (!row) throw masterError('not_found');
+
+            const mutableChanges = withoutIdentity(changes);
+            delete mutableChanges.code;
+            const fields = normalizeAccountFields(mutableChanges);
+            const next = { ...row, ...fields };
+            assertAccount(next);
+            assertAccountUnique(next.companyId, next.code, id);
+
+            const wasActive = row.isActive;
+            Object.assign(row, next, { updatedAt: stamp() });
+            if (wasActive && !row.isActive) deactivateAccountDescendants(id);
             return { ...row };
         }
     };

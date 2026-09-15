@@ -7,6 +7,7 @@ const SITE_FIELDS = 'id, company_id, code, name, site_type, address, is_active, 
 const PARTNER_FIELDS = 'id, company_id, code, name, business_number, is_customer, is_vendor, representative, contact_name, email, phone, address, payment_terms_days, credit_limit, is_active, created_at, updated_at';
 const ITEM_FIELDS = 'id, company_id, code, name, item_type, unit, safety_stock, standard_price, is_active, created_at, updated_at';
 const WAREHOUSE_FIELDS = 'id, company_id, site_id, code, name, warehouse_type, is_active, created_at, updated_at';
+const ACCOUNT_FIELDS = 'id, company_id, parent_id, code, name, account_type, is_postable, is_active, created_at, updated_at';
 
 const companyColumns = Object.freeze({ code: 'code', name: 'name', businessNumber: 'business_number', representative: 'representative', address: 'address', isActive: 'is_active' });
 const siteColumns = Object.freeze({ companyId: 'company_id', code: 'code', name: 'name', siteType: 'site_type', address: 'address', isActive: 'is_active' });
@@ -32,6 +33,8 @@ const itemColumns = Object.freeze({ companyId: 'company_id', code: 'code', name:
 const itemUpdateColumns = Object.freeze(Object.fromEntries(Object.entries(itemColumns).filter(([key]) => key !== 'code')));
 const warehouseColumns = Object.freeze({ companyId: 'company_id', siteId: 'site_id', code: 'code', name: 'name', warehouseType: 'warehouse_type', isActive: 'is_active' });
 const warehouseUpdateColumns = Object.freeze(Object.fromEntries(Object.entries(warehouseColumns).filter(([key]) => key !== 'code')));
+const accountColumns = Object.freeze({ companyId: 'company_id', parentId: 'parent_id', code: 'code', name: 'name', accountType: 'account_type', isPostable: 'is_postable', isActive: 'is_active' });
+const accountUpdateColumns = Object.freeze(Object.fromEntries(Object.entries(accountColumns).filter(([key]) => key !== 'code')));
 
 const toCompany = (row) => ({
     id: row.id,
@@ -146,6 +149,29 @@ const normalizeWarehouseValues = (values) => {
     return normalized;
 };
 
+const toAccount = (row) => ({
+    id: row.id,
+    companyId: row.company_id,
+    parentId: row.parent_id ?? null,
+    code: row.code,
+    name: row.name,
+    accountType: row.account_type,
+    isPostable: row.is_postable === true,
+    isActive: row.is_active === true,
+    createdAt: row.created_at ?? null,
+    updatedAt: row.updated_at ?? null
+});
+
+// Account codes are numeric, so they are trimmed rather than upper-cased.
+const normalizeAccountValues = (values) => {
+    const normalized = { ...values };
+    for (const key of ['companyId', 'code', 'name']) {
+        if (typeof values?.[key] === 'string') normalized[key] = normalizeText(values[key]);
+    }
+    if (values?.parentId !== undefined) normalized.parentId = typeof values.parentId === 'string' && values.parentId.trim() ? values.parentId.trim() : null;
+    return normalized;
+};
+
 // Only keys the caller supplied become columns, so partial updates never overwrite other fields.
 const toRow = (columns, values) =>
     Object.fromEntries(
@@ -167,6 +193,9 @@ const failure = (operation, source) => {
     if (message === 'site_inactive') return masterError('site_inactive');
     if (message === 'site_company_mismatch') return masterError('site_company_mismatch');
     if (message === 'site_not_found') return masterError('site_not_found');
+    for (const reason of ['parent_not_found', 'parent_company_mismatch', 'parent_type_mismatch', 'parent_is_postable', 'parent_inactive', 'invalid_parent']) {
+        if (message === reason) return masterError(reason);
+    }
     if (code === '23514' || code === '22023' || code === '23502' || code === '22P02') return masterError('invalid_value');
     if (code === '23503') return masterError('not_found');
     if (code === '42501') return masterError('admin_required');
@@ -229,6 +258,7 @@ export function createSupabaseMasterRepository(client = getSupabaseClient()) {
     const updatePartner = (id, changes) => updateImmutableCode('partners', PARTNER_FIELDS, partnerUpdateColumns, normalizePartnerValues, toPartner, id, changes);
     const updateItem = (id, changes) => updateImmutableCode('items', ITEM_FIELDS, itemUpdateColumns, normalizeItemValues, toItem, id, changes);
     const updateWarehouse = (id, changes) => updateImmutableCode('warehouses', WAREHOUSE_FIELDS, warehouseUpdateColumns, normalizeWarehouseValues, toWarehouse, id, changes);
+    const updateAccount = (id, changes) => updateImmutableCode('accounts', ACCOUNT_FIELDS, accountUpdateColumns, normalizeAccountValues, toAccount, id, changes);
 
     return {
         listCompanies: () => list('companies', COMPANY_FIELDS, toCompany),
@@ -246,6 +276,9 @@ export function createSupabaseMasterRepository(client = getSupabaseClient()) {
         updateItem,
         listWarehouses: () => list('warehouses', WAREHOUSE_FIELDS, toWarehouse),
         createWarehouse: async (draft) => insert('warehouses', WAREHOUSE_FIELDS, toRow(warehouseColumns, normalizeWarehouseValues(draft)), toWarehouse),
-        updateWarehouse
+        updateWarehouse,
+        listAccounts: () => list('accounts', ACCOUNT_FIELDS, toAccount),
+        createAccount: async (draft) => insert('accounts', ACCOUNT_FIELDS, toRow(accountColumns, normalizeAccountValues(draft)), toAccount),
+        updateAccount
     };
 }

@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
     MASTER_MESSAGES,
+    ACCOUNT_TYPE,
     ITEM_TYPE,
     SITE_TYPE,
     WAREHOUSE_TYPE,
+    accountOutline,
+    accountPayload,
+    accountTypeLabel,
     companyPayload,
     createCompanyDraft,
+    createAccountDraft,
     createItemDraft,
     createSiteDraft,
     createWarehouseDraft,
@@ -22,6 +27,7 @@ import {
     validateItemDraft,
     validatePartnerDraft,
     validateSiteDraft,
+    validateAccountDraft,
     validateWarehouseDraft,
     warehousePayload,
     warehouseTypeLabel,
@@ -236,5 +242,54 @@ describe('warehouse master rules', () => {
             warehouseType: WAREHOUSE_TYPE.RAW_MATERIAL,
             isActive: true
         });
+    });
+});
+
+describe('chart of accounts rules', () => {
+    const account = (id, code, parentId, overrides = {}) => ({ id, companyId: 'c1', parentId, code, name: code, accountType: ACCOUNT_TYPE.ASSET, isPostable: false, isActive: true, ...overrides });
+
+    it('keeps account codes numeric rather than upper-cased', () => {
+        expect(validateAccountDraft({ companyId: 'c1', code: '111', name: '현금', accountType: ACCOUNT_TYPE.ASSET })).toEqual({});
+        expect(validateAccountDraft({ companyId: 'c1', code: '11', name: '현금', accountType: ACCOUNT_TYPE.ASSET }).code).toBeDefined();
+        expect(validateAccountDraft({ companyId: 'c1', code: 'AB1', name: '현금', accountType: ACCOUNT_TYPE.ASSET }).code).toBeDefined();
+        expect(accountPayload({ companyId: ' c1 ', parentId: '  ', code: ' 111 ', name: ' 현금 ', accountType: ACCOUNT_TYPE.ASSET, isPostable: true, isActive: true })).toEqual({
+            companyId: 'c1',
+            parentId: null,
+            code: '111',
+            name: '현금',
+            accountType: ACCOUNT_TYPE.ASSET,
+            isPostable: true,
+            isActive: true
+        });
+    });
+
+    it('drafts a postable top-level account and reuses an existing one', () => {
+        expect(createAccountDraft(null, 'c1')).toEqual({ companyId: 'c1', parentId: null, code: '', name: '', accountType: ACCOUNT_TYPE.ASSET, isPostable: true, isActive: true });
+        expect(createAccountDraft(account('a', '110', 'root'))).toMatchObject({ parentId: 'root', code: '110', isPostable: false });
+    });
+
+    it('labels account types and reports unknown codes unchanged', () => {
+        expect(accountTypeLabel(ACCOUNT_TYPE.LIABILITY)).toBe('부채');
+        expect(accountTypeLabel('unmapped')).toBe('unmapped');
+    });
+
+    it('orders the outline parent first with a depth for indentation', () => {
+        const outline = accountOutline([account('c', '111', 'b', { isPostable: true }), account('a', '100', null), account('b', '110', 'a'), account('d', '200', null)]);
+
+        expect(outline.map((row) => [row.code, row.depth])).toEqual([
+            ['100', 0],
+            ['110', 1],
+            ['111', 2],
+            ['200', 0]
+        ]);
+    });
+
+    it('still lists a row whose parent is missing, and never loops forever', () => {
+        const orphan = accountOutline([account('a', '100', null), account('x', '999', 'missing')]);
+        expect(orphan.map((row) => row.code)).toEqual(['100', '999']);
+
+        const cycle = accountOutline([account('a', '100', 'b'), account('b', '110', 'a')]);
+        expect(cycle).toHaveLength(2);
+        expect(new Set(cycle.map((row) => row.id)).size).toBe(2);
     });
 });

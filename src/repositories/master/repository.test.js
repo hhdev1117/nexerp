@@ -20,7 +20,10 @@ describe('master repository contract', () => {
             'updateItem',
             'listWarehouses',
             'createWarehouse',
-            'updateWarehouse'
+            'updateWarehouse',
+            'listAccounts',
+            'createAccount',
+            'updateAccount'
         ]);
         for (const method of MASTER_REPOSITORY_METHODS) expect(createDemoMasterRepository()[method]).toEqual(expect.any(Function));
     });
@@ -43,7 +46,10 @@ describe('master repository contract', () => {
             createItem() {},
             updateItem() {},
             listWarehouses() {},
-            createWarehouse() {}
+            createWarehouse() {},
+            updateWarehouse() {},
+            listAccounts() {},
+            createAccount() {}
         }
     ])('rejects an incomplete repository %#', (repository) => {
         // Derived from the contract so a new method does not require editing this string.
