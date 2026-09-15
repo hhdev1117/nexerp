@@ -141,10 +141,10 @@ onMounted(configureChart);
             <div class="col-span-12 xl:col-span-5">
                 <div class="card h-full mb-0">
                     <h2 class="mb-6 text-xl font-semibold">최근 회계 항목</h2>
-                    <DataTable :value="financeRows" dataKey="reference" responsiveLayout="scroll" tableStyle="min-width: 38rem" :tableProps="{ 'aria-label': '최근 회계 항목 목록' }" :rows="5">
+                    <DataTable :value="financeRows" dataKey="reference" size="small" responsiveLayout="scroll" tableStyle="min-width: 38rem" :tableProps="{ 'aria-label': '최근 회계 항목 목록' }" :rows="5">
                         <Column field="account" header="계정" />
                         <Column field="partner" header="거래처" />
-                        <Column field="amount" header="금액">
+                        <Column field="amount" header="금액" headerClass="num-col" bodyClass="num-col">
                             <template #body="slotProps"
                                 ><span class="font-medium">{{ formatWon(slotProps.data.amount) }}</span></template
                             >

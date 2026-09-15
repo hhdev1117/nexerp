@@ -68,6 +68,13 @@ const filteredRows = computed(() => {
     });
 });
 
+const hasActiveFilters = computed(() => Boolean(keyword.value.trim() || selectedStatus.value));
+
+function resetFilters() {
+    keyword.value = '';
+    selectedStatus.value = null;
+}
+
 watch(
     () => route.path,
     (path) => {
@@ -141,14 +148,35 @@ async function saveRecord() {
                     </IconField>
                     <Select v-model="selectedStatus" :options="statusFilterOptions" optionLabel="label" optionValue="value" placeholder="전체 상태" aria-label="업무 상태 필터" showClear class="w-full sm:w-40" />
                 </div>
-                <div class="text-sm text-muted-color">조회 결과 {{ filteredRows.length }}건</div>
+                <div class="text-sm text-muted-color" aria-live="polite">
+                    총 <strong class="text-color">{{ filteredRows.length }}</strong
+                    >건
+                </div>
             </div>
 
-            <DataTable :value="filteredRows" dataKey="id" responsiveLayout="scroll" tableStyle="min-width: 52rem" :tableProps="{ 'aria-label': `${moduleDefinition.title} 목록` }" paginator :rows="5" stripedRows scrollable>
-                <template #empty>조건에 맞는 업무 데이터가 없습니다.</template>
+            <DataTable
+                :value="filteredRows"
+                dataKey="id"
+                responsiveLayout="scroll"
+                tableStyle="min-width: 52rem"
+                :tableProps="{ 'aria-label': `${moduleDefinition.title} 목록` }"
+                paginator
+                :rows="20"
+                :rowsPerPageOptions="[20, 50, 100]"
+                size="small"
+                stripedRows
+                scrollable
+            >
+                <template #empty>
+                    <div class="list-empty">
+                        <p class="list-empty-message">조건에 맞는 업무 데이터가 없습니다.</p>
+                        <Button v-if="hasActiveFilters" label="필터 초기화" icon="pi pi-filter-slash" severity="secondary" outlined size="small" @click="resetFilters" />
+                        <Button v-else label="첫 업무 등록" icon="pi pi-plus" size="small" @click="openRecordDialog" />
+                    </div>
+                </template>
                 <Column field="id" header="문서번호" sortable>
                     <template #body="slotProps"
-                        ><span class="font-medium text-primary">{{ slotProps.data.id }}</span></template
+                        ><span class="font-medium">{{ slotProps.data.id }}</span></template
                     >
                 </Column>
                 <Column field="subject" header="업무명" sortable style="min-width: 18rem" />

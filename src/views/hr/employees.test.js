@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { mount, flushPromises } from '@vue/test-utils';
 import { ref } from 'vue';
+import PrimeVue from 'primevue/config';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Employees from './Employees.vue';
 const mocks = vi.hoisted(() => ({}));
@@ -17,6 +18,10 @@ vi.mock('./EmployeeEmployment.vue', () => ({
 }));
 const employee = { id: 'employee', employeeNo: 'E1', name: '홍길동', status: 'active', revision: 3, actions: [] };
 beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+    });
     mocks.references = { catalog: ref([]), canManage: ref(false), loading: ref(false), saving: ref(false), error: ref(null), reset: vi.fn(), load: vi.fn() };
     mocks.corrections = vi.fn().mockResolvedValue([]);
     mocks.auth = { user: ref({ id: 'user' }) };
@@ -36,17 +41,30 @@ beforeEach(() => {
 });
 const setup = () =>
     mount(Employees, {
-        global: { stubs: { Dialog: { props: ['visible'], template: '<section v-if="visible"><slot/><slot name="footer"/></section>' }, Button: { props: ['label', 'disabled'], template: '<button :disabled="disabled">{{ label }}<slot/></button>' } } }
+        global: {
+            plugins: [PrimeVue],
+            stubs: {
+                Dialog: { props: ['visible'], template: '<section v-if="visible"><slot/><slot name="footer"/></section>' },
+                Button: { props: ['label', 'disabled'], template: '<button :disabled="disabled">{{ label }}<slot/></button>' }
+            }
+        }
     });
+const findSelect = (wrapper, inputId) => wrapper.findAllComponents({ name: 'Select' }).find((candidate) => candidate.props('inputId') === inputId);
+const selectLabels = (wrapper, inputId) => (findSelect(wrapper, inputId)?.props('options') || []).map((option) => option.label);
+const setSelect = async (wrapper, inputId, value) => {
+    const select = findSelect(wrapper, inputId);
+    expect(select, 'Select#' + inputId).toBeTruthy();
+    select.vm.$emit('update:modelValue', value);
+    await flushPromises();
+};
 it('registers with an optional eligible account selection without exposing UUID entry', async () => {
     mocks.hr.directory.value.accounts = [{ id: 'account-id', name: '김직원' }];
     const wrapper = setup();
     await wrapper.get('[data-testid="register"]').trigger('click');
-    expect(wrapper.get('#profile-id').element.tagName).toBe('SELECT');
-    expect(wrapper.get('#profile-id').text()).toContain('김직원');
+    expect(selectLabels(wrapper, 'profile-id')).toContain('김직원');
     await wrapper.get('#employee-no').setValue('E2');
     await wrapper.get('#employee-name').setValue('김직원');
-    await wrapper.get('#profile-id').setValue('account-id');
+    await setSelect(wrapper, 'profile-id', 'account-id');
     await wrapper.get('#action-reason').setValue('신규 입사');
     await wrapper.get('[data-testid="save-action"]').trigger('submit');
     await flushPromises();
@@ -85,7 +103,7 @@ it('requires a reason and explicit termination confirmation then refreshes acces
     const wrapper = setup();
     await wrapper.get('[data-testid="employee-detail"]').trigger('click');
     await wrapper.get('[data-testid="action"]').trigger('click');
-    await wrapper.get('#action-type').setValue('terminate');
+    await setSelect(wrapper, 'action-type', 'terminate');
     await wrapper.get('[data-testid="save-action"]').trigger('submit');
     expect(mocks.hr.recordAction).not.toHaveBeenCalled();
     await wrapper.get('#action-reason').setValue('계약 종료');
@@ -133,7 +151,7 @@ it('cancels only the latest future action with an audited reason and confirmatio
 it('submits server search and clears employee selection on company changes', async () => {
     const wrapper = setup();
     await wrapper.get('#employee-search').setValue('  홍길동  ');
-    await wrapper.get('.hr-search').trigger('submit');
+    await wrapper.get('#employee-search-form').trigger('submit');
     expect(mocks.hr.load).toHaveBeenLastCalledWith('company', '홍길동', 1);
     await wrapper.get('[data-testid="employee-detail"]').trigger('click');
     mocks.runtime.context.value = { mode: 'active', companyId: 'next-company' };
@@ -200,13 +218,12 @@ it('shows names and codes, blocks inactive transfers but permits termination', a
     const w = setup();
     await w.get('[data-testid="employee-detail"]').trigger('click');
     await w.get('[data-testid="action"]').trigger('click');
-    expect(w.get('#employee-department').element.tagName).toBe('SELECT');
-    expect(w.get('#employee-department').text()).toContain('옛 부서 (OLD)');
-    expect(w.get('#employee-department').text()).toContain('새 부서 (NEW)');
+    expect(selectLabels(w, 'employee-department')).toContain('옛 부서 (OLD) · 사용 중지 또는 미조회');
+    expect(selectLabels(w, 'employee-department')).toContain('새 부서 (NEW)');
     await w.get('#action-reason').setValue('배정');
     await w.get('[data-testid="save-action"]').trigger('submit');
     expect(mocks.hr.recordAction).not.toHaveBeenCalled();
-    await w.get('#action-type').setValue('terminate');
+    await setSelect(w, 'action-type', 'terminate');
     await w.get('#impact-confirm').setValue(true);
     await w.get('[data-testid="save-action"]').trigger('submit');
     await flushPromises();

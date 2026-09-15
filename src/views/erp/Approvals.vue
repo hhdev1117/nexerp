@@ -35,6 +35,11 @@ function isPending(approval) {
     return isPendingApproval(approval);
 }
 
+function resetFilters() {
+    keyword.value = '';
+    viewMode.value = '전체';
+}
+
 async function focusApprovalWorkflow() {
     await nextTick();
     const nextApproveButton = approvalTableRegion.value?.querySelector('[data-approval-action="approve"]');
@@ -105,18 +110,36 @@ function reject(approval) {
                 </IconField>
             </div>
 
-            <DataTable :value="filteredApprovals" dataKey="id" :loading="loading" responsiveLayout="scroll" tableStyle="min-width: 72rem" :tableProps="{ 'aria-label': '결재 요청 목록' }" paginator :rows="5" scrollable>
-                <template #empty>조건에 맞는 결재 요청이 없습니다.</template>
+            <DataTable
+                :value="filteredApprovals"
+                dataKey="id"
+                :loading="loading"
+                responsiveLayout="scroll"
+                tableStyle="min-width: 72rem"
+                :tableProps="{ 'aria-label': '결재 요청 목록' }"
+                paginator
+                :rows="20"
+                :rowsPerPageOptions="[20, 50, 100]"
+                size="small"
+                stripedRows
+                scrollable
+            >
+                <template #empty>
+                    <div class="list-empty">
+                        <p class="list-empty-message">조건에 맞는 결재 요청이 없습니다.</p>
+                        <Button v-if="keyword.trim() || viewMode !== '전체'" label="필터 초기화" icon="pi pi-filter-slash" severity="secondary" outlined size="small" @click="resetFilters" />
+                    </div>
+                </template>
                 <Column field="id" header="문서번호" sortable>
                     <template #body="slotProps"
-                        ><span class="font-medium text-primary">{{ slotProps.data.id }}</span></template
+                        ><span class="font-medium">{{ slotProps.data.id }}</span></template
                     >
                 </Column>
                 <Column field="type" header="업무 유형" sortable />
                 <Column field="title" header="제목" sortable style="min-width: 18rem" />
                 <Column field="requester" header="요청자" sortable />
                 <Column field="requestedAt" header="요청일시" sortable />
-                <Column field="amount" header="금액" sortable>
+                <Column field="amount" header="금액" sortable headerClass="num-col" bodyClass="num-col">
                     <template #body="slotProps"
                         ><span class="font-medium">{{ formatWon(slotProps.data.amount) }}</span></template
                     >

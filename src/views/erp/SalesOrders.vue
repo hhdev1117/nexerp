@@ -40,6 +40,13 @@ const filteredOrders = computed(() => {
     });
 });
 
+const hasActiveFilters = computed(() => Boolean(keyword.value.trim() || selectedStatus.value));
+
+function resetFilters() {
+    keyword.value = '';
+    selectedStatus.value = null;
+}
+
 function openNewOrder() {
     draft.value = emptyOrder();
     submitted.value = false;
@@ -124,8 +131,9 @@ function confirmDelete(order) {
                 dataKey="id"
                 :loading="loading"
                 paginator
-                :rows="5"
-                :rowsPerPageOptions="[5, 10, 20]"
+                :rows="20"
+                :rowsPerPageOptions="[20, 50, 100]"
+                size="small"
                 paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                 currentPageReportTemplate="{first} - {last} / {totalRecords}건"
                 responsiveLayout="scroll"
@@ -133,17 +141,23 @@ function confirmDelete(order) {
                 :tableProps="{ 'aria-label': '수주 목록' }"
                 scrollable
             >
-                <template #empty>조건에 맞는 수주가 없습니다.</template>
+                <template #empty>
+                    <div class="list-empty">
+                        <p class="list-empty-message">조건에 맞는 수주가 없습니다.</p>
+                        <Button v-if="hasActiveFilters" label="필터 초기화" icon="pi pi-filter-slash" severity="secondary" outlined size="small" @click="resetFilters" />
+                        <Button v-else label="첫 수주 등록" icon="pi pi-plus" size="small" @click="openNewOrder" />
+                    </div>
+                </template>
                 <Column field="number" header="수주번호" sortable>
                     <template #body="slotProps">
-                        <span class="font-medium text-primary">{{ slotProps.data.number }}</span>
+                        <span class="font-medium">{{ slotProps.data.number }}</span>
                     </template>
                 </Column>
                 <Column field="customer" header="거래처" sortable />
                 <Column field="owner" header="담당자" sortable />
                 <Column field="orderDate" header="수주일" sortable />
                 <Column field="dueDate" header="납기일" sortable />
-                <Column field="amount" header="수주금액" sortable>
+                <Column field="amount" header="수주금액" sortable headerClass="num-col" bodyClass="num-col">
                     <template #body="slotProps">
                         <span class="font-medium">{{ formatWon(slotProps.data.amount) }}</span>
                     </template>
