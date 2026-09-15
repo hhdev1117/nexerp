@@ -3,29 +3,19 @@ import { bootstrapAdmin, normalizeBootstrapErrorCode, runBootstrapCli } from './
 
 const temporaryPassword = ['temporary', 'password'].join('-');
 
-const createFixture = ({ activeAdmins = [], createError = null, promotionError = null } = {}) => {
-    const limit = vi.fn().mockResolvedValue({ data: activeAdmins, error: null });
-    const active = vi.fn(() => ({ limit }));
-    const role = vi.fn(() => ({ eq: active }));
-    const select = vi.fn(() => ({ eq: role }));
-
-    const single = vi.fn().mockResolvedValue({
-        data: promotionError ? null : { id: 'new-user-id' },
-        error: promotionError
-    });
-    const selectPromoted = vi.fn(() => ({ single }));
-    const id = vi.fn(() => ({ select: selectPromoted }));
-    const update = vi.fn(() => ({ eq: id }));
-
-    const from = vi.fn(() => ({ select, update }));
+const createFixture = ({ createError = null, promotionError = null, deleteError = null, deleteThrows = null } = {}) => {
     const createUser = vi.fn().mockResolvedValue({
         data: createError ? null : { user: { id: 'new-user-id' } },
         error: createError
     });
-    const deleteUser = vi.fn().mockResolvedValue({ data: {}, error: null });
-    const client = { from, auth: { admin: { createUser, deleteUser } } };
+    const deleteUser = vi.fn(() => {
+        if (deleteThrows) throw deleteThrows;
+        return Promise.resolve({ data: deleteError ? null : {}, error: deleteError });
+    });
+    const rpc = vi.fn().mockResolvedValue({ data: promotionError ? null : 'new-user-id', error: promotionError });
+    const client = { rpc, auth: { admin: { createUser, deleteUser } } };
 
-    return { client, createUser, deleteUser, update, id };
+    return { client, createUser, deleteUser, rpc };
 };
 
 describe('bootstrapAdmin', () => {
@@ -33,14 +23,16 @@ describe('bootstrapAdmin', () => {
         const fixture = createFixture();
 
         await expect(bootstrapAdmin({ loginId, temporaryPassword, client: fixture.client })).rejects.toThrow('invalid_login_id');
-        expect(fixture.client.from).not.toHaveBeenCalled();
+        expect(fixture.createUser).not.toHaveBeenCalled();
     });
 
-    it('refuses bootstrap before creating a user when an active administrator exists', async () => {
-        const fixture = createFixture({ activeAdmins: [{ id: 'existing-admin-id' }] });
+    it('compensates the new Auth user when the locked bootstrap RPC finds an active administrator', async () => {
+        const fixture = createFixture({ promotionError: { message: 'active_admin_exists' } });
 
         await expect(bootstrapAdmin({ loginId: 'admin01', temporaryPassword, client: fixture.client })).rejects.toThrow('active_admin_exists');
-        expect(fixture.createUser).not.toHaveBeenCalled();
+        expect(fixture.createUser).toHaveBeenCalledOnce();
+        expect(fixture.rpc).toHaveBeenCalledWith('bootstrap_first_admin', { target_user_id: 'new-user-id' });
+        expect(fixture.deleteUser).toHaveBeenCalledWith('new-user-id');
     });
 
     it('creates the internal Auth identity with provisioning metadata and promotes its exact profile', async () => {
@@ -55,8 +47,7 @@ describe('bootstrapAdmin', () => {
             email_confirm: true,
             app_metadata: { nexerp_provisioned: true, login_id: 'admin01' }
         });
-        expect(fixture.update).toHaveBeenCalledWith({ role: 'admin' });
-        expect(fixture.id).toHaveBeenCalledWith('id', 'new-user-id');
+        expect(fixture.rpc).toHaveBeenCalledWith('bootstrap_first_admin', { target_user_id: 'new-user-id' });
         expect(logger.info).toHaveBeenCalledWith('Administrator admin01 created.');
     });
 
@@ -65,6 +56,17 @@ describe('bootstrapAdmin', () => {
 
         await expect(bootstrapAdmin({ loginId: 'admin01', temporaryPassword, client: fixture.client })).rejects.toThrow('profile_promotion_failed');
         expect(fixture.deleteUser).toHaveBeenCalledWith('new-user-id');
+    });
+
+    it.each([
+        ['resolved deletion error', { deleteError: { message: 'delete rejected' } }],
+        ['thrown deletion failure', { deleteThrows: new Error('delete unavailable') }]
+    ])('surfaces a stable compensation-failure code for %s', async (_case, deletionFailure) => {
+        const fixture = createFixture({ promotionError: { message: 'promotion failed' }, ...deletionFailure });
+
+        await expect(bootstrapAdmin({ loginId: 'admin01', temporaryPassword, client: fixture.client })).rejects.toThrow(
+            'promotion_failed_compensation_failed'
+        );
     });
 
     it('never writes the temporary password to logs when creation fails', async () => {
@@ -108,5 +110,6 @@ describe('runBootstrapCli', () => {
     it('normalizes unexpected provider errors without exposing their message', () => {
         expect(normalizeBootstrapErrorCode(new Error(`provider rejected ${temporaryPassword}`))).toBe('bootstrap_failed');
         expect(normalizeBootstrapErrorCode(new Error('active_admin_exists'))).toBe('active_admin_exists');
+        expect(normalizeBootstrapErrorCode(new Error('promotion_failed_compensation_failed'))).toBe('promotion_failed_compensation_failed');
     });
 });

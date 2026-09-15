@@ -4,10 +4,10 @@ import { loginIdToInternalEmail } from '../shared/loginIdentity.js';
 
 const bootstrapErrorCodes = new Set([
     'invalid_login_id',
-    'active_admin_check_failed',
     'active_admin_exists',
     'auth_user_creation_failed',
     'profile_promotion_failed',
+    'promotion_failed_compensation_failed',
     'missing_configuration',
     'invalid_temporary_password'
 ]);
@@ -23,10 +23,6 @@ export async function bootstrapAdmin({ loginId, temporaryPassword, client, logge
     const email = loginIdToInternalEmail(loginId);
     if (!email) fail('invalid_login_id');
 
-    const existing = await client.from('profiles').select('id').eq('role', 'admin').eq('is_active', true).limit(1);
-    if (existing.error) fail('active_admin_check_failed');
-    if (existing.data?.length) fail('active_admin_exists');
-
     const created = await client.auth.admin.createUser({
         email,
         password: temporaryPassword,
@@ -36,9 +32,24 @@ export async function bootstrapAdmin({ loginId, temporaryPassword, client, logge
     const userId = created.data?.user?.id;
     if (created.error || !userId) fail('auth_user_creation_failed');
 
-    const promoted = await client.from('profiles').update({ role: 'admin' }).eq('id', userId).select('id').single();
-    if (promoted.error || promoted.data?.id !== userId) {
-        await client.auth.admin.deleteUser(userId);
+    let promoted;
+    try {
+        promoted = await client.rpc('bootstrap_first_admin', { target_user_id: userId });
+    } catch {
+        promoted = { data: null, error: true };
+    }
+
+    if (promoted.error || promoted.data !== userId) {
+        let compensated = false;
+        try {
+            const deleted = await client.auth.admin.deleteUser(userId);
+            compensated = !deleted.error;
+        } catch {
+            compensated = false;
+        }
+
+        if (!compensated) fail('promotion_failed_compensation_failed');
+        if (promoted.error?.message === 'active_admin_exists') fail('active_admin_exists');
         fail('profile_promotion_failed');
     }
 

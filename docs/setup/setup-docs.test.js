@@ -29,6 +29,16 @@ describe('setup documentation', () => {
         expect(operations).not.toMatch(/NEXERP_ADMIN_TEMPORARY_PASSWORD\s*=\s*['"][^<'"\r\n]+['"]/);
     });
 
+    it('documents credential-safe remediation when bootstrap compensation fails', () => {
+        const operations = readDocument(operationsPath);
+
+        expect(operations).toContain('promotion_failed_compensation_failed');
+        expect(operations).toMatch(/Auth user|Auth 사용자/i);
+        expect(operations).toMatch(/user ID|사용자 ID/i);
+        expect(operations).toMatch(/delete|삭제/i);
+        expect(operations).toMatch(/do not rerun|다시 실행하지/i);
+    });
+
     it.each(deploymentGuidePaths)('builds static assets immediately before the Wrangler dry-run in %s', (path) => {
         expect(readDocument(path)).toMatch(/npm run build\r?\nnpx wrangler deploy --dry-run/);
     });

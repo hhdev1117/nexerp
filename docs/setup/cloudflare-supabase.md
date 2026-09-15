@@ -60,6 +60,8 @@ Remove-Item Env:\NEXERP_ADMIN_LOGIN_ID -ErrorAction SilentlyContinue
 
 At first login, the administrator must replace the temporary password as directed and enroll a TOTP authenticator before using protected application features. Confirm the session reaches MFA assurance level 2. Do not weaken or bypass mandatory TOTP enrollment.
 
+If the command returns `promotion_failed_compensation_failed`, the profile promotion failed and automatic Auth user deletion also failed. Do not rerun the bootstrap. In the Supabase Dashboard, identify the newly created Auth user by the login ID used for this attempt, record its user ID locally only for the duration of remediation, and delete that exact Auth user. Confirm that no active administrator profile exists before retrying. Do not paste the user ID, login credentials, secret key, provider response, or temporary password into logs, source files, tickets, or chat.
+
 After the bootstrap administrator is verified, create and maintain subsequent accounts from NEXERP's `계정 관리` screen. Configure role-based navigation from `메뉴 권한 관리`; do not use dashboard-side profile edits as the routine account-management workflow.
 
 ## Local Development
