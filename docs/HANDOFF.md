@@ -1,18 +1,18 @@
 # NEXERP 인수인계 문서
 
-> 기준 시점: 2026-09-15, 전사 권한관리와 인사 원장·기준정보·계정 연결·재직 이력·겸직 범위 권한을 `main`에 통합하고 운영 Supabase 및 Cloudflare에 적용한 상태입니다. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다.
+> 기준 시점: 2026-09-15, 전사 권한관리와 인사 원장·기준정보·계정 연결·재직 이력·겸직 범위 권한을 `main`에 통합하고 운영 Supabase 및 Cloudflare에 적용한 뒤, 전 모듈 공통 기반인 감사 로그와 서버 측 문서 채번을 추가한 상태입니다. 두 마이그레이션은 아직 운영 프로젝트에 적용하지 않았습니다. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다.
 
 ## 1. 한눈에 보기
 
 | 항목 | 상태 |
 |---|---|
 | 스택 | Vue 3 + PrimeVue 4 + Tailwind, Cloudflare Workers Static Assets, Supabase (Auth + Postgres + RLS), Vitest |
-| 최신 구현 커밋 | `86128f8 Merge branch 'codex/enterprise-access' into main` |
-| 작업 트리 | 로컬·원격 `main` 동기화 완료. 운영 문서 최신화 커밋만 후속 반영 |
-| 검증 | Vitest 75개 파일 868개 통과, ESLint 통과, production build 성공(PWA precache 56개), Wrangler dry-run 및 실제 배포 성공 |
+| 최신 구현 커밋 | `19e66fb feat: add server-side document numbering` |
+| 작업 트리 | 로컬 `main`에 감사 로그·문서 채번 커밋 7개가 원격보다 앞서 있음. 푸시 미실행 |
+| 검증 | Vitest 81개 파일 913개 통과, ESLint 통과, production build 성공(PWA precache 57개). pglite 런타임 SQL 단언 114개 통과 |
 | Supabase 운영 프로젝트 | `mehhrnbaiojivesnobpv` (`nexerp`). 이전 문서·계획의 `kctewzpeymlncibgyosz`는 오래된 프로젝트 식별자이므로 사용하지 않음 |
-| 운영 스키마 / CLI 이력 | 회사·사업장·거래처와 전사 권한 및 HR 마이그레이션 002~009를 운영 프로젝트에 적용하고 카탈로그 검증 완료. CLI migration history는 미복구이며 복구 전 `db push` 금지 |
-| 미실행 테스트 | pgTAP `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 38개. 이 PC에 Docker가 없어 실행 불가 |
+| 운영 스키마 / CLI 이력 | 회사·사업장·거래처와 전사 권한 및 HR 마이그레이션 002~009를 운영 프로젝트에 적용하고 카탈로그 검증 완료. `20260915001200`(감사 로그)과 `20260915001300`(문서 채번)은 로컬에만 존재하며 운영 미적용. CLI migration history는 미복구이며 복구 전 `db push` 금지 |
+| 미실행 테스트 | pgTAP `companies_sites_rls.test.sql` 35개, `partners_rls.test.sql` 38개, `audit_logs_rls.test.sql` 27개, `document_sequences_rls.test.sql` 21개. 이 PC에 Docker가 없어 실행 불가 |
 | 확정된 결정 | 다회사·다사업장. 모든 업무 테이블은 `company_id`를 가지며 고객/공급처는 `master.partners`에서 통합 관리 |
 | 운영 배포 | Cloudflare Worker 버전 `a6e74fee-404f-4f98-a5fc-7f12fd075af9`, 진입 자산 `index-DFGDZqNf.js`, `https://nexerp.nexerp.workers.dev` |
 
@@ -27,12 +27,38 @@
 | **거래처 통합 기준정보** | 구현·운영 마이그레이션·배포 완료. 고객/공급처 레거시 경로 통합, 관리자 MFA 후 실제 CRUD 및 역할별 UI 점검 대기 | `src/views/master/Partners.vue`, `src/stores/master.js`, `src/repositories/master/*` |
 | **전사 권한관리** | 구현·운영 마이그레이션·배포 완료. 레벨 1~5, 직급·직책 매칭, 회사·사업장 범위, 정책 초안·발행·복원 지원 | `src/views/admin/EnterpriseAccess.vue`, `src/repositories/access/*`, `supabase/migrations/20260914000200_enterprise_access_policy.sql` |
 | **인사관리** | 직원 원장, 인사발령, 기준정보, 모듈 설정, 계정 연결, 재직 이력, 겸직 부서·직책 범위를 구현하고 운영 적용 완료 | `src/views/hr/*`, `src/repositories/hr/*`, `supabase/migrations/20260914000400_hr_employee_ledger.sql` 이후 |
+| **감사 로그** | 구현 완료, 운영 마이그레이션 대기. 범용 트리거가 회사·사업장·거래처 변경을 기록하고 관리자만 조회 | `src/views/admin/AuditLogs.vue`, `src/data/audit.js`, `src/repositories/audit/*`, `supabase/migrations/20260915001200_add_audit_logs.sql` |
+| **서버 측 문서 채번** | 구현 완료, 운영 마이그레이션 대기. 업무 테이블이 생기면 이 함수에서 번호를 받아야 함 | `supabase/migrations/20260915001300_add_document_sequences.sql` |
 | 결재함, 수주 관리, 재고 현황, 재무 현황, 통합 대시보드 | 데모 (메모리 리포지토리) | `src/views/erp/*`, `src/views/Dashboard.vue`, `src/stores/erp.js` |
-| 나머지 27개 메뉴 (견적, 발주, 입고, BOM, 전표 등) | 플레이스홀더 공용 화면 | `src/views/erp/GenericModule.vue` |
+| 나머지 22개 메뉴 (견적, 발주, 입고, 품목, 창고, BOM, 전표 등) | 플레이스홀더 공용 화면. 전용 화면 14개를 뺀 실제 수치 | `src/views/erp/GenericModule.vue` |
 
-Supabase에는 기존 인증·권한·회사·사업장·거래처 테이블과 함께 전사 권한 3개 테이블, HR 10개 테이블이 운영 적용되어 있습니다. 신규 운영 테이블 13개는 모두 RLS가 활성화되어 있고 `authenticated` 역할의 DELETE 권한은 없습니다. 정책 발행본과 직원·겸직 데이터는 현재 0건입니다.
+Supabase에는 기존 인증·권한·회사·사업장·거래처 테이블과 함께 전사 권한 3개 테이블, HR 10개 테이블이 운영 적용되어 있습니다. 신규 운영 테이블 13개는 모두 RLS가 활성화되어 있고 `authenticated` 역할의 DELETE 권한은 없습니다. 정책 발행본과 직원·겸직 데이터는 현재 0건입니다. 감사 로그 `public.audit_logs`와 채번 `public.document_sequences`는 로컬 마이그레이션에만 있으므로 운영 적용 전까지 운영 화면 `/settings/audit`은 빈 목록을 보여줍니다.
 
 ## 3. 이번 세션에서 한 일
+
+### 커밋 `39af3f5` ~ `0dbaf95` — 검증 기반과 목록 화면 규약
+
+- **Vitest 수집 범위.** `vite.config.mjs`에 `test.exclude`가 없어 `.worktrees/`의 다른 브랜치 체크아웃 4개가 함께 수집되고 있었습니다. 실행이 3분 이상 걸리고 오래된 복사본에서 실패가 섞여 검증 결과를 믿을 수 없었습니다. `.worktrees`, `dist`, `.cache`, `.wrangler`를 제외해 75파일 868테스트 기준선을 복원했습니다.
+- **줄바꿈 고정.** `.gitattributes`가 없고 `core.autocrlf=false`여서 인덱스(LF)와 작업트리(CRLF)가 어긋나 공백만 다른 diff가 반복 발생했습니다. `* text=auto eol=lf`를 추가하고 `git add --renormalize`로 정리했습니다.
+- **목록 화면 공통 규약.** 모든 데이터 표가 쓰는 `.num-col`(우측 정렬 + tabular-nums)과 `.list-empty` 스타일을 `_utils.scss`에 두고, 페이지 크기를 20/50/100으로 올리고 밀도를 `size="small"`로 통일했습니다. 빈 상태에서는 필터 초기화 또는 신규 등록 버튼을 제공합니다. 인사 기준정보 화면은 목록을 DataTable로 다시 만들고 네이티브 `select`를 PrimeVue `Select`로 교체했습니다.
+
+### 커밋 `3e3bf32`, `9cf65ab` — 감사 로그 (Task F)
+
+- **마이그레이션** `20260915001200_add_audit_logs.sql`
+  - `public.audit_logs(id bigint identity, table_name, record_id text, company_id uuid null, action public.audit_action, actor_id, changed_at, old_data jsonb, new_data jsonb)`. `record_id`는 앞으로 어떤 기본키 타입이 오더라도 받도록 text이고, `company_id`는 외래키 없이 nullable입니다. 이력은 대상 행과 독립적으로 남아야 하며 회사 행 자체에는 상위 회사가 없기 때문입니다.
+  - `authenticated`에는 `select` grant만 줍니다. insert/update/delete grant와 정책이 아예 없어 관리자를 포함한 어떤 클라이언트도 이력을 덧쓰거나 지울 수 없습니다. 유일한 기록 경로는 `security definer` 트리거입니다.
+  - 범용 트리거 `private.record_audit()`을 `companies`, `sites`, `partners`에 붙였습니다. 새 업무 테이블은 `create trigger` 한 줄만 추가하면 됩니다.
+  - 감사 컬럼(`updated_at`, `updated_by`)을 제외하고 비교해 실제 값이 그대로인 재저장은 기록하지 않습니다. 이 제외가 없으면 BEFORE 트리거가 매번 `updated_at`을 바꾸므로 무변경 판정이 성립하지 않습니다.
+  - 회사 비활성화가 사업장으로 연쇄될 때 그 연쇄 UPDATE도 함께 기록됩니다.
+- **화면** `src/views/admin/AuditLogs.vue` (`/settings/audit`, 메뉴 키 `settings.audit`): 대상·작업·작업자·기간 필터와 서버 측 페이징(25건), 변경 항목만 추린 상세 대화상자. 작업자 이름은 `adminApi.listAccounts()`로 해석하고 실패하면 식별자를 그대로 보여줍니다. 이 경로는 이전까지 `GenericModule.vue`로 떨어져 가짜 업무 5행을 보여주고 있었습니다.
+- **계층**: `src/data/audit.js`(순수 규칙: 라벨, 변경 항목 계산, 필터 → 질의 변환) → `src/repositories/audit/`(계약 + demo + supabase) → `src/stores/audit.js`(필터·페이지 캐시, 최신 요청만 반영) → 화면.
+
+### 커밋 `19e66fb` — 서버 측 문서 채번 (Task G)
+
+- **마이그레이션** `20260915001300_add_document_sequences.sql`: `public.document_sequences(company_id, doc_type, period_key, last_number)`와 `private.next_document_number(uuid, text, date)`. 번호는 `insert ... on conflict ... do update ... returning`으로 원자적으로 확보합니다. 경쟁 트랜잭션은 충돌 행에서 대기하므로 `select ... for update`와 같은 보장을 주면서, 기간의 첫 번호처럼 잠글 행이 아직 없는 경우까지 덮습니다.
+- 형식은 `SO-260915-001`이고 날짜를 넘기지 않으면 한국 영업일 기준으로 계산합니다. 999를 넘으면 자리수가 늘어나며 업무 문서 발행이 실패하지 않습니다.
+- `private.` 함수이므로 클라이언트가 직접 호출해 번호만 소진시킬 수 없습니다. 실제 업무 테이블을 만들 때 그 테이블 전용 `security definer` RPC 안에서 호출해야 합니다.
+- `src/data/erp.js`의 `nextOrderNumber()`에는 데모 전용이며 동시 등록 시 충돌한다는 주석을 남겼습니다.
 
 ### 커밋 `42dce82` — 기반 정리 4종
 
@@ -113,6 +139,8 @@ npm run build
 
 - git 2.55가 `C:\Program Files\Git\cmd`에 있습니다. 설치 전에 열린 셸은 PATH가 오래되어 `git`을 못 찾으니 `$env:Path = "C:\Program Files\Git\cmd;$env:Path"`를 앞에 붙이세요. 저장소 git identity는 `Codex <codex@local>`입니다.
 - Docker가 없어 Supabase 로컬 스택을 실행할 수 없습니다. pgTAP은 작성만 하고, 실행은 Docker가 있는 환경에서 `npx supabase test db`로 합니다.
+- 대신 `supabase/tests/*.pglite.mjs`가 pglite로 실제 PostgreSQL을 띄워 마이그레이션을 적용하고 런타임 단언을 실행합니다. Docker 없이 `node supabase/tests/<name>.pglite.mjs`로 돌아갑니다. 의존성은 `.cache/sql-check`에 격리돼 있고 gitignore 대상이라 새 PC에서는 `npm install @electric-sql/pglite`로 다시 설치해야 합니다. 이 러너가 `lpad`의 잘림 때문에 1000번째 문서번호가 `SO-260915-100`으로 나오던 버그를 잡았으므로, 새 마이그레이션마다 함께 작성하는 것을 권합니다.
+- Vitest는 `vite.config.mjs`의 `test.exclude`로 `.worktrees`를 제외합니다. 워크트리를 추가·정리해도 이 설정을 지우지 마세요. 지우면 다른 브랜치의 옛 테스트가 함께 돌아 결과가 오염됩니다.
 - 저장소 루트 `.env.local`, `.dev.vars`에 운영 Supabase 프로젝트 `mehhrnbaiojivesnobpv` 자격증명이 있습니다. 커밋 금지. `SUPABASE_SECRET_KEY`, `SUPABASE_MANAGEMENT_TOKEN`, `CLOUDFLARE_API_TOKEN`은 Worker 전용입니다. 이전 계획에 남은 `kctewzpeymlncibgyosz`를 운영 대상으로 사용하지 마세요.
 - 격리 Git 워크트리는 `.env.local`을 자동으로 공유하지 않습니다. 그 워크트리에서 Vite 운영 빌드나 `npm run deploy`를 실행하기 전에 루트의 커밋 제외 `.env.local`을 워크트리 루트로 복사하거나 같은 `VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY`를 환경변수로 주입하세요. 빌드 후 생성 자산에 프로젝트 ID `mehhrnbaiojivesnobpv`가 포함됐는지 확인한 다음 배포해야 합니다.
 - 회사·사업장과 거래처 스키마는 2026-09-14 운영 프로젝트에 적용됐지만 CLI migration history는 아직 복구되지 않았습니다. 거래처 `20260914000200`은 SQL Editor로 직접 적용했고, `supabase_migrations.schema_migrations` 조회 시 테이블이 없었습니다. 현재 토큰으로 프로젝트 link는 성공했으나 CLI login-role 초기화가 HTTP 403으로 막혀 `migration list`/repair를 완료하지 못했습니다.
@@ -151,6 +179,10 @@ npm run build
 - [x] 전사 권한 및 HR 마이그레이션 002~009 운영 적용. 대상 테이블 13개 존재, RLS 13개 활성, 핵심 RPC 11종 존재, DELETE grant 0개를 카탈로그에서 확인.
 - [x] 최신 `main` Cloudflare Worker 배포. 버전 `a6e74fee-404f-4f98-a5fc-7f12fd075af9`; `/api/health`, `/settings/enterprise-access`, `/hr/employees`, manifest, service worker HTTP 200 확인.
 - [x] `git push origin main` 및 로컬/원격 HEAD 일치 확인.
+- [ ] 감사 로그 `20260915001200_add_audit_logs.sql`을 운영 프로젝트 `mehhrnbaiojivesnobpv`에 적용. 적용 후 `audit_logs` 존재, RLS 활성, `authenticated`의 insert/update/delete grant 0개, 정책 1개(select), `companies`·`sites`·`partners` 트리거 3개를 카탈로그에서 확인.
+- [ ] 문서 채번 `20260915001300_add_document_sequences.sql`을 운영 적용. `document_sequences` 존재, RLS 활성, 쓰기 grant 0개, `private.next_document_number` 존재와 `authenticated` execute 권한 없음을 확인.
+- [ ] 두 마이그레이션 적용 후 최신 `main`을 Cloudflare에 배포하고 관리자 계정으로 `/settings/audit`에서 회사 수정 1건이 즉시 이력으로 보이는지 확인.
+- [ ] `git push origin main` (감사 로그·문서 채번 커밋 7개 미푸시).
 
 ### 7.2 1단계 기준정보 마무리
 
@@ -176,13 +208,17 @@ npm run build
 - 테이블 `public.accounts`: `company_id`, `code`(숫자 코드 허용하려면 형식 제약 별도), `name`, `account_type enum(asset, liability, equity, revenue, expense)`, `parent_id`(자기 참조, 계층), `is_postable boolean`, `is_active`. 한국 표준 계정과목 시드는 선택.
 - 커밋: `feat: add chart of accounts master data`.
 
-**Task F: 감사 로그**
-- 테이블 `public.audit_logs(id, table_name, record_id, action, actor_id, changed_at, old_data jsonb, new_data jsonb)`. 범용 트리거 `private.record_audit()`를 `companies`, `sites`, 이후 모든 업무 테이블에 부착. 조회는 `is_admin()`만. 화면 `src/views/admin/AuditLogs.vue` (`/settings/audit`, 메뉴 키 `settings.audit`): 기간/테이블/작업자 필터, old/new diff 표시.
-- 커밋: `feat: add audit log table and administrator screen`.
+**Task F: 감사 로그** — 구현 완료 (`3e3bf32`, `9cf65ab`)
+- [x] 테이블, 범용 트리거 `private.record_audit()`, 관리자 전용 조회 정책, 텍스트 계약 테스트, pgTAP 27개, pglite 런타임 단언 40개.
+- [x] 화면 `src/views/admin/AuditLogs.vue`(대상·작업·작업자·기간 필터, 변경 항목 diff)와 도메인·리포지토리·스토어 계층.
+- [ ] 운영 마이그레이션 적용과 관리자 계정 실제 확인 (7.1 참고).
+- [ ] 새 업무 테이블을 만들 때마다 `create trigger record_<table>_audit` 한 줄과 `src/data/audit.js`의 `auditedTables`·`fieldLabels` 항목을 함께 추가.
 
-**Task G: 서버 측 문서 채번**
-- `public.document_sequences(company_id, doc_type, period_key, last_number)`와 `private.next_document_number(company_id, doc_type, date)` 함수(`SO-YYMMDD-NNN`). 동시성은 행 잠금(`for update`). `src/data/erp.js`의 `nextOrderNumber()`는 데모 전용으로 남김.
-- 커밋: `feat: add server-side document numbering`.
+**Task G: 서버 측 문서 채번** — 구현 완료 (`19e66fb`)
+- [x] `public.document_sequences`와 `private.next_document_number(uuid, text, date)`. 동시성은 `insert ... on conflict do update`로 확보(기간 첫 번호까지 포함). pgTAP 21개, pglite 런타임 단언 31개.
+- [x] `src/data/erp.js`의 `nextOrderNumber()`를 데모 전용으로 명시.
+- [ ] 운영 마이그레이션 적용 (7.1 참고).
+- [ ] 수주 영속화 시 `sales_orders` 전용 `security definer` RPC 안에서 호출. 클라이언트가 직접 호출하면 문서 없이 번호만 소진되므로 `private.`로 유지할 것.
 
 ### 7.3 2단계 영업 · 구매 · 재고
 
@@ -200,9 +236,11 @@ npm run build
 
 - 대시보드 수치는 `getDashboardSnapshot()`의 계수 곱셈이며 회사/사업장 이름 문자열로 계수를 찾습니다. 데모 시드 이름(`넥서스 제조`, `넥서스 유통`, `서울 본사`, `인천 공장`, `부산 물류센터`)과만 맞습니다.
 - `InventoryStock.vue`, `BestSellingWidget.vue`, `FinanceSummary.vue`는 데이터 파일을 직접 import 합니다.
-- `GenericModule.vue`는 화면에서 데모 5행을 만들어 붙입니다. 실제 리포지토리가 연결되면 함께 표시되므로 전용 화면 전환 시 제거해야 합니다.
+- `GenericModule.vue`는 화면에서 데모 5행을 만들어 붙입니다. 실제 리포지토리가 연결되면 함께 표시되므로 전용 화면 전환 시 제거해야 합니다. 아직 이 화면을 쓰는 경로 22개는 `src/data/erp.js`의 메뉴 정의와 `src/router/index.js`의 `dedicatedViews` 차집합으로 확인합니다.
 - 수주 신규 등록 대화상자에서 상태를 임의로 고를 수 있습니다.
-- 프로덕션 번들의 주 청크가 약 970KB입니다(PrimeVue, Chart.js). 코드 스플리팅 미적용. 기능 개발과 무관한 성능 부채.
+- 프로덕션 번들의 주 청크가 약 983KB입니다(PrimeVue, Chart.js). 코드 스플리팅 미적용. 기능 개발과 무관한 성능 부채.
+- 감사 로그 화면 청크가 약 118KB입니다. 기간 필터의 `DatePicker`가 가장 큰 비중이며, 이 화면에서만 쓰입니다.
+- 감사 로그는 보존 기간 정책이 없습니다. 업무 테이블이 늘면 행이 빠르게 증가하므로 파티셔닝이나 아카이브 정책을 회계 단계 전에 정해야 합니다.
 - `dist/`, `.cache/`는 gitignore 대상이며 빌드/테스트 산출물입니다.
 
 ## 8. 주요 파일 지도
@@ -211,20 +249,23 @@ npm run build
 src/data/erp.js                 메뉴 정의(menuKey), 데모 행, 대시보드 계수, 결재 권한 역할
 src/data/status.js              상태 코드 테이블과 전이 규칙
 src/data/master.js              회사·사업장 도메인 규칙
+src/data/audit.js               감사 로그 라벨, 변경 항목 계산, 필터 → 질의 변환
 src/repositories/erp/           수주·결재·업무 기록 계약 (demo만 존재)
 src/repositories/master/        회사·사업장 계약, demo + supabase 구현, 에러 매핑
 src/repositories/access/        역할별 메뉴 권한 (supabase)
+src/repositories/audit/         감사 로그 조회 계약 (읽기 전용), demo + supabase
 src/stores/auth.js              세션, 프로필, MFA, hasRole
 src/stores/access.js            메뉴 권한 캐시, canAccess
 src/stores/erp.js               데모 업무 데이터 캐시 (비동기, 전이 검증)
 src/stores/master.js            회사·사업장 캐시
+src/stores/audit.js             감사 로그 필터·페이지 캐시 (최신 요청만 반영)
 src/router/index.js             dedicatedViews 매핑, 나머지는 GenericModule
 src/router/authGuard.js         설정→로그인→활성→MFA→역할→메뉴키 순 가드
 src/views/master/CompanySites.vue   기준정보 화면의 참고 구현
-src/views/admin/*               관리자 화면 (Worker API 사용)
+src/views/admin/*               관리자 화면 (Worker API 사용). AuditLogs.vue는 Supabase 직접 조회
 worker/                         /api/me, /api/admin/*, /api/health
 supabase/migrations/            SQL 마이그레이션 + 텍스트 계약 테스트(.test.js)
-supabase/tests/                 pgTAP (.test.sql)
+supabase/tests/                 pgTAP (.test.sql)와 pglite 런타임 검증 (.pglite.mjs)
 docs/setup/                     운영/설치 문서 (setup-docs.test.js가 명령어 존재를 검사)
 docs/superpowers/               이전 설계 문서와 실행 계획 (specs/, plans/)
 ```
