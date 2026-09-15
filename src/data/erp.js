@@ -175,6 +175,9 @@ export function validateOrderDraft(order = {}) {
     return { errors, isValid: !Object.values(errors).some(Boolean) };
 }
 
+// Demo-only numbering. It scans the rows already in memory, so two clients issuing on the same
+// day would collide. Persisted documents must instead draw from private.next_document_number(),
+// which claims the counter atomically inside the transaction that writes the document.
 export function nextOrderNumber(orders, orderDate) {
     const dateToken = orderDate.replaceAll('-', '').slice(2);
     const prefix = `SO-${dateToken}-`;
