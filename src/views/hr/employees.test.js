@@ -9,6 +9,9 @@ vi.mock('@/repositories/hr/hrRepository', () => ({ createHrRepository: () => ({ 
 vi.mock('@/stores/hr', () => ({ useHrStore: () => mocks.hr }));
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => mocks.auth }));
 vi.mock('@/stores/enterpriseRuntime', () => ({ useEnterpriseRuntimeStore: () => mocks.runtime }));
+vi.mock('./EmployeeAccount.vue', () => ({
+    default: { props: ['companyId', 'employeeId'], emits: ['changed'], template: '<section data-testid="employee-account"><button data-testid="account-changed" @click="$emit(\'changed\')">계정 변경</button></section>' }
+}));
 const employee = { id: 'employee', employeeNo: 'E1', name: '홍길동', status: 'active', revision: 3, actions: [] };
 beforeEach(() => {
     mocks.references = { catalog: ref([]), canManage: ref(false), loading: ref(false), saving: ref(false), error: ref(null), reset: vi.fn(), load: vi.fn() };
@@ -56,6 +59,15 @@ it('loads only the current company and resets open registration on identity chan
     await flushPromises();
     expect(wrapper.find('#employee-no').exists()).toBe(false);
     expect(mocks.hr.reset).toHaveBeenCalledTimes(2);
+});
+it('mounts account management for the selected employee and refreshes after a change', async () => {
+    const wrapper = setup();
+    await wrapper.get('[data-testid="employee-detail"]').trigger('click');
+    expect(wrapper.get('[data-testid="employee-account"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="account-changed"]').trigger('click');
+    await flushPromises();
+    expect(mocks.hr.load).toHaveBeenLastCalledWith('company', '', 1);
+    expect(mocks.runtime.refresh).toHaveBeenCalledWith('user', 'company');
 });
 it('requires a reason and explicit termination confirmation then refreshes access', async () => {
     const wrapper = setup();

@@ -6,6 +6,7 @@ import { useEnterpriseRuntimeStore } from '@/stores/enterpriseRuntime';
 import { useHrReferenceStore } from '@/stores/hrReference';
 import { createHrRepository } from '@/repositories/hr/hrRepository';
 import ReferenceCatalog from './ReferenceCatalog.vue';
+import EmployeeAccount from './EmployeeAccount.vue';
 const references = useHrReferenceStore();
 const repository = createHrRepository();
 const kinds = { department: '부서', grade: '직급', position: '직책' };
@@ -158,6 +159,12 @@ async function save() {
         if (identity === auth.user.value?.id && companyId === company.value) await runtime.refresh(identity, companyId);
     }
 }
+async function accountChanged() {
+    const identity = auth.user.value?.id;
+    const companyId = company.value;
+    await load(directory.value?.page || 1);
+    if (identity && identity === auth.user.value?.id && companyId === company.value) await runtime.refresh(identity, companyId);
+}
 </script>
 
 <template>
@@ -228,6 +235,7 @@ async function save() {
                 <Button v-if="directory.permissions.update && selected.status !== 'terminated'" data-testid="action" label="인사 발령 기록" :disabled="saving || latest?.type === 'terminate'" @click="action" />
             </div>
             <p class="my-4">입사일 {{ selected.hireDate }} · 로그인 계정 {{ selected.profileId ? '연결됨' : '연결 없음' }}</p>
+            <EmployeeAccount :key="`${company}:${selected.id}`" :company-id="company" :employee-id="selected.id" @changed="accountChanged" />
             <h3 class="font-semibold">기본정보 정정 이력</h3>
             <p v-if="correctionsLoading" role="status">정정 이력을 불러오는 중입니다.</p>
             <p v-else-if="correctionsError" role="alert">{{ correctionsError }}</p>
