@@ -1,6 +1,6 @@
 # Pending Production Migrations
 
-Three committed migrations are implemented, tested and merged, but not yet applied to the
+Four committed migrations are implemented, tested and merged, but not yet applied to the
 production Supabase project `mehhrnbaiojivesnobpv`. Applying them needs a human or agent with
 authorized Supabase dashboard access. Everything else is already done and verified.
 
@@ -36,8 +36,11 @@ pasting the whole file. The order matters because each later file depends on the
 3. `supabase/migrations/20260915001400_add_items.sql` — creates `public.items`, attaches the audit
    trigger, and folds the legacy `inventory.items` menu permission key into `master.items`.
    Requires step 1, because it references `private.record_audit()`.
+4. `supabase/migrations/20260916001500_add_warehouses.sql` — creates `public.warehouses` under a
+   site, attaches the audit trigger, and adds a trigger on `sites` so deactivating a site
+   deactivates the warehouses inside it. Requires step 1 for the same reason.
 
-All three are safe to apply while `companies`, `sites` and `partners` hold no rows. Step 3 edits
+All four are safe to apply while `companies`, `sites` and `partners` hold no rows. Step 3 edits
 `role_menu_permissions`, temporarily disabling and then re-enabling
 `protect_admin_role_menu_permissions` inside the same execution, which is why the file must be run
 whole rather than statement by statement.
@@ -49,11 +52,12 @@ node scripts/verify-pending-migrations.mjs
 ```
 
 The script only reads PostgreSQL catalogs, so the read-scoped token is enough. It checks that the
-three tables exist with row-level security enabled, that `authenticated` holds no write grant on
-the ledger or the counters and no delete grant on items, that the policy counts are 1, 1 and 3,
-that four triggers reference `private.record_audit`, that both security-definer functions exist,
-that `authenticated` cannot execute `private.next_document_number`, and that no role still holds
-the legacy `inventory.items` menu key. Every line must read `PASS`.
+four tables exist with row-level security enabled, that `authenticated` holds no write grant on
+the ledger or the counters and no delete grant on items or warehouses, that the policy counts are
+1, 1, 3 and 3, that five triggers reference `private.record_audit`, that the site cascade and both
+security-definer helpers exist, that `authenticated` cannot execute
+`private.next_document_number`, and that no role still holds the legacy `inventory.items` menu
+key. Every line must read `PASS`.
 
 Then deploy the current `main` so the application matches the schema:
 
@@ -65,7 +69,7 @@ npm run deploy
 
 Sign in as an administrator, change one company record, and confirm the change appears in
 `감사 로그` at `/settings/audit`. Confirm `품목 기준정보` at `/master/items` loads and that the
-old `/inventory/items` path redirects there.
+old `/inventory/items` path redirects there. Confirm `창고 관리` at `/inventory/warehouses` loads.
 
 ## Do not do these
 
