@@ -7,14 +7,14 @@
 | 항목 | 상태 |
 |---|---|
 | 스택 | Vue 3 + PrimeVue 4 + Tailwind, Cloudflare Workers Static Assets, Supabase (Auth + Postgres + RLS), Vitest |
-| 최신 구현 커밋 | `61b3a60 docs: correct partner rollout deployment record` 기반 최종 검토 수정 진행 중. 최종 커밋과 검증 수치는 아래 실행 기록에서 갱신 |
+| 최신 구현 커밋 | `e864340 fix: enforce partner master contracts`, 운영 문서 `fef951c docs: record Supabase migration history blocker` |
 | 작업 트리 | 최종 수정 브랜치 `feature/partner-master`. 원격 푸시는 컨트롤러 최종 재검토와 main 통합 후 진행 |
-| 검증 | 최종 수정 전 Vitest 47개 파일 643개 통과, ESLint 무결, `npm run build` 성공, 운영 의존성 취약점 0개, Wrangler dry-run 성공. 수정 후 전체 검증 결과는 아래에 추가 |
+| 검증 | 최종 수정 후 Vitest 47개 파일 654개 통과, ESLint 무결, `npm run build` 성공(PWA precache 50개), 운영 의존성 취약점 0개, Wrangler dry-run 성공 |
 | Supabase 운영 프로젝트 | `mehhrnbaiojivesnobpv` (`nexerp`). 이전 문서·계획의 `kctewzpeymlncibgyosz`는 오래된 프로젝트 식별자이므로 사용하지 않음 |
 | 운영 스키마 / CLI 이력 | 회사·사업장 및 거래처 스키마는 2026-09-14 운영 프로젝트에 적용하고 카탈로그 검증 완료. 단, CLI migration history는 미복구이며 복구 전 `db push` 금지 |
 | 미실행 테스트 | pgTAP `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 38개. 이 PC에 Docker가 없어 실행 불가 |
 | 확정된 결정 | 다회사·다사업장. 모든 업무 테이블은 `company_id`를 가지며 고객/공급처는 `master.partners`에서 통합 관리 |
-| 운영 배포 | Cloudflare Worker 버전 `61f5266c-d201-48c9-940a-eeb22fc7de05`, 진입 자산 `index-Cbfjxbkr.js`, `https://nexerp.merciful-chips.workers.dev` |
+| 운영 배포 | 현재 Cloudflare Worker 버전 `61f5266c-d201-48c9-940a-eeb22fc7de05`, 진입 자산 `index-Cbfjxbkr.js`, `https://nexerp.merciful-chips.workers.dev`. 최종 검토 수정 재배포 대기 |
 
 ## 2. 현재 구현 상태
 
@@ -110,7 +110,7 @@ npm run build
 ## 5. 환경 메모 (이 PC 기준)
 
 - git 2.55가 `C:\Program Files\Git\cmd`에 있습니다. 설치 전에 열린 셸은 PATH가 오래되어 `git`을 못 찾으니 `$env:Path = "C:\Program Files\Git\cmd;$env:Path"`를 앞에 붙이세요. 저장소 git identity는 `Codex <codex@local>`입니다.
-- Docker와 Supabase CLI 로컬 스택이 없습니다. pgTAP은 작성만 하고, 실행은 Docker가 있는 환경에서 `npx supabase test db`로 합니다.
+- Docker가 없어 Supabase 로컬 스택을 실행할 수 없습니다. pgTAP은 작성만 하고, 실행은 Docker가 있는 환경에서 `npx supabase test db`로 합니다.
 - 저장소 루트 `.env.local`, `.dev.vars`에 운영 Supabase 프로젝트 `mehhrnbaiojivesnobpv` 자격증명이 있습니다. 커밋 금지. `SUPABASE_SECRET_KEY`, `SUPABASE_MANAGEMENT_TOKEN`, `CLOUDFLARE_API_TOKEN`은 Worker 전용입니다. 이전 계획에 남은 `kctewzpeymlncibgyosz`를 운영 대상으로 사용하지 마세요.
 - 격리 Git 워크트리는 `.env.local`을 자동으로 공유하지 않습니다. 그 워크트리에서 Vite 운영 빌드나 `npm run deploy`를 실행하기 전에 루트의 커밋 제외 `.env.local`을 워크트리 루트로 복사하거나 같은 `VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY`를 환경변수로 주입하세요. 빌드 후 생성 자산에 프로젝트 ID `mehhrnbaiojivesnobpv`가 포함됐는지 확인한 다음 배포해야 합니다.
 - 회사·사업장과 거래처 스키마는 2026-09-14 운영 프로젝트에 적용됐지만 CLI migration history는 아직 복구되지 않았습니다. 거래처 `20260914000200`은 SQL Editor로 직접 적용했고, `supabase_migrations.schema_migrations` 조회 시 테이블이 없었습니다. 현재 토큰으로 프로젝트 link는 성공했으나 CLI login-role 초기화가 HTTP 403으로 막혀 `migration list`/repair를 완료하지 못했습니다.
@@ -146,7 +146,7 @@ npm run build
 - [ ] `user` 역할로 `/master/partners`의 등록·수정·상태 전환 버튼이 숨겨지는지 운영 확인. 마운트 테스트에서는 조회 전용 동작 통과.
 - [x] 운영 브라우저에서 두 레거시 경로 확인. 비로그인 상태에서 `/sales/customers`, `/purchasing/vendors` 모두 `/auth/login?redirect=/master/partners`로 끝나 통합 경로를 보존함. PWA 업데이트 적용 완료, 브라우저 개발 로그 비어 있음.
 - [ ] Docker가 있는 환경에서 `npx supabase test db` 실행. 기대: `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 38개 통과.
-- [x] Cloudflare Worker 최종 배포 (`61f5266c-d201-48c9-940a-eeb22fc7de05`, `index-Cbfjxbkr.js`). `/api/health` HTTP 200, Supabase `configured`; 레거시 2경로, 통합 경로, manifest, service worker HTTP 200.
+- [ ] 최종 검토 수정 포함 Cloudflare Worker 재배포. 현재 운영 버전 `61f5266c-d201-48c9-940a-eeb22fc7de05`에서는 `/api/health` HTTP 200, Supabase `configured`; 레거시 2경로, 통합 경로, manifest, service worker HTTP 200을 확인했지만 `e864340` 이후 자산은 아직 배포하지 않음.
 - [ ] 최종 전체 브랜치 검토 후 `git push origin main` 및 로컬/원격 HEAD 일치 확인.
 
 ### 7.2 1단계 기준정보 마무리
