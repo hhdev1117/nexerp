@@ -217,13 +217,26 @@ async function createAccount(request, env, client, createAdminClient) {
     }
 
     const input = validated.data;
+    const provisioningNonce = crypto.randomUUID();
+    let prepared;
+    try {
+        prepared = await adminClient.rpc('prepare_user_provisioning', {
+            target_login_id: input.loginId,
+            provisioning_nonce: provisioningNonce
+        });
+    } catch {
+        return upstreamError();
+    }
+    if (prepared?.error || prepared?.data !== true) return upstreamError();
+
     let createResult;
     try {
         createResult = await adminClient.auth.admin.createUser({
             email: input.email,
             password: input.temporaryPassword,
             email_confirm: true,
-            app_metadata: { nexerp_provisioned: true, login_id: input.loginId }
+            app_metadata: { nexerp_provisioned: true, login_id: input.loginId },
+            user_metadata: { provisioning_nonce: provisioningNonce }
         });
     } catch {
         return upstreamError();

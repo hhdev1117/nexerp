@@ -98,8 +98,13 @@ function createAdminClientFixture({
     listFactorsThrows = null,
     deleteFactorError = null,
     deleteFactorThrows = null,
-    deleteFactorResultFactory = null
+    deleteFactorResultFactory = null,
+    prepareError = null
 } = {}) {
+    const rpc = vi.fn(async (name) => {
+        events.push(`admin-rpc:${name}`);
+        return { data: prepareError ? null : true, error: prepareError };
+    });
     const createUser = vi.fn(async () => {
         events.push('create-user');
         if (createThrows) throw createThrows;
@@ -128,7 +133,7 @@ function createAdminClientFixture({
         return { data: { id, userId }, error: deleteFactorError };
     });
 
-    return { client: { auth: { admin: { createUser, deleteUser, updateUserById, mfa: { listFactors, deleteFactor } } } }, createUser, deleteUser, updateUserById, listFactors, deleteFactor };
+    return { client: { rpc, auth: { admin: { createUser, deleteUser, updateUserById, mfa: { listFactors, deleteFactor } } } }, rpc, createUser, deleteUser, updateUserById, listFactors, deleteFactor };
 }
 
 function createApp({ userFixture = createUserClientFixture(), adminFixture = createAdminClientFixture(), events = [] } = {}) {
@@ -263,7 +268,8 @@ describe('administrator account API', () => {
             email: internalEmail,
             password: validCreateBody.temporaryPassword,
             email_confirm: true,
-            app_metadata: { nexerp_provisioned: true, login_id: loginId }
+            app_metadata: { nexerp_provisioned: true, login_id: loginId },
+            user_metadata: { provisioning_nonce: expect.any(String) }
         });
     });
 
@@ -293,13 +299,18 @@ describe('administrator account API', () => {
 
         expect(response.status).toBe(201);
         expect(payload).toEqual({ account: publicAccount });
-        expect(events).toEqual(['get-user', 'get-aal', 'get-profile', 'create-admin-client', 'create-user', 'update-profile']);
+        expect(events).toEqual(['get-user', 'get-aal', 'get-profile', 'create-admin-client', 'admin-rpc:prepare_user_provisioning', 'create-user', 'update-profile']);
         expect(createAdminClient).toHaveBeenCalledOnce();
         expect(adminFixture.createUser).toHaveBeenCalledWith({
             email: 'staff01@nexerp.internal',
             password: 'Temporary-Password-1!',
             email_confirm: true,
-            app_metadata: { nexerp_provisioned: true, login_id: 'staff01' }
+            app_metadata: { nexerp_provisioned: true, login_id: 'staff01' },
+            user_metadata: { provisioning_nonce: expect.any(String) }
+        });
+        expect(adminFixture.rpc).toHaveBeenCalledWith('prepare_user_provisioning', {
+            target_login_id: 'staff01',
+            provisioning_nonce: expect.any(String)
         });
         expect(userFixture.rpc).toHaveBeenCalledWith('admin_update_profile', {
             target_id: accountId,
@@ -351,7 +362,16 @@ describe('administrator account API', () => {
 
         expect(response.status).toBe(502);
         expect(body).toEqual({ error: { code: 'upstream_error', message: '계정 관리 서비스를 사용할 수 없습니다.' } });
-        expect(events).toEqual(['get-user', 'get-aal', 'get-profile', 'create-admin-client', 'create-user', 'update-profile', 'delete-user']);
+        expect(events).toEqual([
+            'get-user',
+            'get-aal',
+            'get-profile',
+            'create-admin-client',
+            'admin-rpc:prepare_user_provisioning',
+            'create-user',
+            'update-profile',
+            'delete-user'
+        ]);
         expect(adminFixture.deleteUser).toHaveBeenCalledWith(accountId);
         expect(JSON.stringify(body)).not.toContain('raw database detail');
         expect(JSON.stringify(body)).not.toContain(validCreateBody.temporaryPassword);

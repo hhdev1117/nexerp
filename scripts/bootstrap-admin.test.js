@@ -3,7 +3,7 @@ import { bootstrapAdmin, normalizeBootstrapErrorCode, runBootstrapCli } from './
 
 const temporaryPassword = ['temporary', 'password'].join('-');
 
-const createFixture = ({ createError = null, promotionError = null, deleteError = null, deleteThrows = null } = {}) => {
+const createFixture = ({ createError = null, prepareError = null, promotionError = null, deleteError = null, deleteThrows = null } = {}) => {
     const createUser = vi.fn().mockResolvedValue({
         data: createError ? null : { user: { id: 'new-user-id' } },
         error: createError
@@ -12,7 +12,10 @@ const createFixture = ({ createError = null, promotionError = null, deleteError 
         if (deleteThrows) throw deleteThrows;
         return Promise.resolve({ data: deleteError ? null : {}, error: deleteError });
     });
-    const rpc = vi.fn().mockResolvedValue({ data: promotionError ? null : 'new-user-id', error: promotionError });
+    const rpc = vi.fn((name) => {
+        if (name === 'prepare_user_provisioning') return Promise.resolve({ data: prepareError ? null : true, error: prepareError });
+        return Promise.resolve({ data: promotionError ? null : 'new-user-id', error: promotionError });
+    });
     const client = { rpc, auth: { admin: { createUser, deleteUser } } };
 
     return { client, createUser, deleteUser, rpc };
@@ -35,20 +38,29 @@ describe('bootstrapAdmin', () => {
         expect(fixture.deleteUser).toHaveBeenCalledWith('new-user-id');
     });
 
-    it('creates the internal Auth identity with provisioning metadata and promotes its exact profile', async () => {
+    it('stages a one-time nonce before creating the internal Auth identity and promotes its exact profile', async () => {
         const fixture = createFixture();
         const logger = { info: vi.fn(), error: vi.fn() };
 
-        await bootstrapAdmin({ loginId: 'admin01', temporaryPassword, client: fixture.client, logger });
+        await bootstrapAdmin({ loginId: 'admin01', temporaryPassword, client: fixture.client, logger, createNonce: () => 'nonce-123' });
 
+        expect(fixture.rpc).toHaveBeenNthCalledWith(1, 'prepare_user_provisioning', { target_login_id: 'admin01', provisioning_nonce: 'nonce-123' });
         expect(fixture.createUser).toHaveBeenCalledWith({
             email: 'admin01@nexerp.internal',
             password: temporaryPassword,
             email_confirm: true,
-            app_metadata: { nexerp_provisioned: true, login_id: 'admin01' }
+            app_metadata: { nexerp_provisioned: true, login_id: 'admin01' },
+            user_metadata: { provisioning_nonce: 'nonce-123' }
         });
-        expect(fixture.rpc).toHaveBeenCalledWith('bootstrap_first_admin', { target_user_id: 'new-user-id' });
+        expect(fixture.rpc).toHaveBeenNthCalledWith(2, 'bootstrap_first_admin', { target_user_id: 'new-user-id' });
         expect(logger.info).toHaveBeenCalledWith('Administrator admin01 created.');
+    });
+
+    it('does not call Auth when one-time provisioning cannot be staged', async () => {
+        const fixture = createFixture({ prepareError: { message: 'database unavailable' } });
+
+        await expect(bootstrapAdmin({ loginId: 'admin01', temporaryPassword, client: fixture.client })).rejects.toThrow('provisioning_prepare_failed');
+        expect(fixture.createUser).not.toHaveBeenCalled();
     });
 
     it('deletes the newly created Auth user when profile promotion fails', async () => {

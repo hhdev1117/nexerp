@@ -5,6 +5,7 @@ import { loginIdToInternalEmail } from '../shared/loginIdentity.js';
 const bootstrapErrorCodes = new Set([
     'invalid_login_id',
     'active_admin_exists',
+    'provisioning_prepare_failed',
     'auth_user_creation_failed',
     'profile_promotion_failed',
     'promotion_failed_compensation_failed',
@@ -19,15 +20,23 @@ const fail = (code) => {
 export const normalizeBootstrapErrorCode = (error) =>
     error instanceof Error && bootstrapErrorCodes.has(error.message) ? error.message : 'bootstrap_failed';
 
-export async function bootstrapAdmin({ loginId, temporaryPassword, client, logger = console }) {
+export async function bootstrapAdmin({ loginId, temporaryPassword, client, logger = console, createNonce = () => crypto.randomUUID() }) {
     const email = loginIdToInternalEmail(loginId);
     if (!email) fail('invalid_login_id');
+
+    const provisioningNonce = createNonce();
+    const prepared = await client.rpc('prepare_user_provisioning', {
+        target_login_id: loginId,
+        provisioning_nonce: provisioningNonce
+    });
+    if (prepared.error || prepared.data !== true) fail('provisioning_prepare_failed');
 
     const created = await client.auth.admin.createUser({
         email,
         password: temporaryPassword,
         email_confirm: true,
-        app_metadata: { nexerp_provisioned: true, login_id: loginId }
+        app_metadata: { nexerp_provisioned: true, login_id: loginId },
+        user_metadata: { provisioning_nonce: provisioningNonce }
     });
     const userId = created.data?.user?.id;
     if (created.error || !userId) fail('auth_user_creation_failed');
