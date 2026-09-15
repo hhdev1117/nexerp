@@ -31,7 +31,9 @@ const errors = computed(() => validateItemDraft(draft.value));
 const dialogTitle = computed(() => (mode.value === 'create' ? '품목 등록' : '품목 정보 수정'));
 
 const companyOptions = computed(() => companies.value.map((company) => ({ value: company.id, label: company.code ? `${company.code} · ${company.name}` : company.name })));
-const activeCompanyOptions = computed(() => companies.value.filter((company) => company.isActive || company.id === draft.value.companyId).map((company) => ({ value: company.id, label: company.code ? `${company.code} · ${company.name}` : company.name })));
+const activeCompanyOptions = computed(() =>
+    companies.value.filter((company) => company.isActive || company.id === draft.value.companyId).map((company) => ({ value: company.id, label: company.code ? `${company.code} · ${company.name}` : company.name }))
+);
 
 const visibleItems = computed(() => {
     const query = keyword.value.trim().toLocaleLowerCase('ko-KR');
@@ -175,7 +177,20 @@ function toggleActive(item) {
                 <Button v-if="hasActiveFilters" data-testid="item-reset" label="필터 초기화" icon="pi pi-filter-slash" severity="secondary" outlined size="small" @click="resetFilters" />
             </div>
 
-            <DataTable :value="visibleItems" dataKey="id" :loading="loading" size="small" stripedRows scrollable responsiveLayout="scroll" tableStyle="min-width: 56rem" :tableProps="{ 'aria-label': '품목 목록' }" paginator :rows="20" :rowsPerPageOptions="[20, 50, 100]">
+            <DataTable
+                :value="visibleItems"
+                dataKey="id"
+                :loading="loading"
+                size="small"
+                stripedRows
+                scrollable
+                responsiveLayout="scroll"
+                tableStyle="min-width: 56rem"
+                :tableProps="{ 'aria-label': '품목 목록' }"
+                paginator
+                :rows="20"
+                :rowsPerPageOptions="[20, 50, 100]"
+            >
                 <template #empty>
                     <div class="list-empty">
                         <p class="list-empty-message">{{ hasActiveFilters ? '조건에 맞는 품목이 없습니다.' : '등록된 품목이 없습니다.' }}</p>

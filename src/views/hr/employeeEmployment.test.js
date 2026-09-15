@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { mount, flushPromises } from '@vue/test-utils';
 import { ref } from 'vue';
+import PrimeVue from 'primevue/config';
 import { beforeEach, expect, it, vi } from 'vitest';
 import EmployeeEmployment from './EmployeeEmployment.vue';
 const mocks = vi.hoisted(() => ({}));
@@ -58,6 +59,10 @@ const preparation = () => ({
     permissions: { create: true }
 });
 beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+    });
     mocks.auth = { user: ref({ id: 'user' }) };
     mocks.repo = {
         loadHistory: vi.fn().mockResolvedValue({ ...history(), employments: [history().employments[0]] }),
@@ -69,19 +74,28 @@ beforeEach(() => {
 const setup = () =>
     mount(EmployeeEmployment, {
         props: { companyId: 'company', employeeId: 'employee' },
-        global: { stubs: { Button: { props: ['label', 'disabled'], emits: ['click'], template: '<button :disabled="disabled" @click="$emit(\'click\')">{{label}}</button>' } } }
+        global: {
+            plugins: [PrimeVue],
+            stubs: { Button: { props: ['label', 'disabled'], emits: ['click'], template: '<button :disabled="disabled" @click="$emit(\'click\')">{{label}}</button>' } }
+        }
     });
+const setSelect = async (wrapper, inputId, value) => {
+    const select = wrapper.findAllComponents({ name: 'Select' }).find((candidate) => candidate.props('inputId') === inputId);
+    expect(select, 'Select#' + inputId).toBeTruthy();
+    select.vm.$emit('update:modelValue', value);
+    await flushPromises();
+};
 it('shows each cycle and reviews a rehire with position-first access preview', async () => {
     const wrapper = setup();
     await flushPromises();
     expect(wrapper.get('[data-testid="employment-cycle-1"]').text()).toContain('1회차');
     await wrapper.get('[data-testid="rehire-open"]').trigger('click');
     await wrapper.get('#rehire-date').setValue('2026-10-01');
-    await wrapper.get('#rehire-department').setValue('D1');
-    await wrapper.get('#rehire-grade').setValue('STAFF');
-    await wrapper.get('#rehire-position').setValue('TEAM_LEAD');
-    await wrapper.get('#rehire-account-mode').setValue('replace');
-    await wrapper.get('#rehire-profile').setValue('66666666-6666-4666-8666-666666666666');
+    await setSelect(wrapper, 'rehire-department', 'D1');
+    await setSelect(wrapper, 'rehire-grade', 'STAFF');
+    await setSelect(wrapper, 'rehire-position', 'TEAM_LEAD');
+    await setSelect(wrapper, 'rehire-account-mode', 'replace');
+    await setSelect(wrapper, 'rehire-profile', '66666666-6666-4666-8666-666666666666');
     await wrapper.get('#rehire-reason').setValue('재입사 승인');
     await wrapper.get('[data-testid="rehire-review"]').trigger('click');
     expect(wrapper.get('[data-testid="rehire-review-panel"]').text()).toContain('레벨 4 · 직책 매핑');
@@ -102,7 +116,7 @@ it('requires the earliest date, reason and account for replacement', async () =>
     await flushPromises();
     await wrapper.get('[data-testid="rehire-open"]').trigger('click');
     await wrapper.get('#rehire-date').setValue('2026-09-15');
-    await wrapper.get('#rehire-account-mode').setValue('replace');
+    await setSelect(wrapper, 'rehire-account-mode', 'replace');
     await wrapper.get('[data-testid="rehire-review"]').trigger('click');
     expect(wrapper.get('[role="alert"]').text()).toContain('2026-09-16');
     expect(mocks.repo.createReemployment).not.toHaveBeenCalled();

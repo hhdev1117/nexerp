@@ -20,6 +20,7 @@ const unmapped = { unlinked: '연결된 계정 없음', unmapped: '매핑된 권
 const levelText = (row) => (row === null || row === undefined ? '연결된 계정 없음' : mapped[row.source] ? `레벨 ${row.level} · ${mapped[row.source]}` : unmapped[row.source] || '확인 필요');
 const linkedName = computed(() => options.value?.account?.name || '연결 없음');
 const target = computed(() => options.value?.candidates.find((row) => row.id === choice.value) || null);
+const candidateOptions = computed(() => [{ value: '', label: '연결 없음' }, ...(options.value?.candidates || []).map((row) => ({ value: row.id, label: row.name + ' · ' + levelText(row.preview), disabled: !options.value?.permissions.link }))]);
 const canSubmit = computed(() => Boolean(options.value) && !loading.value && !saving.value && (choice.value ? options.value.permissions.link : options.value.permissions.unlink));
 const time = (value) => new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 let sequence = 0;
@@ -115,40 +116,54 @@ onBeforeUnmount(() => {
     ++sequence;
 });
 </script>
-
 <template>
-    <section class="account-link" aria-labelledby="account-link-title">
-        <div class="account-heading">
-            <h3 id="account-link-title" class="font-semibold">로그인 계정 연결</h3>
-            <Button data-testid="account-reload" label="다시 불러오기" severity="secondary" :disabled="loading || saving" @click="load" />
+    <section class="mt-8" aria-labelledby="account-link-title">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h3 id="account-link-title" class="text-lg font-semibold text-surface-900 dark:text-surface-0">로그인 계정 연결</h3>
+            <Button data-testid="account-reload" label="다시 불러오기" icon="pi pi-refresh" size="small" severity="secondary" outlined :disabled="loading || saving" @click="load" />
         </div>
-        <p v-if="loading" role="status">계정 연결 정보를 불러오는 중입니다.</p>
-        <p v-if="error" role="alert" class="account-error">{{ error }}</p>
-        <p v-if="notice" role="status">{{ notice }}</p>
+
+        <p v-if="loading" role="status" class="text-muted-color">계정 연결 정보를 불러오는 중입니다.</p>
+        <Message v-if="error" severity="error" :closable="false" class="mb-4" role="alert">{{ error }}</Message>
+        <Message v-if="notice" severity="success" :closable="false" class="mb-4" role="status">{{ notice }}</Message>
+
         <template v-if="options">
-            <p data-testid="account-current">현재 연결 {{ linkedName }} · {{ levelText(options.account?.preview) }}</p>
-            <p v-if="options.account && !options.account.listed" data-testid="account-unlisted" class="account-error">
+            <p data-testid="account-current" class="mt-0 mb-2">현재 연결 {{ linkedName }} · {{ levelText(options.account?.preview) }}</p>
+            <Message v-if="options.account && !options.account.listed" data-testid="account-unlisted" severity="warn" :closable="false" class="mb-4">
                 연결된 계정이 현재 발행된 회사 정책에 없거나 비활성 상태입니다. 이 계정은 회사 업무에 접근할 수 없으니 정책을 확인하거나 연결을 해제해 주세요.
-            </p>
-            <p v-if="options.status === 'terminated'" data-testid="account-terminated" role="status">퇴사한 직원입니다. 새 계정을 연결할 수 없으며 연결 해제만 가능합니다.</p>
-            <p class="account-note">직급 {{ options.grade || '미지정' }} · 직책 {{ options.position || '미지정' }} 기준으로 등급이 적용됩니다. 등급은 발행된 회사 정책에서만 결정됩니다.</p>
+            </Message>
+            <Message v-if="options.status === 'terminated'" data-testid="account-terminated" severity="info" :closable="false" class="mb-4" role="status">퇴사한 직원입니다. 새 계정을 연결할 수 없으며 연결 해제만 가능합니다.</Message>
+            <p class="mb-4 text-muted-color">직급 {{ options.grade || '미지정' }} · 직책 {{ options.position || '미지정' }} 기준으로 등급이 적용됩니다. 등급은 발행된 회사 정책에서만 결정됩니다.</p>
+
             <template v-if="options.permissions.link || options.permissions.unlink">
-                <label for="account-choice">연결할 계정</label>
-                <select id="account-choice" v-model="choice" :disabled="saving || loading">
-                    <option value="">연결 없음</option>
-                    <option v-for="row in options.candidates" :key="row.id" :value="row.id" :disabled="!options.permissions.link">{{ row.name }} · {{ levelText(row.preview) }}</option>
-                </select>
-                <p v-if="!options.candidates.length" class="account-note">연결할 수 있는 계정이 없습니다. 전사 권한관리에서 회사 구성원으로 먼저 등록해 주세요.</p>
-                <label for="account-reason">변경 사유</label>
-                <textarea id="account-reason" v-model="reason" maxlength="2000" rows="2" placeholder="계정 연결을 변경하는 사유를 입력해 주세요" :disabled="saving || loading" />
-                <Button data-testid="account-review" label="변경 내용 검토" :disabled="!canSubmit" @click="prepare" />
+                <div class="flex flex-col gap-2 mb-4">
+                    <label id="account-choice-label" for="account-choice" class="font-medium">연결할 계정</label>
+                    <Select
+                        inputId="account-choice"
+                        v-model="choice"
+                        :options="candidateOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        :optionDisabled="(option) => option.disabled"
+                        ariaLabelledby="account-choice-label"
+                        :disabled="saving || loading"
+                        fluid
+                    />
+                    <small v-if="!options.candidates.length" class="text-muted-color">연결할 수 있는 계정이 없습니다. 전사 권한관리에서 회사 구성원으로 먼저 등록해 주세요.</small>
+                </div>
+                <div class="flex flex-col gap-2 mb-4">
+                    <label for="account-reason" class="font-medium">변경 사유</label>
+                    <Textarea id="account-reason" v-model="reason" maxlength="2000" rows="2" placeholder="계정 연결을 변경하는 사유를 입력해 주세요" :disabled="saving || loading" fluid />
+                </div>
+                <Button data-testid="account-review" label="변경 내용 검토" icon="pi pi-eye" :disabled="!canSubmit" @click="prepare" />
             </template>
-            <p v-else data-testid="account-readonly" class="account-note">계정 연결을 변경할 권한이 없습니다.</p>
-            <section v-if="review" data-testid="account-review-panel" class="account-review">
-                <h4 class="font-semibold">변경 내용 확인</h4>
-                <p>연결 계정: {{ review.beforeName }} → {{ review.afterName }}</p>
-                <p>권한 등급: {{ levelText(review.beforePreview) }} → {{ levelText(review.afterPreview) }}</p>
-                <p>
+            <p v-else data-testid="account-readonly" class="text-muted-color">계정 연결을 변경할 권한이 없습니다.</p>
+
+            <section v-if="review" data-testid="account-review-panel" class="p-5 mt-4 rounded-border bg-surface-50 dark:bg-surface-800">
+                <h4 class="mb-3 text-base font-semibold">변경 내용 확인</h4>
+                <p class="m-0">연결 계정: {{ review.beforeName }} → {{ review.afterName }}</p>
+                <p class="mt-1 mb-0">권한 등급: {{ levelText(review.beforePreview) }} → {{ levelText(review.afterPreview) }}</p>
+                <p class="mt-1 mb-0 text-muted-color">
                     {{
                         review.afterId
                             ? review.beforePreview
@@ -157,70 +172,19 @@ onBeforeUnmount(() => {
                             : '연결 해제 후 이 직원의 재직 정보로 부여되던 권한이 사라집니다.'
                     }}
                 </p>
-                <p>사유: {{ review.reason }}</p>
-                <Button data-testid="account-save" label="확인하고 저장" :disabled="saving" @click="submit" />
+                <p class="mt-1 mb-4 break-words">사유: {{ review.reason }}</p>
+                <Button data-testid="account-save" label="확인하고 저장" icon="pi pi-check" :disabled="saving" @click="submit" />
             </section>
-            <h4 class="font-semibold">계정 연결 이력</h4>
-            <p v-if="!history.length" class="account-note">계정 연결 변경 이력이 없습니다.</p>
-            <ol class="account-history">
-                <li v-for="item in history" :key="item.id">
+
+            <h4 class="mt-6 mb-3 text-base font-semibold">계정 연결 이력</h4>
+            <p v-if="!history.length" class="text-muted-color">계정 연결 변경 이력이 없습니다.</p>
+            <ol v-else class="p-0 m-0 list-none">
+                <li v-for="item in history" :key="item.id" class="py-4 border-b border-surface-200 dark:border-surface-700 last:border-0">
                     <strong>{{ time(item.createdAt) }}</strong>
-                    <p>{{ item.beforeAccountId ? item.beforeAccountName : '연결 없음' }} → {{ item.afterAccountId ? item.afterAccountName : '연결 없음' }}</p>
-                    <p>{{ item.reason }}</p>
+                    <p class="mt-2 mb-0">{{ item.beforeAccountId ? item.beforeAccountName : '연결 없음' }} → {{ item.afterAccountId ? item.afterAccountName : '연결 없음' }}</p>
+                    <p class="mt-1 mb-0 text-muted-color break-words">{{ item.reason }}</p>
                 </li>
             </ol>
         </template>
     </section>
 </template>
-
-<style scoped>
-.account-link {
-    display: grid;
-    gap: 0.5rem;
-    margin: 1.5rem 0;
-    padding: 1.25rem;
-    border: 1px solid var(--surface-border);
-    border-radius: 12px;
-}
-.account-heading {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    align-items: center;
-    justify-content: space-between;
-}
-.account-note {
-    color: var(--text-color-secondary);
-    line-height: 1.7;
-}
-.account-error {
-    color: var(--red-600, #b91c1c);
-    line-height: 1.7;
-}
-.account-review {
-    display: grid;
-    gap: 0.35rem;
-    padding: 1rem;
-    border-radius: 10px;
-    background: var(--surface-100, #f1f5f9);
-}
-.account-history {
-    display: grid;
-    gap: 0.75rem;
-    margin: 0.5rem 0 0;
-    padding: 0;
-    list-style: none;
-}
-.account-history li {
-    border-top: 1px solid var(--surface-border);
-    padding-top: 0.75rem;
-}
-.account-link :is(select, textarea) {
-    width: 100%;
-    padding: 0.6rem;
-    border: 1px solid var(--surface-border);
-    border-radius: 8px;
-    background: var(--surface-card);
-    color: var(--text-color);
-}
-</style>

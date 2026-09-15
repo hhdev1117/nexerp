@@ -1,10 +1,10 @@
 <script setup>
 import { inventoryRows } from '@/data/erp';
 import { STOCK_STATUS, statusLabel, statusOptions, statusSeverity } from '@/data/status';
-import { computed, ref } from 'vue';
+import { useQueryState } from '@/composables/useQueryState';
+import { computed } from 'vue';
 
-const keyword = ref('');
-const selectedStatus = ref(null);
+const { keyword, status: selectedStatus, reset: resetQueryState } = useQueryState({ keyword: { fallback: '' }, status: { fallback: null } });
 const stockStatusOptions = statusOptions('stock');
 
 const filteredRows = computed(() => {
@@ -28,8 +28,7 @@ function stockRatio(item) {
 const hasActiveFilters = computed(() => Boolean(keyword.value.trim() || selectedStatus.value));
 
 function resetFilters() {
-    keyword.value = '';
-    selectedStatus.value = null;
+    resetQueryState();
 }
 </script>
 
@@ -97,7 +96,7 @@ function resetFilters() {
                 </div>
             </div>
 
-            <DataTable :value="filteredRows" dataKey="code" size="small" responsiveLayout="scroll" tableStyle="min-width: 62rem" :tableProps="{ 'aria-label': '재고 현황 목록' }" stripedRows>
+            <DataTable :value="filteredRows" dataKey="code" size="small" responsiveLayout="scroll" tableClass="min-w-0 lg:min-w-[62rem]" :tableProps="{ 'aria-label': '재고 현황 목록' }" stripedRows>
                 <template #empty>
                     <div class="list-empty">
                         <p class="list-empty-message">조건에 맞는 재고 품목이 없습니다.</p>
@@ -106,18 +105,18 @@ function resetFilters() {
                 </template>
                 <Column field="code" header="품목코드" sortable>
                     <template #body="slotProps"
-                        ><span class="font-medium">{{ slotProps.data.code }}</span></template
+                        ><span class="font-medium">{{ slotProps.data.code }}</span> <span class="block text-sm lg:hidden text-muted-color">{{ slotProps.data.name }} · {{ slotProps.data.warehouse }}</span></template
                     >
                 </Column>
-                <Column field="name" header="품목명" sortable />
-                <Column field="warehouse" header="창고" sortable />
+                <Column field="name" header="품목명" sortable headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell" />
+                <Column field="warehouse" header="창고" sortable headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell" />
                 <Column field="stock" header="현재고" sortable headerClass="num-col" bodyClass="num-col">
                     <template #body="slotProps">{{ slotProps.data.stock.toLocaleString('ko-KR') }} {{ slotProps.data.unit }}</template>
                 </Column>
-                <Column field="safety" header="안전재고" sortable headerClass="num-col" bodyClass="num-col">
+                <Column field="safety" header="안전재고" sortable headerClass="num-col hidden lg:table-cell" bodyClass="num-col hidden lg:table-cell">
                     <template #body="slotProps">{{ slotProps.data.safety.toLocaleString('ko-KR') }} {{ slotProps.data.unit }}</template>
                 </Column>
-                <Column header="안전재고 충족률" style="min-width: 10rem">
+                <Column header="안전재고 충족률" style="min-width: 10rem" headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell">
                     <template #body="slotProps">
                         <div class="flex items-center gap-3">
                             <ProgressBar :value="stockRatio(slotProps.data)" :showValue="false" class="flex-1" style="height: 0.45rem" />

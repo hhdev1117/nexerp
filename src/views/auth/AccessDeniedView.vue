@@ -60,14 +60,14 @@ const signOut = async () => {
 
 <template>
     <main class="auth-shell">
-        <section class="auth-panel" aria-labelledby="access-title">
+        <section class="auth-panel auth-panel-wide auth-panel-centered" aria-labelledby="access-title">
             <CompanyAccessSelector v-if="authStore.profile.value?.is_active" />
-            <span class="status-icon" aria-hidden="true"><i :class="recoverableProfileFailure ? 'pi pi-refresh' : 'pi pi-lock'"></i></span>
-            <p class="brand">NEXERP</p>
-            <h1 id="access-title">{{ recoverableProfileFailure ? '권한 정보를 불러오지 못했습니다' : '접근 권한이 없습니다' }}</h1>
-            <p v-if="recoverableProfileFailure">연결이 복구되면 권한 정보를 다시 불러올 수 있습니다.</p>
-            <p v-else>로그인한 계정에는 이 업무를 볼 권한이 없습니다. 필요한 경우 관리자에게 문의해 주세요.</p>
-            <div v-if="displayedError" class="auth-alert" role="alert" aria-live="assertive">{{ displayedError }}</div>
+            <span class="auth-status-icon auth-status-icon-danger" aria-hidden="true"><i :class="recoverableProfileFailure ? 'pi pi-refresh' : 'pi pi-lock'"></i></span>
+            <p class="mb-6 font-bold">NEXERP</p>
+            <h1 id="access-title" class="mt-0 mb-3 text-2xl font-semibold">{{ recoverableProfileFailure ? '권한 정보를 불러오지 못했습니다' : '접근 권한이 없습니다' }}</h1>
+            <p v-if="recoverableProfileFailure" class="mt-0 mb-6 leading-relaxed text-muted-color">연결이 복구되면 권한 정보를 다시 불러올 수 있습니다.</p>
+            <p v-else class="mt-0 mb-6 leading-relaxed text-muted-color">로그인한 계정에는 이 업무를 볼 권한이 없습니다. 필요한 경우 관리자에게 문의해 주세요.</p>
+            <div v-if="displayedError" class="mb-5 auth-alert" role="alert" aria-live="assertive">{{ displayedError }}</div>
             <div class="auth-actions">
                 <Button v-if="recoverableProfileFailure" label="다시 시도" icon="pi pi-refresh" aria-label="권한 정보 다시 불러오기" :loading="retrying" :disabled="retrying" :aria-busy="retrying ? 'true' : 'false'" @click="retryProfile" />
                 <Button
@@ -86,76 +86,3 @@ const signOut = async () => {
         </section>
     </main>
 </template>
-
-<style scoped>
-.auth-shell {
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 1.5rem;
-    background: var(--surface-ground, var(--p-surface-100));
-    color: var(--text-color, var(--p-surface-900));
-}
-.auth-panel {
-    width: min(100%, 34rem);
-    padding: 2rem;
-    border: 1px solid var(--surface-border, var(--p-surface-200));
-    border-top: 4px solid var(--primary-color, var(--p-primary-700));
-    border-radius: 8px;
-    background: var(--surface-card, var(--p-surface-0));
-    text-align: center;
-}
-.status-icon {
-    width: 3rem;
-    height: 3rem;
-    display: grid;
-    place-items: center;
-    margin: 0 auto 1rem;
-    border-radius: 50%;
-    background: var(--p-red-50);
-    color: var(--p-red-600);
-    font-size: 1.25rem;
-}
-.brand {
-    margin: 0 0 1.5rem;
-    font-weight: 700;
-    color: var(--text-color, var(--p-surface-900));
-}
-h1 {
-    margin: 0 0 0.75rem;
-    font-size: 1.65rem;
-}
-p {
-    margin: 0 0 1.5rem;
-    color: var(--text-color-secondary, var(--p-surface-500));
-    line-height: 1.65;
-}
-.auth-alert {
-    margin: 0 0 1.25rem;
-    padding: 0.75rem;
-    border: 1px solid var(--p-red-300);
-    border-radius: 6px;
-    background: var(--p-red-50);
-    color: var(--p-red-700);
-    text-align: left;
-}
-.auth-actions {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-}
-@media (max-width: 575px) {
-    .auth-shell {
-        padding: 0;
-        background: var(--surface-card, var(--p-surface-0));
-    }
-    .auth-panel {
-        min-height: 100vh;
-        padding: 2rem 1.25rem;
-        border: 0;
-        border-top: 4px solid var(--primary-color, var(--p-primary-700));
-        border-radius: 0;
-    }
-}
-</style>

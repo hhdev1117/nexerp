@@ -3,14 +3,16 @@ import { createHmac } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { createAuthStore } from './auth';
 
-const profileFields = 'id, email, display_name, department, role, is_active';
+const profileFields = 'id, email, display_name, department, role, is_active, ui_preferences';
+const initialUiPreferences = { preset: 'Aura', primary: 'emerald', surface: null, darkTheme: true, menuMode: 'static' };
 const approverProfile = {
     id: 'user-1',
     email: 'approver@nexerp.test',
     display_name: 'Kim Approver',
     department: 'Finance',
     role: 'approver',
-    is_active: true
+    is_active: true,
+    ui_preferences: initialUiPreferences
 };
 
 const deferred = () => {
@@ -37,6 +39,7 @@ const createClient = ({
     signInResult,
     signOutError = null,
     updateUserResult,
+    profileUpdateResult,
     getUserResult,
     mfaFactors = [],
     mfaAal = { currentLevel: 'aal1', nextLevel: 'aal1' },
@@ -47,6 +50,7 @@ const createClient = ({
     let authListener;
     const unsubscribe = vi.fn();
     const profileRequests = [];
+    const profileUpdateRequests = [];
     const client = {
         auth: {
             getSession: vi.fn().mockResolvedValue({ data: { session }, error: null }),
@@ -98,10 +102,20 @@ const createClient = ({
         from: vi.fn((table) => {
             expect(table).toBe('profiles');
             const request = { fields: null, id: null };
-            profileRequests.push(request);
+            let operation = null;
             return {
                 select(fields) {
                     request.fields = fields;
+                    if (!operation) {
+                        operation = 'select';
+                        profileRequests.push(request);
+                    }
+                    return this;
+                },
+                update(values) {
+                    operation = 'update';
+                    request.values = values;
+                    profileUpdateRequests.push(request);
                     return this;
                 },
                 eq(column, id) {
@@ -110,6 +124,10 @@ const createClient = ({
                     return this;
                 },
                 maybeSingle() {
+                    if (operation === 'update') {
+                        const result = typeof profileUpdateResult === 'function' ? profileUpdateResult(request) : profileUpdateResult || { data: { ui_preferences: request.values.ui_preferences }, error: null };
+                        return result instanceof Promise ? result : Promise.resolve(result);
+                    }
                     const result = profiles[request.id];
                     return result instanceof Promise ? result : Promise.resolve(result || { data: null, error: null });
                 }
@@ -123,6 +141,7 @@ const createClient = ({
             return authListener(event, nextSession);
         },
         profileRequests,
+        profileUpdateRequests,
         unsubscribe
     };
 };
@@ -150,6 +169,310 @@ describe('Supabase auth store', () => {
         expect(store.initialized.value).toBe(true);
         expect(store.loading.value).toBe(false);
         expect(store.configured.value).toBe(true);
+    });
+
+    it('canonicalizes partial UI preferences at the signed-in profile persistence boundary', async () => {
+        const session = jwtSession('ui-preferences-save');
+        const requestedPreferences = { primary: 'indigo', ignored: 'remove-me' };
+        const savedPreferences = { preset: 'Aura', primary: 'indigo', surface: null, darkTheme: false, menuMode: 'static' };
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            profileUpdateResult: { data: { ui_preferences: { primary: 'indigo', ignored: 'provider-extra' } }, error: null }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        const result = await store.saveUiPreferences(requestedPreferences);
+
+        expect(fixture.profileUpdateRequests).toEqual([
+            {
+                fields: 'ui_preferences',
+                id: 'user-1',
+                values: { ui_preferences: savedPreferences }
+            }
+        ]);
+        expect(result).toEqual(savedPreferences);
+        expect(store.profile.value).toEqual({ ...approverProfile, ui_preferences: savedPreferences });
+    });
+
+    it('keeps global auth loading clear while a UI-preferences save is pending', async () => {
+        const session = jwtSession('ui-preferences-loading');
+        const pendingUpdate = deferred();
+        const savedPreferences = { preset: 'Lara', primary: 'amber', surface: 'stone', darkTheme: false, menuMode: 'overlay' };
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            profileUpdateResult: pendingUpdate.promise
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        const saving = store.saveUiPreferences(savedPreferences);
+        await vi.waitFor(() => expect(fixture.profileUpdateRequests).toHaveLength(1));
+
+        expect(store.loading.value).toBe(false);
+
+        pendingUpdate.resolve({ data: { ui_preferences: savedPreferences }, error: null });
+        await expect(saving).resolves.toEqual(savedPreferences);
+        expect(store.loading.value).toBe(false);
+    });
+
+    it('keeps global auth loading clear after switching accounts with an old preference save pending', async () => {
+        const oldSession = jwtSession('ui-preferences-loading-old', 1789257600, 'old-user');
+        const newSession = jwtSession('ui-preferences-loading-new', 1789257900, 'new-user');
+        const pendingUpdate = deferred();
+        const oldProfile = { ...approverProfile, id: 'old-user' };
+        const newProfile = { ...approverProfile, id: 'new-user' };
+        const savedPreferences = { preset: 'Nora', primary: 'indigo', surface: 'zinc', darkTheme: true, menuMode: 'static' };
+        const fixture = createClient({
+            session: oldSession,
+            profiles: {
+                'old-user': { data: oldProfile, error: null },
+                'new-user': { data: newProfile, error: null }
+            },
+            profileUpdateResult: pendingUpdate.promise
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        const saving = store.saveUiPreferences(savedPreferences);
+        await vi.waitFor(() => expect(fixture.profileUpdateRequests).toHaveLength(1));
+        await fixture.emit('SIGNED_IN', newSession);
+
+        expect(store.user.value).toEqual(newSession.user);
+        expect(store.profile.value).toEqual(newProfile);
+        expect(store.loading.value).toBe(false);
+
+        pendingUpdate.resolve({ data: { ui_preferences: savedPreferences }, error: null });
+        await expect(saving).resolves.toBeNull();
+        expect(store.loading.value).toBe(false);
+    });
+
+    it('sends rapid UI-preferences saves for the same account to the provider in invocation order', async () => {
+        const session = jwtSession('ui-preferences-serial');
+        const firstUpdate = deferred();
+        const secondUpdate = deferred();
+        const firstPreferences = { preset: 'Lara', primary: 'amber', surface: 'stone', darkTheme: false, menuMode: 'overlay' };
+        const secondPreferences = { preset: 'Nora', primary: 'indigo', surface: 'zinc', darkTheme: true, menuMode: 'static' };
+        let updateCount = 0;
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            profileUpdateResult: () => (updateCount++ === 0 ? firstUpdate.promise : secondUpdate.promise)
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        const savingFirst = store.saveUiPreferences(firstPreferences);
+        const savingSecond = store.saveUiPreferences(secondPreferences);
+
+        await vi.waitFor(() => expect(fixture.profileUpdateRequests).toHaveLength(1));
+        expect(fixture.profileUpdateRequests[0].values).toEqual({ ui_preferences: firstPreferences });
+
+        firstUpdate.resolve({ data: { ui_preferences: firstPreferences }, error: null });
+        await expect(savingFirst).resolves.toEqual(firstPreferences);
+        await vi.waitFor(() => expect(fixture.profileUpdateRequests).toHaveLength(2));
+        expect(fixture.profileUpdateRequests[1].values).toEqual({ ui_preferences: secondPreferences });
+
+        secondUpdate.resolve({ data: { ui_preferences: secondPreferences }, error: null });
+        await expect(savingSecond).resolves.toEqual(secondPreferences);
+        expect(store.profile.value.ui_preferences).toEqual(secondPreferences);
+    });
+
+    it('continues the UI-preferences save queue after an earlier save fails', async () => {
+        const session = jwtSession('ui-preferences-serial-error');
+        const firstUpdate = deferred();
+        const secondUpdate = deferred();
+        const firstPreferences = { preset: 'Aura', primary: 'blue', surface: 'slate', darkTheme: false, menuMode: 'overlay' };
+        const secondPreferences = { preset: 'Lara', primary: 'rose', surface: 'viva', darkTheme: true, menuMode: 'static' };
+        let updateCount = 0;
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            profileUpdateResult: () => (updateCount++ === 0 ? firstUpdate.promise : secondUpdate.promise)
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        const savingFirst = store.saveUiPreferences(firstPreferences);
+        const savingSecond = store.saveUiPreferences(secondPreferences);
+
+        await vi.waitFor(() => expect(fixture.profileUpdateRequests).toHaveLength(1));
+        const firstFailure = expect(savingFirst).rejects.toThrow('UI 설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        firstUpdate.resolve({ data: null, error: new Error('private provider failure') });
+        await firstFailure;
+
+        await vi.waitFor(() => expect(fixture.profileUpdateRequests).toHaveLength(2));
+        expect(fixture.profileUpdateRequests[1].values).toEqual({ ui_preferences: secondPreferences });
+        secondUpdate.resolve({ data: { ui_preferences: secondPreferences }, error: null });
+
+        await expect(savingSecond).resolves.toEqual(secondPreferences);
+        expect(store.profile.value.ui_preferences).toEqual(secondPreferences);
+        expect(store.error.value).toBeNull();
+    });
+
+    it('keeps a queued same-account save through token refresh and waits for profile hydration', async () => {
+        const initialSession = jwtSession('ui-preferences-refresh-before');
+        const refreshedSession = jwtSession('ui-preferences-refresh-after', 1789257900);
+        const firstUpdate = deferred();
+        const secondUpdate = deferred();
+        const profileReload = deferred();
+        const firstPreferences = { preset: 'Lara', primary: 'amber', surface: 'stone', darkTheme: false, menuMode: 'overlay' };
+        const secondPreferences = { preset: 'Nora', primary: 'indigo', surface: 'zinc', darkTheme: true, menuMode: 'static' };
+        const profiles = { 'user-1': { data: approverProfile, error: null } };
+        let updateCount = 0;
+        const fixture = createClient({
+            session: initialSession,
+            profiles,
+            profileUpdateResult: () => (updateCount++ === 0 ? firstUpdate.promise : secondUpdate.promise)
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        const savingFirst = store.saveUiPreferences(firstPreferences);
+        const savingSecond = store.saveUiPreferences(secondPreferences);
+        const secondOutcome = savingSecond.then(
+            (value) => ({ status: 'fulfilled', value }),
+            (reason) => ({ status: 'rejected', reason })
+        );
+        await vi.waitFor(() => expect(fixture.profileUpdateRequests).toHaveLength(1));
+
+        profiles['user-1'] = profileReload.promise;
+        const refreshing = fixture.emit('TOKEN_REFRESHED', refreshedSession);
+        await vi.waitFor(() => expect(store.profile.value).toBeNull());
+
+        firstUpdate.resolve({ data: { ui_preferences: firstPreferences }, error: null });
+        await expect(savingFirst).resolves.toEqual(firstPreferences);
+        await Promise.resolve();
+        expect(fixture.profileUpdateRequests).toHaveLength(1);
+
+        profileReload.resolve({ data: { ...approverProfile, ui_preferences: firstPreferences }, error: null });
+        await refreshing;
+        await vi.waitFor(() => expect(fixture.profileUpdateRequests).toHaveLength(2));
+        expect(fixture.profileUpdateRequests[1].values).toEqual({ ui_preferences: secondPreferences });
+
+        secondUpdate.resolve({ data: { ui_preferences: secondPreferences }, error: null });
+        await expect(secondOutcome).resolves.toEqual({ status: 'fulfilled', value: secondPreferences });
+        expect(store.session.value).toEqual(refreshedSession);
+        expect(store.profile.value.ui_preferences).toEqual(secondPreferences);
+    });
+
+    it.each([null, [], new Date('2026-09-16T00:00:00Z')])('rejects non-plain UI preferences before updating the provider', async (preferences) => {
+        const session = jwtSession('ui-preferences-invalid');
+        const fixture = createClient({ session, profiles: { 'user-1': { data: approverProfile, error: null } } });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.saveUiPreferences(preferences)).rejects.toThrow('UI 설정값을 확인해 주세요.');
+
+        expect(fixture.profileUpdateRequests).toHaveLength(0);
+        expect(store.error.value).toBe('UI 설정값을 확인해 주세요.');
+    });
+
+    it('rejects saving UI preferences while signed out', async () => {
+        const fixture = createClient();
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.saveUiPreferences({ preset: 'Aura', primary: 'emerald', surface: null, darkTheme: true, menuMode: 'static' })).rejects.toThrow('로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.');
+
+        expect(fixture.profileUpdateRequests).toHaveLength(0);
+    });
+
+    it('rejects saving UI preferences for an inactive profile', async () => {
+        const session = jwtSession('ui-preferences-inactive');
+        const inactiveProfile = { ...approverProfile, is_active: false };
+        const fixture = createClient({ session, profiles: { 'user-1': { data: inactiveProfile, error: null } } });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.saveUiPreferences({ preset: 'Aura', primary: 'emerald', surface: null, darkTheme: true, menuMode: 'static' })).rejects.toThrow('비활성화된 계정입니다. 관리자에게 문의해 주세요.');
+
+        expect(fixture.profileUpdateRequests).toHaveLength(0);
+    });
+
+    it('redacts provider details when saving UI preferences fails', async () => {
+        const session = jwtSession('ui-preferences-error');
+        const rawError = Object.assign(new Error('provider row detail access_token=private-secret'), { status: 400 });
+        const fixture = createClient({
+            session,
+            profiles: { 'user-1': { data: approverProfile, error: null } },
+            profileUpdateResult: { data: null, error: rawError }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        await expect(store.saveUiPreferences({ preset: 'Aura', primary: 'emerald', surface: null, darkTheme: false, menuMode: 'static' })).rejects.toThrow('UI 설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+
+        expect(store.error.value).toBe('UI 설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        expect(store.error.value).not.toContain(rawError.message);
+        expect(store.profile.value).toEqual(approverProfile);
+    });
+
+    it('does not apply a stale UI-preferences response after the active account changes', async () => {
+        const oldSession = jwtSession('ui-preferences-old', 1789257600, 'old-user');
+        const newSession = jwtSession('ui-preferences-new', 1789257900, 'new-user');
+        const pendingUpdate = deferred();
+        const oldProfile = { ...approverProfile, id: 'old-user', ui_preferences: { preset: 'Aura', primary: 'blue', surface: 'slate', darkTheme: false, menuMode: 'static' } };
+        const newProfile = { ...approverProfile, id: 'new-user', ui_preferences: { preset: 'Nora', primary: 'rose', surface: 'zinc', darkTheme: true, menuMode: 'overlay' } };
+        const savedPreferences = { preset: 'Lara', primary: 'amber', surface: 'stone', darkTheme: false, menuMode: 'overlay' };
+        const fixture = createClient({
+            session: oldSession,
+            profiles: {
+                'old-user': { data: oldProfile, error: null },
+                'new-user': { data: newProfile, error: null }
+            },
+            profileUpdateResult: pendingUpdate.promise
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        const saving = store.saveUiPreferences(savedPreferences);
+        await vi.waitFor(() => expect(fixture.profileUpdateRequests).toHaveLength(1));
+        await fixture.emit('SIGNED_IN', newSession);
+        pendingUpdate.resolve({ data: { ui_preferences: savedPreferences }, error: null });
+
+        await expect(saving).resolves.toBeNull();
+        expect(fixture.profileUpdateRequests[0].id).toBe('old-user');
+        expect(store.user.value).toEqual(newSession.user);
+        expect(store.profile.value).toEqual(newProfile);
+    });
+
+    it('cancels queued and in-flight preference failures after the active account changes', async () => {
+        const oldSession = jwtSession('ui-preferences-failure-old', 1789257600, 'old-user');
+        const newSession = jwtSession('ui-preferences-failure-new', 1789257900, 'new-user');
+        const pendingUpdate = deferred();
+        const oldProfile = { ...approverProfile, id: 'old-user', ui_preferences: { preset: 'Aura', primary: 'blue', surface: 'slate', darkTheme: false, menuMode: 'static' } };
+        const newProfile = { ...approverProfile, id: 'new-user', ui_preferences: { preset: 'Nora', primary: 'rose', surface: 'zinc', darkTheme: true, menuMode: 'overlay' } };
+        const firstPreferences = { preset: 'Lara', primary: 'amber', surface: 'stone', darkTheme: false, menuMode: 'overlay' };
+        const secondPreferences = { preset: 'Nora', primary: 'indigo', surface: 'ocean', darkTheme: true, menuMode: 'static' };
+        const fixture = createClient({
+            session: oldSession,
+            profiles: {
+                'old-user': { data: oldProfile, error: null },
+                'new-user': { data: newProfile, error: null }
+            },
+            profileUpdateResult: pendingUpdate.promise
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+        await store.initialize();
+
+        const savingFirst = store.saveUiPreferences(firstPreferences);
+        const savingSecond = store.saveUiPreferences(secondPreferences);
+        const cancellation = expect(Promise.all([savingFirst, savingSecond])).resolves.toEqual([null, null]);
+        await vi.waitFor(() => expect(fixture.profileUpdateRequests).toHaveLength(1));
+        await fixture.emit('SIGNED_IN', newSession);
+
+        pendingUpdate.resolve({ data: null, error: new Error('old account private provider failure') });
+        await cancellation;
+
+        expect(fixture.profileUpdateRequests).toHaveLength(1);
+        expect(fixture.profileUpdateRequests[0].id).toBe('old-user');
+        expect(store.user.value).toEqual(newSession.user);
+        expect(store.profile.value).toEqual(newProfile);
+        expect(store.error.value).toBeNull();
+        expect(JSON.stringify({ profile: store.profile.value, error: store.error.value })).not.toContain('old account private provider failure');
     });
 
     it('initializes safely without configuration and rejects sign-in with a stable message', async () => {

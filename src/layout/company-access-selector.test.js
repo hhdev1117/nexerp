@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { mount, flushPromises } from '@vue/test-utils';
 import { ref } from 'vue';
+import PrimeVue from 'primevue/config';
 import { describe, expect, it, vi } from 'vitest';
 import CompanyAccessSelector from './CompanyAccessSelector.vue';
 const runtime = {
@@ -18,9 +19,14 @@ vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: ref({ id: 'u' }),
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: vi.fn() }), useRoute: () => ({ meta: { menuKey: 'dashboard' }, fullPath: '/' }) }));
 describe('company permission selector', () => {
     it('shows server-authorized company and active revision', async () => {
-        const wrapper = mount(CompanyAccessSelector);
+        Object.defineProperty(window, 'matchMedia', {
+            configurable: true,
+            value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+        });
+        const wrapper = mount(CompanyAccessSelector, { global: { plugins: [PrimeVue] } });
         await flushPromises();
-        expect(wrapper.get('select').element.value).toBe('a');
+        const companySelect = wrapper.findAllComponents({ name: 'Select' }).find((candidate) => candidate.props('inputId') === 'runtime-company');
+        expect(companySelect.props('modelValue')).toBe('a');
         expect(wrapper.text()).toContain('권한 버전 1');
     });
 });

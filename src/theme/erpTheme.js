@@ -17,6 +17,21 @@ export const erpThemePreset = definePreset(Aura, {
                     color: '{primary.700}',
                     focusColor: '{primary.800}'
                 }
+            },
+            dark: {
+                // Dark surfaces need a lighter primary to clear the 4.5:1 text contrast the light scheme gets from primary.700.
+                primary: {
+                    color: '{primary.400}',
+                    contrastColor: '{surface.950}',
+                    hoverColor: '{primary.300}',
+                    activeColor: '{primary.200}'
+                },
+                highlight: {
+                    background: 'color-mix(in srgb, {primary.400}, transparent 84%)',
+                    focusBackground: 'color-mix(in srgb, {primary.400}, transparent 76%)',
+                    color: '{primary.200}',
+                    focusColor: '{primary.100}'
+                }
             }
         }
     }

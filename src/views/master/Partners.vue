@@ -3,6 +3,7 @@ import { MASTER_MESSAGES, formatBusinessNumber, normalizeBusinessNumber, normali
 import { MASTER_ERROR_MESSAGES } from '@/repositories/master/errors';
 import { useAuthStore } from '@/stores/auth';
 import { useMasterStore } from '@/stores/master';
+import { useQueryState } from '@/composables/useQueryState';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import { computed, nextTick, ref, watch } from 'vue';
@@ -35,10 +36,7 @@ const toast = useToast();
 const { companies, loading, error, partnersFor, ensureLoaded, createPartner, updatePartner } = masterStore;
 
 const canManage = computed(() => authStore.hasRole(['admin']));
-const selectedCompanyId = ref(null);
-const keyword = ref('');
-const selectedRole = ref('all');
-const selectedStatus = ref('all');
+const { company: selectedCompanyId, keyword, role: selectedRole, status: selectedStatus } = useQueryState({ company: { fallback: null }, keyword: { fallback: '' }, role: { fallback: 'all' }, status: { fallback: 'all' } });
 const saving = ref(false);
 const changingId = ref(null);
 
@@ -96,6 +94,14 @@ const filteredPartners = computed(() => {
         return matchesKeyword && matchesRole && matchesStatus;
     });
 });
+
+const hasActiveFilters = computed(() => Boolean(keyword.value.trim()) || selectedRole.value !== 'all' || selectedStatus.value !== 'all');
+
+function resetFilters() {
+    keyword.value = '';
+    selectedRole.value = 'all';
+    selectedStatus.value = 'all';
+}
 
 ensureLoaded();
 
@@ -211,6 +217,46 @@ function togglePartnerActive(partner) {
     });
 }
 
+const selectedPartners = ref([]);
+const bulkActivatable = computed(() => selectedPartners.value.filter((partner) => !partner.isActive));
+const bulkDeactivatable = computed(() => selectedPartners.value.filter((partner) => partner.isActive));
+const bulkRunning = ref(false);
+
+async function applyBulkActive(targets, isActive) {
+    bulkRunning.value = true;
+    const failures = [];
+    try {
+        for (const partner of targets) {
+            try {
+                await updatePartner(partner.id, { isActive });
+            } catch {
+                failures.push(partner.name);
+            }
+        }
+    } finally {
+        bulkRunning.value = false;
+    }
+
+    const changed = targets.length - failures.length;
+    if (changed) notify('success', '상태 변경 완료', `${changed}개 거래처를 ${isActive ? '활성화' : '비활성화'}했습니다.`);
+    if (failures.length) notify('error', '일부 거래처 변경 실패', `${failures.join(', ')} 거래처는 변경하지 못했습니다.`);
+    selectedPartners.value = failures.length ? selectedPartners.value.filter((partner) => failures.includes(partner.name)) : [];
+}
+
+function confirmBulkActive(isActive) {
+    const targets = isActive ? bulkActivatable.value : bulkDeactivatable.value;
+    if (!targets.length || bulkRunning.value || saving.value || changingId.value !== null) return;
+    confirm.require({
+        group: 'master',
+        header: isActive ? '선택 거래처 활성화' : '선택 거래처 비활성화',
+        message: `선택한 ${targets.length}개 거래처를 ${isActive ? '활성화' : '비활성화'}하시겠습니까?`,
+        icon: 'pi pi-exclamation-triangle',
+        rejectProps: { label: '취소', severity: 'secondary', outlined: true },
+        acceptProps: { label: isActive ? '활성화' : '비활성화', severity: isActive ? 'primary' : 'danger' },
+        accept: () => applyBulkActive(targets, isActive)
+    });
+}
+
 function setDialogVisible(visible) {
     if (!visible && saving.value) return;
     partnerDialog.value = visible;
@@ -233,7 +279,7 @@ function setDialogVisible(visible) {
             {{ loading ? '거래처 목록을 불러오는 중입니다.' : `거래처 ${filteredPartners.length}개가 표시되었습니다.` }}
         </div>
 
-        <section class="card partner-card mb-0" aria-labelledby="partner-list-title">
+        <section class="mb-0 card" aria-labelledby="partner-list-title">
             <div class="flex flex-col gap-4 mb-4">
                 <h2 id="partner-list-title" class="text-xl font-semibold">거래처 목록</h2>
                 <div class="grid grid-cols-12 gap-3">
@@ -271,14 +317,42 @@ function setDialogVisible(visible) {
                 </div>
             </div>
 
-            <DataTable :value="filteredPartners" dataKey="id" :loading="loading" size="small" responsiveLayout="scroll" tableStyle="min-width: 62rem" :tableProps="{ 'aria-label': '거래처 목록' }" stripedRows scrollable>
-                <template #empty>조건에 맞는 거래처가 없습니다.</template>
+            <div v-if="canManage && selectedPartners.length" class="flex flex-wrap items-center gap-3 p-3 mb-4 rounded-border bg-surface-50 dark:bg-surface-800" role="region" aria-label="선택한 거래처 일괄 처리">
+                <span class="text-sm" aria-live="polite"
+                    >선택한 <strong>{{ selectedPartners.length }}</strong
+                    >개 거래처</span
+                >
+                <Button label="선택 활성화" icon="pi pi-lock-open" size="small" severity="success" outlined :disabled="!bulkActivatable.length || bulkRunning" :loading="bulkRunning" @click="confirmBulkActive(true)" />
+                <Button label="선택 비활성화" icon="pi pi-lock" size="small" severity="danger" outlined :disabled="!bulkDeactivatable.length || bulkRunning" :loading="bulkRunning" @click="confirmBulkActive(false)" />
+                <Button label="선택 해제" icon="pi pi-times" size="small" severity="secondary" text :disabled="bulkRunning" @click="selectedPartners = []" />
+            </div>
+
+            <DataTable
+                v-model:selection="selectedPartners"
+                :value="filteredPartners"
+                dataKey="id"
+                :loading="loading"
+                size="small"
+                responsiveLayout="scroll"
+                tableClass="min-w-0 lg:min-w-[62rem]"
+                :tableProps="{ 'aria-label': '거래처 목록' }"
+                stripedRows
+                scrollable
+            >
+                <template #empty>
+                    <div class="list-empty">
+                        <p class="list-empty-message">조건에 맞는 거래처가 없습니다.</p>
+                        <Button v-if="hasActiveFilters" label="필터 초기화" icon="pi pi-filter-slash" severity="secondary" outlined size="small" @click="resetFilters" />
+                        <Button v-else-if="canManage" label="거래처 등록" icon="pi pi-plus" size="small" @click="openCreatePartner" />
+                    </div>
+                </template>
+                <Column v-if="canManage" selectionMode="multiple" headerStyle="width: 3rem" :headerCheckboxToggleAllPages="false" />
                 <Column field="code" header="코드" sortable>
                     <template #body="slotProps"
-                        ><span class="font-medium text-primary">{{ slotProps.data.code }}</span></template
+                        ><span class="font-medium">{{ slotProps.data.code }}</span> <span class="block text-sm lg:hidden text-muted-color">{{ slotProps.data.name }}</span></template
                     >
                 </Column>
-                <Column field="name" header="거래처명" sortable style="min-width: 11rem" />
+                <Column field="name" header="거래처명" sortable style="min-width: 11rem" headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell" />
                 <Column header="역할" style="min-width: 10rem">
                     <template #body="slotProps">
                         <div class="flex flex-wrap gap-1">
@@ -287,13 +361,13 @@ function setDialogVisible(visible) {
                         </div>
                     </template>
                 </Column>
-                <Column header="사업자등록번호">
+                <Column header="사업자등록번호" headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell">
                     <template #body="slotProps">{{ formatBusinessNumber(slotProps.data.businessNumber) || '-' }}</template>
                 </Column>
-                <Column field="representative" header="대표자">
+                <Column field="representative" header="대표자" headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell">
                     <template #body="slotProps">{{ slotProps.data.representative || '-' }}</template>
                 </Column>
-                <Column field="phone" header="연락처">
+                <Column field="phone" header="연락처" headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell">
                     <template #body="slotProps">{{ slotProps.data.phone || '-' }}</template>
                 </Column>
                 <Column field="isActive" header="상태" sortable>
@@ -436,9 +510,3 @@ function setDialogVisible(visible) {
         <ConfirmDialog group="master" />
     </div>
 </template>
-
-<style scoped>
-.partner-card {
-    border-radius: 0.5rem;
-}
-</style>

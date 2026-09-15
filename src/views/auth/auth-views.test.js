@@ -78,6 +78,10 @@ const mountAccessDenied = async (url = '/access-denied') => {
 };
 
 beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+    });
     authStore.loading.value = false;
     authStore.error.value = null;
     authStore.user.value = null;
@@ -375,8 +379,10 @@ describe('supporting auth views', () => {
         wrappers.push(wrapper);
         await flushPromises();
 
-        expect(wrapper.get('#mfa-factor').text()).toContain('Backup authenticator');
-        await wrapper.get('#mfa-factor').setValue('factor-backup');
+        const factorSelect = wrapper.findAllComponents({ name: 'Select' }).find((candidate) => candidate.props('inputId') === 'mfa-factor');
+        expect(factorSelect.props('options').map((option) => option.label)).toContain('Backup authenticator');
+        factorSelect.vm.$emit('update:modelValue', 'factor-backup');
+        await flushPromises();
         await wrapper.get('#mfa-code').setValue('123456');
         await wrapper.get('form').trigger('submit');
         await flushPromises();

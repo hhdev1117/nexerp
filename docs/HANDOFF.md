@@ -1,6 +1,6 @@
 # NEXERP 인수인계 문서
 
-> 기준 시점: 2026-09-16, 전사 권한관리와 인사 모듈을 운영에 적용한 뒤, 전 모듈 공통 기반인 감사 로그와 서버 측 문서 채번, 그리고 품목·창고·계정과목 기준정보를 추가해 1단계 기준정보를 마무리한 상태입니다. **이 다섯 마이그레이션은 아직 운영 프로젝트에 적용하지 않았습니다.** 적용 절차와 그 이유는 [운영 미적용 마이그레이션](setup/pending-migrations.md)에 따로 정리했습니다. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다.
+> 기준 시점: 2026-09-16, 전사 권한관리와 인사 모듈을 운영에 적용한 뒤, 전 모듈 공통 기반인 감사 로그와 서버 측 문서 채번, 품목·창고·계정과목 기준정보, 로그인 사용자별 UI 설정 저장을 추가한 상태입니다. **이 여섯 마이그레이션은 아직 운영 프로젝트에 적용하지 않았습니다.** 적용 절차와 그 이유는 [운영 미적용 마이그레이션](setup/pending-migrations.md)에 따로 정리했습니다. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다.
 
 ## 1. 한눈에 보기
 
@@ -11,7 +11,7 @@
 | 작업 트리 | 로컬·원격 `main` 모두 `e3756a0`으로 동기화 완료 |
 | 검증 | Vitest 81개 파일 913개 통과, ESLint 통과, production build 성공(PWA precache 57개). pglite 런타임 SQL 단언 114개 통과 |
 | Supabase 운영 프로젝트 | `mehhrnbaiojivesnobpv` (`nexerp`). 이전 문서·계획의 `kctewzpeymlncibgyosz`는 오래된 프로젝트 식별자이므로 사용하지 않음 |
-| 운영 스키마 / CLI 이력 | 회사·사업장·거래처와 전사 권한 및 HR 마이그레이션 002~009를 운영 프로젝트에 적용하고 카탈로그 검증 완료. `20260915001200`(감사 로그)과 `20260915001300`(문서 채번)은 로컬에만 존재하며 운영 미적용. CLI migration history는 미복구이며 복구 전 `db push` 금지 |
+| 운영 스키마 / CLI 이력 | 회사·사업장·거래처와 전사 권한 및 HR 마이그레이션 002~009를 운영 프로젝트에 적용하고 카탈로그 검증 완료. `20260915001200`~`20260916001700` 여섯 건은 로컬에만 존재하며 운영 미적용. CLI migration history는 미복구이며 복구 전 `db push` 금지 |
 | 미실행 테스트 | pgTAP `companies_sites_rls.test.sql` 35개, `partners_rls.test.sql` 38개, `audit_logs_rls.test.sql` 27개, `document_sequences_rls.test.sql` 21개. 이 PC에 Docker가 없어 실행 불가 |
 | 확정된 결정 | 다회사·다사업장. 모든 업무 테이블은 `company_id`를 가지며 고객/공급처는 `master.partners`에서 통합 관리 |
 | 운영 배포 | Cloudflare Worker 버전 `a6e74fee-404f-4f98-a5fc-7f12fd075af9`, 진입 자산 `index-DFGDZqNf.js`, `https://nexerp.nexerp.workers.dev` |
@@ -32,6 +32,7 @@
 | **품목 기준정보** | 구현 완료, 운영 마이그레이션 대기. `inventory.items`를 `master.items`로 통합하고 레거시 경로는 리다이렉트 | `src/views/master/Items.vue`, `src/data/master.js`, `supabase/migrations/20260915001400_add_items.sql` |
 | **창고 기준정보** | 구현 완료, 운영 마이그레이션 대기. 사업장 소속, 사업장 비활성화 시 연쇄 비활성화 | `src/views/master/Warehouses.vue`, `src/data/master.js`, `supabase/migrations/20260916001500_add_warehouses.sql` |
 | **계정과목 기준정보** | 구현 완료, 운영 마이그레이션 대기. 숫자 코드 계층, 순환 차단, 하위 연쇄 비활성화 | `src/views/master/Accounts.vue`, `src/data/master.js`, `supabase/migrations/20260916001600_add_accounts.sql` |
+| **사용자별 UI 설정** | 구현 완료, 운영 마이그레이션 대기. 다크 모드·테마·색상·메뉴 모드를 프로필에 저장해 재로그인과 다른 기기에서 복원 | `src/layout/composables/layout.js`, `src/stores/auth.js`, `supabase/migrations/20260916001700_add_profile_ui_preferences.sql` |
 | 결재함, 수주 관리, 재고 현황, 재무 현황, 통합 대시보드 | 데모 (메모리 리포지토리) | `src/views/erp/*`, `src/views/Dashboard.vue`, `src/stores/erp.js` |
 | 나머지 18개 메뉴 (견적, 발주, 입고, BOM, 전표 등) | 플레이스홀더 공용 화면. 전용 화면 17개를 뺀 실제 수치 | `src/views/erp/GenericModule.vue` |
 
@@ -85,6 +86,12 @@ Supabase에는 기존 인증·권한·회사·사업장·거래처 테이블과 
 - **하위 연쇄** `private.deactivate_account_children()`이 재귀 CTE로 모든 후손을 찾아 비활성화합니다. 상위를 끄면 그 아래 전표 입력 계정이 홀로 남지 않습니다.
 - **화면**: `accountOutline()`이 부모 바로 아래 자식을 놓고 깊이를 계산해 들여쓰기합니다. 부모가 없는 행과 순환이 섞여 들어와도 각 행을 정확히 한 번만 내보내므로 화면이 멈추지 않습니다. 상위 계정 선택지는 같은 회사·같은 유형의 집계 전용 계정만 보여주고 자기 자신을 제외합니다.
 - 이로써 핸드오프 7.2의 1단계 기준정보(Task A~E)가 모두 구현 완료 상태가 됐습니다. 남은 것은 운영 적용뿐입니다.
+
+### 사용자별 UI 설정 저장
+
+- **마이그레이션** `20260916001700_add_profile_ui_preferences.sql`: `public.profiles.ui_preferences`를 non-null JSONB와 `{}` 기본값으로 추가하고 JSON 객체만 허용합니다. `authenticated`에는 이 컬럼의 UPDATE만 추가하며 기존 활성 사용자 자기 프로필 RLS 정책을 재사용합니다. `anon`에는 UPDATE 권한이 없습니다.
+- **복원 경계**: 다크 모드, 프리셋, 주 색상, 표면 색상, 메뉴 모드를 로그인 사용자 프로필에 저장합니다. 로그아웃과 계정 전환 시 메모리 상태를 분리하고, 같은 계정으로 재로그인하거나 다른 기기에서 로그인하면 저장값을 복원합니다.
+- **배포 순서**: 프런트엔드 프로필 hydration이 `profiles.ui_preferences`를 직접 조회하므로, 017을 적용하고 `node scripts/verify-pending-migrations.mjs`의 모든 카탈로그 점검이 통과하기 전에는 새 프런트엔드를 배포하면 안 됩니다.
 
 ### 커밋 `42dce82` — 기반 정리 4종
 
@@ -207,9 +214,10 @@ npm run build
 - [x] 전사 권한 및 HR 마이그레이션 002~009 운영 적용. 대상 테이블 13개 존재, RLS 13개 활성, 핵심 RPC 11종 존재, DELETE grant 0개를 카탈로그에서 확인.
 - [x] 최신 `main` Cloudflare Worker 배포. 버전 `a6e74fee-404f-4f98-a5fc-7f12fd075af9`; `/api/health`, `/settings/enterprise-access`, `/hr/employees`, manifest, service worker HTTP 200 확인.
 - [x] `git push origin main` 및 로컬/원격 HEAD 일치 확인.
-- [ ] **권한 있는 운영자 작업.** SQL Editor에서 `20260915001200` → `20260915001300` → `20260915001400` → `20260916001500` → `20260916001600` 순서로 각 파일 전체를 한 번에 실행. 절차와 금지사항은 [운영 미적용 마이그레이션](setup/pending-migrations.md)에 있습니다. 저장소 토큰으로는 불가능하며 시도해도 `403`/`25006`으로 막힙니다.
+- [ ] **권한 있는 운영자 작업.** SQL Editor에서 `20260915001200` → `20260915001300` → `20260915001400` → `20260916001500` → `20260916001600` → `20260916001700` 순서로 각 파일 전체를 한 번에 실행. 절차와 금지사항은 [운영 미적용 마이그레이션](setup/pending-migrations.md)에 있습니다. 저장소 토큰으로는 불가능하며 시도해도 `403`/`25006`으로 막힙니다.
 - [ ] 적용 후 `node scripts/verify-pending-migrations.mjs`로 검증. 읽기 전용 토큰으로 동작하며 모든 줄이 `PASS`여야 합니다.
-- [ ] 검증 통과 후 최신 `main`을 Cloudflare에 배포하고 관리자 계정으로 `/settings/audit`에서 회사 수정 1건이 이력으로 보이는지, `/master/items`·`/inventory/warehouses`·`/master/accounts`가 열리고 `/inventory/items`가 리다이렉트되는지 확인.
+- [ ] **스키마 검증보다 프런트엔드 배포를 먼저 하지 말 것.** 017 적용과 위 검증이 끝나야 프로필 hydration에서 `ui_preferences`를 안전하게 조회할 수 있습니다.
+- [ ] 검증 통과 후 최신 `main`을 Cloudflare에 배포하고 관리자 계정으로 `/settings/audit`에서 회사 수정 1건이 이력으로 보이는지, `/master/items`·`/inventory/warehouses`·`/master/accounts`가 열리고 `/inventory/items`가 리다이렉트되는지 확인. 같은 계정 재로그인·다른 기기에서 UI 설정이 복원되고 다른 계정 설정과 분리되는지도 확인.
 - [x] `git push origin main`. `730f95e..e3756a0`, 로컬/원격 HEAD 일치 확인.
 
 ### 7.2 1단계 기준정보 마무리

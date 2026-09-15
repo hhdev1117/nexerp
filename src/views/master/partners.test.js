@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from '@vue/test-utils';
 import PrimeVue from 'primevue/config';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDemoMasterRepository, demoCompanies, demoPartners } from '@/repositories/master/demoMasterRepository';
 import { createMasterStore } from '@/stores/master';
@@ -29,7 +30,10 @@ const deferred = () => {
 };
 
 const mountScreen = async () => {
-    const wrapper = mount(Partners, { attachTo: document.body, global: { plugins: [PrimeVue] } });
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/master/partners', component: { template: '<div />' } }] });
+    await router.push('/master/partners');
+    await router.isReady();
+    const wrapper = mount(Partners, { attachTo: document.body, global: { plugins: [PrimeVue, router] } });
     wrappers.push(wrapper);
     await flushPromises();
     return wrapper;

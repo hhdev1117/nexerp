@@ -9,13 +9,23 @@ import { nextTick, ref } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import AppMenu from './AppMenu.vue';
 import AppTopbar from './AppTopbar.vue';
+import AppConfigurator from './AppConfigurator.vue';
+import { useLayout } from './composables/layout';
 
 const toastAdd = vi.hoisted(() => vi.fn());
+const themeHarness = vi.hoisted(() => {
+    const builder = {};
+    builder.preset = vi.fn(() => builder);
+    builder.surfacePalette = vi.fn(() => builder);
+    builder.use = vi.fn(() => builder);
+    return { builder };
+});
 const authStore = {
     user: ref({ id: 'user-1', email: 'user@nexerp.test' }),
     profile: ref({ display_name: '박지민', department: '재무팀', role: 'user', is_active: true }),
     hasRole: vi.fn((roles) => roles.includes(authStore.profile.value?.role)),
     changePassword: vi.fn(),
+    saveUiPreferences: vi.fn(),
     signOut: vi.fn()
 };
 const accessStore = {
@@ -27,6 +37,10 @@ vi.mock('@/stores/access', () => ({ useAccessStore: () => accessStore }));
 const runtimeStore = { context: ref({ mode: 'legacy' }), canAccess: vi.fn(() => false) };
 vi.mock('@/stores/enterpriseRuntime', () => ({ useEnterpriseRuntimeStore: () => runtimeStore }));
 vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: toastAdd }) }));
+vi.mock('@primeuix/themes', async (importOriginal) => {
+    const actual = await importOriginal();
+    return { ...actual, $t: () => themeHarness.builder, updatePreset: vi.fn(), updateSurfacePalette: vi.fn() };
+});
 
 const readSource = (...segments) => readFileSync(resolve(process.cwd(), ...segments), 'utf8');
 const readLayoutSource = (name) => readSource('src', 'layout', name);
@@ -82,9 +96,14 @@ beforeEach(() => {
     authStore.profile.value = { display_name: '박지민', department: '재무팀', role: 'user', is_active: true };
     authStore.hasRole.mockClear();
     authStore.changePassword.mockReset().mockResolvedValue(undefined);
+    authStore.saveUiPreferences.mockReset().mockResolvedValue(undefined);
     authStore.signOut.mockReset().mockResolvedValue(undefined);
     accessStore.canAccess.mockReset().mockReturnValue(false);
     toastAdd.mockReset();
+    const { layoutConfig, layoutState } = useLayout();
+    Object.assign(layoutConfig, { preset: 'Aura', primary: 'emerald', surface: null, darkTheme: false, menuMode: 'static' });
+    Object.assign(layoutState, { staticMenuInactive: false, overlayMenuActive: false, mobileMenuActive: false, sidebarExpanded: false, menuHoverActive: false });
+    document.documentElement.classList.remove('app-dark');
 });
 
 afterEach(() => {
@@ -221,6 +240,68 @@ describe('ERP application shell', () => {
         expect(source).toContain('2단계 인증 관리');
         expect(source).not.toContain('SAKAI ERP');
         expect(source).not.toContain('var(--primary-50)');
+    });
+
+    it('persists the complete layout snapshot when the signed-in user toggles dark mode', async () => {
+        const { wrapper } = await mountTopbar();
+
+        await wrapper.get('[aria-label="다크 모드로 전환"]').trigger('click');
+        await flushPromises();
+
+        expect(authStore.saveUiPreferences).toHaveBeenCalledWith({ preset: 'Aura', primary: 'emerald', surface: null, darkTheme: true, menuMode: 'static' });
+        expect(document.documentElement.classList.contains('app-dark')).toBe(true);
+    });
+
+    it('keeps the session setting and reports a normalized message when preference persistence fails', async () => {
+        authStore.saveUiPreferences.mockRejectedValueOnce(new Error('provider detail access_token=sentinel-secret'));
+        const { wrapper } = await mountTopbar();
+
+        await wrapper.get('[aria-label="다크 모드로 전환"]').trigger('click');
+        await flushPromises();
+
+        expect(document.documentElement.classList.contains('app-dark')).toBe(true);
+        expect(toastAdd).toHaveBeenCalledWith({ severity: 'error', summary: 'UI 설정 저장 실패', detail: 'UI 설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.', life: 3200 });
+        expect(JSON.stringify(toastAdd.mock.calls)).not.toContain('sentinel-secret');
+    });
+
+    it('does not show a failure toast when stale topbar and configurator saves are cancelled', async () => {
+        authStore.saveUiPreferences.mockResolvedValue(null);
+        const { wrapper: topbar } = await mountTopbar();
+
+        await topbar.get('[aria-label="다크 모드로 전환"]').trigger('click');
+        await flushPromises();
+
+        const configurator = mount(AppConfigurator, { attachTo: document.body, global: { plugins: [PrimeVue] } });
+        wrappers.push(configurator);
+        await configurator.get('[aria-label="blue 주 색상"]').trigger('click');
+        await flushPromises();
+
+        expect(authStore.saveUiPreferences).toHaveBeenCalledTimes(2);
+        expect(toastAdd).not.toHaveBeenCalled();
+    });
+
+    it('persists primary, surface, preset, and menu changes from the configurator', async () => {
+        const wrapper = mount(AppConfigurator, { attachTo: document.body, global: { plugins: [PrimeVue] } });
+        wrappers.push(wrapper);
+
+        await wrapper.get('[aria-label="blue 주 색상"]').trigger('click');
+        await flushPromises();
+        expect(authStore.saveUiPreferences).toHaveBeenLastCalledWith({ preset: 'Aura', primary: 'blue', surface: null, darkTheme: false, menuMode: 'static' });
+
+        await wrapper.get('[aria-label="stone 표면 색상"]').trigger('click');
+        await flushPromises();
+        expect(authStore.saveUiPreferences).toHaveBeenLastCalledWith({ preset: 'Aura', primary: 'blue', surface: 'stone', darkTheme: false, menuMode: 'static' });
+
+        const laraButton = wrapper.findAll('button').find((button) => button.text() === 'Lara');
+        await laraButton.trigger('click');
+        await flushPromises();
+        expect(authStore.saveUiPreferences).toHaveBeenLastCalledWith({ preset: 'Lara', primary: 'blue', surface: 'stone', darkTheme: false, menuMode: 'static' });
+
+        const overlayButton = wrapper.findAll('button').find((button) => button.text() === '오버레이');
+        await overlayButton.trigger('click');
+        await flushPromises();
+        expect(authStore.saveUiPreferences).toHaveBeenLastCalledWith({ preset: 'Lara', primary: 'blue', surface: 'stone', darkTheme: false, menuMode: 'overlay' });
+        expect(authStore.saveUiPreferences).toHaveBeenCalledTimes(4);
     });
 
     it('renders reactive authenticated identity values and matching accessible names', async () => {
@@ -412,13 +493,14 @@ describe('ERP application shell', () => {
         const mainSource = readSource('src', 'main.js');
         const configuratorSource = readLayoutSource('AppConfigurator.vue');
         const themeSource = readSource('src', 'theme', 'erpTheme.js');
+        const layoutThemeSource = readSource('src', 'theme', 'layoutTheme.js');
 
         expect(mainSource).toContain('erpThemePreset');
         expect(mainSource).toContain('koPrimeVueLocale');
         expect(themeSource).toContain("color: '{primary.700}'");
         expect(themeSource).toContain("firstPageLabel: '첫 페이지'");
         expect(themeSource).toContain("close: '닫기'");
-        expect(configuratorSource).toContain("color: '{primary.700}'");
+        expect(layoutThemeSource).toContain("color: '{primary.700}'");
         expect(configuratorSource).toContain('주 색상');
         expect(configuratorSource).toContain('메뉴 모드');
     });

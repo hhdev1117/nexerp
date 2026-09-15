@@ -16,6 +16,7 @@ const errorSummary = ref();
 
 const enrollment = computed(() => authStore.mfaEnrollment.value);
 const factors = computed(() => authStore.mfaFactors.value || []);
+const factorOptions = computed(() => factors.value.map((factor) => ({ value: factor.id, label: factor.friendly_name || 'Google Authenticator' })));
 const busy = computed(() => authStore.loading.value);
 const mfaStatus = computed(() => authStore.mfaStatus.value);
 const isEnroll = computed(() => mfaStatus.value === 'enroll');
@@ -121,7 +122,7 @@ onMounted(refresh);
 
 <template>
     <main class="auth-shell">
-        <section class="auth-panel" aria-labelledby="mfa-title">
+        <section class="grid gap-5 auth-panel" aria-labelledby="mfa-title">
             <header class="auth-brand">
                 <span class="auth-brand-mark" aria-hidden="true"><i class="pi pi-shield"></i></span>
                 <div>
@@ -130,7 +131,7 @@ onMounted(refresh);
                 </div>
             </header>
 
-            <div class="auth-heading">
+            <div class="auth-heading !mb-0">
                 <h1 id="mfa-title">2단계 인증</h1>
                 <p v-if="cleanupPending">이전 인증 앱 등록을 정리한 후 다시 시도해 주세요.</p>
                 <p v-else-if="isEnroll">Google Authenticator에 인증 앱을 등록해 주세요.</p>
@@ -153,19 +154,17 @@ onMounted(refresh);
             </template>
 
             <template v-else>
-                <div v-if="isEnroll && enrollment" class="mfa-enrollment">
-                    <img :src="qrSource" alt="Google Authenticator 등록 QR 코드" class="mfa-qr" />
+                <div v-if="isEnroll && enrollment" class="grid gap-2">
+                    <img :src="qrSource" alt="Google Authenticator 등록 QR 코드" class="w-48 h-48 justify-self-center" />
                     <Button :label="manualKeyVisible ? '수동 키 숨기기' : '수동 키 표시'" :aria-label="manualKeyVisible ? '수동 키 숨기기' : '수동 키 표시'" severity="secondary" text :disabled="busy" @click="manualKeyVisible = !manualKeyVisible" />
-                    <code v-if="manualKeyVisible" class="manual-key">{{ enrollment.secret }}</code>
+                    <code v-if="manualKeyVisible" class="p-3 break-all border rounded-border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800">{{ enrollment.secret }}</code>
                 </div>
                 <p v-else-if="isEnroll">인증 앱 등록을 준비하고 있습니다.</p>
 
                 <form v-if="isEnroll || isChallenge" novalidate @submit.prevent="submit">
                     <div v-if="isChallenge && factors.length > 1" class="auth-field">
-                        <label for="mfa-factor">인증 앱</label>
-                        <select id="mfa-factor" v-model="selectedFactorId" :disabled="busy">
-                            <option v-for="factor in factors" :key="factor.id" :value="factor.id">{{ factor.friendly_name || 'Google Authenticator' }}</option>
-                        </select>
+                        <label id="mfa-factor-label" for="mfa-factor">인증 앱</label>
+                        <Select inputId="mfa-factor" v-model="selectedFactorId" :options="factorOptions" optionLabel="label" optionValue="value" ariaLabelledby="mfa-factor-label" :disabled="busy" fluid />
                     </div>
 
                     <div class="auth-field">
@@ -190,7 +189,7 @@ onMounted(refresh);
                 </form>
             </template>
 
-            <div class="mfa-actions">
+            <div class="flex flex-wrap gap-2">
                 <Button v-if="!cleanupPending && !hasMfaError" label="상태 새로고침" icon="pi pi-refresh" severity="secondary" text :disabled="busy" @click="refresh" />
                 <Button v-if="isEnroll && enrollment && !cleanupPending" label="등록 취소" icon="pi pi-times" severity="secondary" text :disabled="busy" @click="cancelEnrollment" />
                 <Button label="로그아웃" icon="pi pi-sign-out" severity="secondary" text :disabled="busy" @click="signOut" />
@@ -200,127 +199,8 @@ onMounted(refresh);
 </template>
 
 <style scoped>
-.auth-shell {
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 1.5rem;
-    background: var(--surface-ground, var(--p-surface-100));
-    color: var(--text-color, var(--p-surface-900));
-}
-.auth-panel {
-    width: min(100%, 30rem);
-    display: grid;
-    gap: 1.25rem;
-    padding: 2rem;
-    border: 1px solid var(--surface-border, var(--p-surface-200));
-    border-top: 4px solid var(--primary-color, var(--p-primary-700));
-    border-radius: 8px;
-    background: var(--surface-card, var(--p-surface-0));
-    box-shadow: 0 12px 28px color-mix(in srgb, var(--p-surface-900) 9%, transparent);
-}
-.auth-brand {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-.auth-brand-mark {
-    width: 2.5rem;
-    height: 2.5rem;
-    display: grid;
-    place-items: center;
-    border-radius: 6px;
-    background: var(--primary-color, var(--p-primary-700));
-    color: var(--primary-color-text, #fff);
-}
-.auth-brand div {
-    display: grid;
-    gap: 0.1rem;
-}
-.auth-brand strong {
-    font-size: 1.05rem;
-}
-.auth-brand span:last-child,
-.auth-heading p {
-    color: var(--text-color-secondary, var(--p-surface-500));
-    font-size: 0.8rem;
-}
-.auth-heading h1 {
-    margin: 0 0 0.4rem;
-    font-size: 1.75rem;
-}
-.auth-heading p {
-    margin: 0;
-    font-size: 1rem;
-}
-.auth-field,
-form,
-.mfa-enrollment {
-    display: grid;
-    gap: 0.5rem;
-}
 form {
+    display: grid;
     gap: 1.25rem;
-}
-.auth-field label {
-    font-weight: 600;
-}
-.auth-field small {
-    min-height: 1.1rem;
-    color: var(--p-red-600);
-}
-.auth-field select {
-    min-height: 2.75rem;
-    padding: 0.65rem 0.75rem;
-    border: 1px solid var(--surface-border);
-    border-radius: 6px;
-    background: var(--surface-card);
-    color: inherit;
-}
-.mfa-qr {
-    width: 12rem;
-    height: 12rem;
-    justify-self: center;
-}
-.manual-key {
-    padding: 0.75rem;
-    border: 1px solid var(--surface-border);
-    border-radius: 6px;
-    overflow-wrap: anywhere;
-    background: var(--surface-ground);
-}
-.auth-alert {
-    display: flex;
-    gap: 0.6rem;
-    padding: 0.75rem;
-    border: 1px solid var(--p-red-300);
-    border-radius: 6px;
-    background: var(--p-red-50);
-    color: var(--p-red-700);
-}
-.auth-alert:focus {
-    outline: 2px solid var(--primary-color, var(--p-primary-700));
-    outline-offset: 2px;
-}
-.mfa-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-@media (max-width: 575px) {
-    .auth-shell {
-        align-items: stretch;
-        padding: 0;
-        background: var(--surface-card, var(--p-surface-0));
-    }
-    .auth-panel {
-        width: 100%;
-        min-height: 100vh;
-        padding: 2rem 1.25rem;
-        border: 0;
-        border-top: 4px solid var(--primary-color, var(--p-primary-700));
-        border-radius: 0;
-        box-shadow: none;
-    }
 }
 </style>

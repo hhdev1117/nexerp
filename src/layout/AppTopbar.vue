@@ -7,7 +7,7 @@ import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import AppConfigurator from './AppConfigurator.vue';
 
-const { layoutConfig, layoutState, toggleMenu, toggleDarkMode, isDarkTheme, isDesktop } = useLayout();
+const { layoutConfig, layoutState, toggleMenu, toggleDarkMode, getLayoutPreferences, isDarkTheme, isDesktop } = useLayout();
 const router = useRouter();
 const toast = useToast();
 const authStore = useAuthStore();
@@ -116,6 +116,17 @@ const navigate = (to) => {
     router.push(to);
 };
 const showMessage = (summary, detail) => toast.add({ severity: 'info', summary, detail, life: 2600 });
+const saveUiPreferenceSnapshot = async () => {
+    try {
+        await authStore.saveUiPreferences(getLayoutPreferences());
+    } catch {
+        toast.add({ severity: 'error', summary: 'UI 설정 저장 실패', detail: 'UI 설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.', life: 3200 });
+    }
+};
+const toggleAndSaveDarkMode = async () => {
+    await toggleDarkMode();
+    await saveUiPreferenceSnapshot();
+};
 const passwordFailureDetail = (error) => {
     const allowedMessages = new Set([
         'Supabase 연결 정보가 설정되지 않았습니다.',
@@ -263,7 +274,7 @@ const profileItems = computed(() => [
 
         <div ref="topbarActions" class="layout-topbar-actions">
             <div ref="configRegion" class="layout-config-menu">
-                <button type="button" class="layout-topbar-action" :title="isDarkTheme ? '라이트 모드' : '다크 모드'" :aria-label="isDarkTheme ? '라이트 모드로 전환' : '다크 모드로 전환'" @click="toggleDarkMode">
+                <button type="button" class="layout-topbar-action" :title="isDarkTheme ? '라이트 모드' : '다크 모드'" :aria-label="isDarkTheme ? '라이트 모드로 전환' : '다크 모드로 전환'" @click="toggleAndSaveDarkMode">
                     <i :class="['pi', { 'pi-moon': isDarkTheme, 'pi-sun': !isDarkTheme }]" aria-hidden="true"></i>
                 </button>
                 <div class="relative">

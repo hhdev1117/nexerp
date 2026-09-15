@@ -81,39 +81,39 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <section class="access-editor" aria-label="권한 게시" :aria-busy="loading || saving">
-        <h2>실제 권한 적용</h2>
-        <p class="access-help">저장한 정책은 검토 후 적용해야 실제 권한에 반영됩니다.</p>
-        <p v-if="loading" role="status">게시 상태를 불러오는 중입니다.</p>
-        <p v-else-if="publication" role="status">
+    <section class="card" aria-label="권한 게시" :aria-busy="loading || saving">
+        <h2 class="text-xl font-semibold text-surface-900 dark:text-surface-0">실제 권한 적용</h2>
+        <p class="mt-1 mb-4 text-muted-color">저장한 정책은 검토 후 적용해야 실제 권한에 반영됩니다.</p>
+        <p v-if="loading" role="status" class="text-muted-color">게시 상태를 불러오는 중입니다.</p>
+        <p v-else-if="publication" role="status" class="mb-4">
             {{ publication.active ? `적용 중인 버전 ${publication.revision}` : '아직 적용하지 않은 정책' }}
             · 적용된 초안 버전 {{ publication.draftRevision ?? '없음' }} · 저장된 초안 버전 {{ draftRevision }}
         </p>
-        <p v-else-if="!companyId">회사를 선택해 주세요.</p>
-        <div v-if="error" class="access-error" role="alert">
-            <p>{{ error }}</p>
-            <button type="button" data-test="reload" :disabled="loading || saving" @click="load">게시 상태 다시 불러오기</button>
+        <p v-else-if="!companyId" class="mb-4 text-muted-color">회사를 선택해 주세요.</p>
+        <div v-if="error" role="alert" class="mb-4">
+            <Message severity="error" :closable="false" class="mb-3">{{ error }}</Message>
+            <Button type="button" data-test="reload" label="게시 상태 다시 불러오기" icon="pi pi-refresh" size="small" severity="secondary" outlined :disabled="loading || saving" @click="load" />
         </div>
-        <p v-if="dirty" class="access-help">변경한 초안을 먼저 저장해 주세요.</p>
-        <label
-            >적용 또는 복원 사유
-            <textarea v-model="reason" rows="2" :disabled="saving" placeholder="변경 사유를 입력해 주세요" />
-        </label>
-        <div class="access-actions">
-            <button type="button" data-test="review-publish" :disabled="!canPublish" @click="beginReview('publish')">저장한 권한 적용 검토</button>
-            <button type="button" data-test="review-revert" :disabled="!canRevert" @click="beginReview('revert')">이전 게시 권한 복원 검토</button>
+        <Message v-if="dirty" severity="warn" :closable="false" class="mb-4">변경한 초안을 먼저 저장해 주세요.</Message>
+        <div class="flex flex-col gap-2 mb-4">
+            <label for="publication-reason" class="font-medium">적용 또는 복원 사유</label>
+            <Textarea id="publication-reason" v-model="reason" rows="2" :disabled="saving" placeholder="변경 사유를 입력해 주세요" fluid />
         </div>
-        <div v-if="review" class="access-banner" role="region" aria-label="권한 변경 영향 검토">
-            <p>이 변경은 실제 회사 사용자의 메뉴 접근과 회사·사업장 조회 및 변경 권한에 영향을 줍니다. 기술 관리자 복구 경로는 유지됩니다.</p>
+        <div class="flex flex-wrap gap-2">
+            <Button type="button" data-test="review-publish" label="저장한 권한 적용 검토" icon="pi pi-send" :disabled="!canPublish" @click="beginReview('publish')" />
+            <Button type="button" data-test="review-revert" label="이전 게시 권한 복원 검토" icon="pi pi-history" severity="secondary" outlined :disabled="!canRevert" @click="beginReview('revert')" />
+        </div>
+        <div v-if="review" role="region" aria-label="권한 변경 영향 검토" class="p-5 mt-4 border-l-4 rounded-border border-primary bg-surface-50 dark:bg-surface-800">
+            <p class="mt-0">이 변경은 실제 회사 사용자의 메뉴 접근과 회사·사업장 조회 및 변경 권한에 영향을 줍니다. 기술 관리자 복구 경로는 유지됩니다.</p>
             <p>
                 <strong>첫 권한 적용 시 전사 전환이 시작됩니다.</strong> 일반 사용자는 적용된 회사 정책에 유효하게 연결되어 있어야 업무에 접근할 수 있습니다. 아직 적용하지 않은 회사와 미연결 사용자는 접근이 제한되므로, 다른 회사와 사용자 연결도 먼저
                 검토해 주세요.
             </p>
             <p v-if="review === 'publish'">저장된 초안 버전 {{ draftRevision }}을 현재 게시 버전 {{ publication.revision }}에 적용합니다.</p>
             <p v-else>이전 게시 정책으로 복원합니다. 초안 저장 내용은 변경하지 않으며 권한 적용은 유지됩니다.</p>
-            <div class="access-actions">
-                <button class="primary" type="button" data-test="confirm" :disabled="review === 'publish' ? !canPublish : !canRevert" @click="confirm">{{ review === 'publish' ? '검토한 권한 적용' : '검토한 이전 권한 복원' }}</button>
-                <button type="button" :disabled="saving" @click="review = null">취소</button>
+            <div class="flex flex-wrap gap-2 mt-4">
+                <Button type="button" data-test="confirm" :label="review === 'publish' ? '검토한 권한 적용' : '검토한 이전 권한 복원'" icon="pi pi-check" :disabled="review === 'publish' ? !canPublish : !canRevert" @click="confirm" />
+                <Button type="button" label="취소" severity="secondary" text :disabled="saving" @click="review = null" />
             </div>
         </div>
     </section>

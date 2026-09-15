@@ -2,6 +2,7 @@
 import { mount, flushPromises } from '@vue/test-utils';
 import { ref } from 'vue';
 import PrimeVue from 'primevue/config';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Employees from './Employees.vue';
 const mocks = vi.hoisted(() => ({}));
@@ -39,16 +40,30 @@ beforeEach(() => {
         cancelAction: vi.fn().mockResolvedValue(true)
     };
 });
-const setup = () =>
-    mount(Employees, {
+const createTestRouter = () => {
+    const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [
+            { path: '/hr/employees', component: { template: '<div />' } },
+            { path: '/:pathMatch(.*)*', component: { template: '<div />' } }
+        ]
+    });
+    return router;
+};
+const setup = async () => {
+    const router = createTestRouter();
+    await router.replace('/hr/employees');
+    await router.isReady();
+    return mount(Employees, {
         global: {
-            plugins: [PrimeVue],
+            plugins: [PrimeVue, router],
             stubs: {
                 Dialog: { props: ['visible'], template: '<section v-if="visible"><slot/><slot name="footer"/></section>' },
                 Button: { props: ['label', 'disabled'], template: '<button :disabled="disabled">{{ label }}<slot/></button>' }
             }
         }
     });
+};
 const findSelect = (wrapper, inputId) => wrapper.findAllComponents({ name: 'Select' }).find((candidate) => candidate.props('inputId') === inputId);
 const selectLabels = (wrapper, inputId) => (findSelect(wrapper, inputId)?.props('options') || []).map((option) => option.label);
 const setSelect = async (wrapper, inputId, value) => {
@@ -59,7 +74,7 @@ const setSelect = async (wrapper, inputId, value) => {
 };
 it('registers with an optional eligible account selection without exposing UUID entry', async () => {
     mocks.hr.directory.value.accounts = [{ id: 'account-id', name: '김직원' }];
-    const wrapper = setup();
+    const wrapper = await setup();
     await wrapper.get('[data-testid="register"]').trigger('click');
     expect(selectLabels(wrapper, 'profile-id')).toContain('김직원');
     await wrapper.get('#employee-no').setValue('E2');
@@ -72,7 +87,7 @@ it('registers with an optional eligible account selection without exposing UUID 
     expect(mocks.runtime.refresh).toHaveBeenCalledWith('user', 'company');
 });
 it('loads only the current company and resets open registration on identity change', async () => {
-    const wrapper = setup();
+    const wrapper = await setup();
     expect(mocks.hr.load).toHaveBeenCalledWith('company', '', 1);
     await wrapper.get('[data-testid="register"]').trigger('click');
     expect(wrapper.find('#employee-no').exists()).toBe(true);
@@ -82,7 +97,7 @@ it('loads only the current company and resets open registration on identity chan
     expect(mocks.hr.reset).toHaveBeenCalledTimes(2);
 });
 it('mounts account management for the selected employee and refreshes after a change', async () => {
-    const wrapper = setup();
+    const wrapper = await setup();
     await wrapper.get('[data-testid="employee-detail"]').trigger('click');
     expect(wrapper.get('[data-testid="employee-account"]').exists()).toBe(true);
     await wrapper.get('[data-testid="account-changed"]').trigger('click');
@@ -91,7 +106,7 @@ it('mounts account management for the selected employee and refreshes after a ch
     expect(mocks.runtime.refresh).toHaveBeenCalledWith('user', 'company');
 });
 it('mounts employment cycles and refreshes directory access after rehire changes', async () => {
-    const wrapper = setup();
+    const wrapper = await setup();
     await wrapper.get('[data-testid="employee-detail"]').trigger('click');
     expect(wrapper.get('[data-testid="employee-employment"]').exists()).toBe(true);
     await wrapper.get('[data-testid="employment-changed"]').trigger('click');
@@ -100,7 +115,7 @@ it('mounts employment cycles and refreshes directory access after rehire changes
     expect(mocks.runtime.refresh).toHaveBeenCalledWith('user', 'company');
 });
 it('requires a reason and explicit termination confirmation then refreshes access', async () => {
-    const wrapper = setup();
+    const wrapper = await setup();
     await wrapper.get('[data-testid="employee-detail"]').trigger('click');
     await wrapper.get('[data-testid="action"]').trigger('click');
     await setSelect(wrapper, 'action-type', 'terminate');
@@ -118,7 +133,7 @@ it('requires a reason and explicit termination confirmation then refreshes acces
 it('hides writes without directory permissions and shows server errors', async () => {
     mocks.hr.directory.value.permissions = { create: false, update: false };
     mocks.hr.error.value = '인사 정보를 불러오지 못했습니다.';
-    const wrapper = setup();
+    const wrapper = await setup();
     expect(wrapper.find('[data-testid="register"]').exists()).toBe(false);
     await wrapper.get('[data-testid="employee-detail"]').trigger('click');
     expect(wrapper.find('[data-testid="action"]').exists()).toBe(false);
@@ -134,7 +149,7 @@ it('cancels only the latest future action with an audited reason and confirmatio
             ]
         }
     ];
-    const wrapper = setup();
+    const wrapper = await setup();
     await wrapper.get('[data-testid="employee-detail"]').trigger('click');
     const cancellations = wrapper.findAll('button').filter((button) => button.text() === '발령 취소');
     expect(cancellations).toHaveLength(1);
@@ -149,7 +164,7 @@ it('cancels only the latest future action with an audited reason and confirmatio
     expect(mocks.runtime.refresh).toHaveBeenCalledWith('user', 'company');
 });
 it('submits server search and clears employee selection on company changes', async () => {
-    const wrapper = setup();
+    const wrapper = await setup();
     await wrapper.get('#employee-search').setValue('  홍길동  ');
     await wrapper.get('#employee-search-form').trigger('submit');
     expect(mocks.hr.load).toHaveBeenLastCalledWith('company', '홍길동', 1);
@@ -168,7 +183,7 @@ it('does not refresh another identity after an in-flight mutation', async () => 
                 resolve = done;
             })
     );
-    const wrapper = setup();
+    const wrapper = await setup();
     await wrapper.get('[data-testid="employee-detail"]').trigger('click');
     await wrapper.get('[data-testid="action"]').trigger('click');
     await wrapper.get('#action-reason').setValue('이동');
@@ -181,7 +196,7 @@ it('does not refresh another identity after an in-flight mutation', async () => 
 
 it('corrects the employee name while employment dates remain cycle-owned', async () => {
     mocks.hr.directory.value.employees = [{ ...employee, hireDate: '2026-01-01' }];
-    const w = setup();
+    const w = await setup();
     await w.get('[data-testid="employee-detail"]').trigger('click');
     await w.get('[data-testid="correct-employee"]').trigger('click');
     await w.get('#correction-name').setValue('김직원');
@@ -202,7 +217,7 @@ it('rejects stale correction history after employee changes', async () => {
         )
         .mockResolvedValue([]);
     mocks.hr.directory.value.employees = [employee, { ...employee, id: 'second', name: '둘째' }];
-    const w = setup();
+    const w = await setup();
     await w.findAll('[data-testid="employee-detail"]')[0].trigger('click');
     await w.findAll('[data-testid="employee-detail"]')[1].trigger('click');
     done([{ id: 'old', before: { name: '옛이름' }, after: { name: '새이름' }, reason: 'stale secret', createdAt: '2026-01-01' }]);
@@ -215,7 +230,7 @@ it('shows names and codes, blocks inactive transfers but permits termination', a
         { id: 'new', kind: 'department', code: 'NEW', name: '새 부서', isActive: true }
     ];
     mocks.hr.directory.value.employees = [{ ...employee, department: 'OLD' }];
-    const w = setup();
+    const w = await setup();
     await w.get('[data-testid="employee-detail"]').trigger('click');
     await w.get('[data-testid="action"]').trigger('click');
     expect(selectLabels(w, 'employee-department')).toContain('옛 부서 (OLD) · 사용 중지 또는 미조회');
@@ -237,7 +252,7 @@ it('clears pending correction history on identity switch', async () => {
                 done = resolve;
             })
     );
-    const w = setup();
+    const w = await setup();
     await w.get('[data-testid="employee-detail"]').trigger('click');
     mocks.auth.user.value = { id: 'other' };
     done([{ id: 'private', before: { name: 'old' }, after: { name: 'new' }, reason: 'private reason', createdAt: 'now' }]);
@@ -254,7 +269,7 @@ it('refreshes access after correction while audit history is still pending', asy
             })
     );
     mocks.hr.directory.value.employees = [{ ...employee, hireDate: '2026-01-01' }];
-    const w = setup();
+    const w = await setup();
     await w.get('[data-testid="employee-detail"]').trigger('click');
     await flushPromises();
     await w.get('[data-testid="correct-employee"]').trigger('click');
@@ -272,7 +287,7 @@ it('shows draining guidance and permits cancellation independently of update', a
     mocks.hr.directory.value.moduleState = 'draining';
     mocks.hr.directory.value.permissions = { create: false, update: false, cancel: true };
     mocks.hr.directory.value.employees = [{ ...employee, actions: [{ id: 'future', type: 'transfer', effectiveDate: '2099-01-01', cancelled: false }] }];
-    const w = setup();
+    const w = await setup();
     expect(w.get('[data-testid="module-state-banner"]').text()).toContain('진행 건 정리');
     await w.get('[data-testid="employee-detail"]').trigger('click');
     expect(w.find('[data-testid="action"]').exists()).toBe(false);
@@ -289,7 +304,7 @@ it('shows draining guidance and permits cancellation independently of update', a
 it('never uses update as a fallback for cancellation', async () => {
     mocks.hr.directory.value.employees = [{ ...employee, actions: [{ id: 'future', type: 'transfer', effectiveDate: '2099-01-01', cancelled: false }] }];
     delete mocks.hr.directory.value.permissions.cancel;
-    const w = setup();
+    const w = await setup();
     await w.get('[data-testid="employee-detail"]').trigger('click');
     expect(w.findAll('button').some((b) => b.text() === '발령 취소')).toBe(false);
 });

@@ -267,13 +267,22 @@ function toggleSiteActive(site) {
                         selectionMode="single"
                         :metaKeySelection="false"
                         :loading="loading"
+                        size="small"
                         responsiveLayout="scroll"
                         tableStyle="min-width: 46rem"
                         :tableProps="{ 'aria-label': '회사 목록' }"
                         stripedRows
                         scrollable
                     >
-                        <template #empty>{{ !legacy && selectedCompany ? '회사 상세 정보 조회 권한이 없습니다. 허용된 사업장은 오른쪽에서 관리할 수 있습니다.' : '등록된 회사가 없습니다.' }}</template>
+                        <template #empty>
+                            <div class="list-empty">
+                                <p class="list-empty-message">
+                                    {{ !legacy && selectedCompany ? '회사 상세 정보 조회 권한이 없습니다. 허용된 사업장은 오른쪽에서 관리할 수 있습니다.' : keyword.trim() ? '조건에 맞는 회사가 없습니다.' : '등록된 회사가 없습니다.' }}
+                                </p>
+                                <Button v-if="keyword.trim()" label="검색 초기화" icon="pi pi-filter-slash" severity="secondary" outlined size="small" @click="keyword = ''" />
+                                <Button v-else-if="canCreateCompany" label="회사 등록" icon="pi pi-plus" size="small" @click="openCreateCompany" />
+                            </div>
+                        </template>
                         <Column field="code" header="코드" sortable>
                             <template #body="slotProps"
                                 ><span class="font-medium text-primary">{{ slotProps.data.code }}</span></template
@@ -317,11 +326,16 @@ function toggleSiteActive(site) {
                         <div class="mt-1 text-sm text-muted-color">{{ selectedCompany ? `${selectedCompany.name} 소속 사업장입니다.` : '회사를 선택하면 소속 사업장이 표시됩니다.' }}</div>
                     </div>
 
-                    <DataTable :value="selectedCompanySites" dataKey="id" :loading="loading" responsiveLayout="scroll" tableStyle="min-width: 34rem" :tableProps="{ 'aria-label': '사업장 목록' }" stripedRows scrollable>
-                        <template #empty>{{ selectedCompany ? '등록된 사업장이 없습니다.' : '왼쪽 목록에서 회사를 선택하세요.' }}</template>
+                    <DataTable :value="selectedCompanySites" dataKey="id" :loading="loading" size="small" responsiveLayout="scroll" tableStyle="min-width: 34rem" :tableProps="{ 'aria-label': '사업장 목록' }" stripedRows scrollable>
+                        <template #empty>
+                            <div class="list-empty">
+                                <p class="list-empty-message">{{ selectedCompany ? '등록된 사업장이 없습니다.' : '왼쪽 목록에서 회사를 선택하세요.' }}</p>
+                                <Button v-if="selectedCompany && canCreateSite" label="사업장 등록" icon="pi pi-plus" size="small" @click="openCreateSite" />
+                            </div>
+                        </template>
                         <Column field="code" header="코드" sortable>
                             <template #body="slotProps"
-                                ><span class="font-medium text-primary">{{ slotProps.data.code }}</span></template
+                                ><span class="font-medium">{{ slotProps.data.code }}</span></template
                             >
                         </Column>
                         <Column field="name" header="사업장명" sortable style="min-width: 9rem" />

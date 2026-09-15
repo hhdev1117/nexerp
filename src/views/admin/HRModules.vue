@@ -30,6 +30,8 @@ const core = computed(() => settings.value?.modules.find((m) => m.key === 'hr.co
 const planned = computed(() => settings.value?.modules.filter((m) => !m.available) || []);
 const authorized = computed(() => auth.profile.value?.is_active === true && auth.role.value === 'admin');
 const blocked = computed(() => core.value?.pendingActions > 0 && ['read_only', 'disabled'].includes(state.value));
+const companyOptions = computed(() => [{ value: '', label: '회사를 선택해 주세요', disabled: true }, ...companies.value.map((company) => ({ value: company.id, label: company.name }))]);
+const stateOptions = computed(() => Object.entries(labels).map(([value, label]) => ({ value, label })));
 let sequence = 0,
     catalogSequence = 0;
 const resetDraft = () => {
@@ -167,231 +169,93 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-    <main class="hr-modules">
-        <header>
-            <div class="eyebrow">인사 운영 설정</div>
-            <h1>인사 모듈 관리</h1>
-            <p>회사별 인사 업무의 운영 상태와 메뉴 표시를 관리합니다.</p>
-        </header>
-        <section class="module-card company-bar">
-            <label for="module-company">관리할 회사</label
-            ><select id="module-company" v-model="companyId" :disabled="saving">
-                <option value="" disabled>회사를 선택해 주세요</option>
-                <option v-for="company in companies" :key="company.id" :value="company.id">{{ company.name }}</option></select
-            ><Button data-testid="reload" label="다시 불러오기" severity="secondary" :disabled="loading || saving" @click="companies.length ? load() : loadCatalog()" />
-        </section>
-        <p v-if="error" role="alert" class="error">{{ error }}</p>
-        <p v-if="notice" role="status">{{ notice }}</p>
-        <p v-if="loading" role="status">설정을 불러오는 중입니다.</p>
-        <section v-if="core" class="module-card">
-            <div class="module-heading">
-                <div>
-                    <span class="eyebrow">사용 가능한 모듈</span>
-                    <h2>{{ core.label }}</h2>
+    <div>
+        <div class="mb-6">
+            <p class="m-0 text-sm text-muted-color">인사 운영 설정</p>
+            <h1 class="mt-1 text-2xl font-semibold text-surface-900 dark:text-surface-0">인사 모듈 관리</h1>
+            <div class="mt-1 text-muted-color">회사별 인사 업무의 운영 상태와 메뉴 표시를 관리합니다.</div>
+        </div>
+
+        <div class="card">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div class="flex flex-col flex-1 gap-2">
+                    <label id="module-company-label" for="module-company" class="text-sm font-medium">관리할 회사</label>
+                    <Select inputId="module-company" v-model="companyId" :options="companyOptions" optionLabel="label" optionValue="value" ariaLabelledby="module-company-label" :disabled="saving" fluid />
                 </div>
-                <span class="state-badge">{{ labels[core.state] }}</span>
+                <Button data-testid="reload" label="다시 불러오기" icon="pi pi-refresh" severity="secondary" outlined :disabled="loading || saving" @click="companies.length ? load() : loadCatalog()" />
             </div>
-            <p>직원·소속·인사 발령을 관리하는 기본 모듈입니다.</p>
-            <div class="facts">
-                <span
-                    >설정 버전 <strong>{{ core.revision }}</strong></span
-                ><span
-                    >예정 발령 <strong>{{ core.pendingActions }}건</strong></span
-                ><span
-                    >연결 모듈 <strong>{{ core.dependents.length }}개</strong></span
+        </div>
+
+        <Message v-if="error" severity="error" :closable="false" class="mb-6" role="alert">{{ error }}</Message>
+        <Message v-if="notice" severity="success" :closable="false" class="mb-6" role="status">{{ notice }}</Message>
+        <p v-if="loading" role="status" class="mb-6 text-muted-color">설정을 불러오는 중입니다.</p>
+
+        <section v-if="core" class="card">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <p class="m-0 text-sm text-muted-color">사용 가능한 모듈</p>
+                    <h2 class="mt-1 text-xl font-semibold text-surface-900 dark:text-surface-0">{{ core.label }}</h2>
+                </div>
+                <Tag :value="labels[core.state]" :severity="core.state === 'enabled' ? 'success' : core.state === 'disabled' ? 'secondary' : 'warn'" />
+            </div>
+            <p class="mt-2 text-muted-color">직원·소속·인사 발령을 관리하는 기본 모듈입니다.</p>
+
+            <div class="flex flex-wrap gap-6 py-4">
+                <span class="text-muted-color"
+                    >설정 버전 <strong class="text-color">{{ core.revision }}</strong></span
+                >
+                <span class="text-muted-color"
+                    >예정 발령 <strong class="text-color">{{ core.pendingActions }}건</strong></span
+                >
+                <span class="text-muted-color"
+                    >연결 모듈 <strong class="text-color">{{ core.dependents.length }}개</strong></span
                 >
             </div>
-            <p class="module-note">사용을 중지해도 인사 기록은 보존되며, 재직 정보에 따른 다른 ERP 업무의 회사 접근 권한은 유지됩니다.</p>
-            <fieldset :disabled="loading || saving">
-                <legend>운영 설정</legend>
-                <label for="module-state">변경할 상태</label
-                ><select id="module-state" v-model="state">
-                    <option v-for="(label, key) in labels" :key="key" :value="key">{{ label }}</option>
-                </select>
-                <p>{{ descriptions[state] }}</p>
-                <label class="check"><input v-model="menuVisible" type="checkbox" /> 인사 메뉴 표시</label>
-                <p class="hint">메뉴를 숨겨도 권한이 있는 사용자는 직접 주소로 접근할 수 있습니다. 사용 중지 상태에서는 모두 차단됩니다.</p>
-                <p v-if="blocked" class="error">예정 발령 {{ core.pendingActions }}건을 먼저 처리하거나 취소해 주세요. 진행 건 정리 상태에서 정리할 수 있습니다.</p>
-                <label for="module-reason">변경 사유</label><textarea id="module-reason" v-model="reason" maxlength="2000" rows="3" placeholder="운영 상태를 변경하는 사유를 입력해 주세요" /><Button
-                    data-testid="review"
-                    label="변경 내용 검토"
-                    :disabled="blocked"
-                    @click="prepare"
-                />
+            <p class="p-4 rounded-border bg-surface-50 dark:bg-surface-800 text-muted-color">사용을 중지해도 인사 기록은 보존되며, 재직 정보에 따른 다른 ERP 업무의 회사 접근 권한은 유지됩니다.</p>
+
+            <fieldset :disabled="loading || saving" class="p-0 mt-6 mb-0 border-0">
+                <legend class="mb-4 font-semibold">운영 설정</legend>
+                <div class="flex flex-col gap-2 mb-2 sm:max-w-md">
+                    <label id="module-state-label" for="module-state" class="text-sm font-medium">변경할 상태</label>
+                    <Select inputId="module-state" v-model="state" :options="stateOptions" optionLabel="label" optionValue="value" ariaLabelledby="module-state-label" fluid />
+                </div>
+                <p class="mb-4 text-muted-color">{{ descriptions[state] }}</p>
+                <div class="flex items-center gap-3 mb-2">
+                    <Checkbox inputId="module-menu-visible" v-model="menuVisible" binary />
+                    <label for="module-menu-visible">인사 메뉴 표시</label>
+                </div>
+                <p class="mb-4 text-sm text-muted-color">메뉴를 숨겨도 권한이 있는 사용자는 직접 주소로 접근할 수 있습니다. 사용 중지 상태에서는 모두 차단됩니다.</p>
+                <Message v-if="blocked" severity="error" :closable="false" class="mb-4">예정 발령 {{ core.pendingActions }}건을 먼저 처리하거나 취소해 주세요. 진행 건 정리 상태에서 정리할 수 있습니다.</Message>
+                <div class="flex flex-col gap-2 mb-4">
+                    <label for="module-reason" class="text-sm font-medium">변경 사유</label>
+                    <Textarea id="module-reason" v-model="reason" maxlength="2000" rows="3" placeholder="운영 상태를 변경하는 사유를 입력해 주세요" fluid />
+                </div>
+                <Button data-testid="review" label="변경 내용 검토" icon="pi pi-eye" :disabled="blocked" @click="prepare" />
             </fieldset>
-            <section v-if="review" data-testid="change-review" class="change-review">
-                <h3>변경 내용 확인</h3>
-                <p>{{ review.companyName }} · 인사 기본 · 버전 {{ review.revision }}</p>
-                <p>운영 상태: {{ labels[review.before] }} → {{ labels[review.state] }}</p>
-                <p>메뉴 표시: {{ review.beforeVisible ? '표시' : '숨김' }} → {{ review.menuVisible ? '표시' : '숨김' }}</p>
-                <p>{{ descriptions[review.state] }}</p>
-                <p>사유: {{ review.reason }}</p>
-                <Button data-testid="confirm-save" label="확인하고 저장" :disabled="saving" @click="save" />
+
+            <section v-if="review" data-testid="change-review" class="p-5 mt-6 rounded-border bg-surface-50 dark:bg-surface-800">
+                <h3 class="mb-3 text-base font-semibold">변경 내용 확인</h3>
+                <p class="m-0">{{ review.companyName }} · 인사 기본 · 버전 {{ review.revision }}</p>
+                <p class="mt-1 mb-0">운영 상태: {{ labels[review.before] }} → {{ labels[review.state] }}</p>
+                <p class="mt-1 mb-0">메뉴 표시: {{ review.beforeVisible ? '표시' : '숨김' }} → {{ review.menuVisible ? '표시' : '숨김' }}</p>
+                <p class="mt-1 mb-0 text-muted-color">{{ descriptions[review.state] }}</p>
+                <p class="mt-1 mb-4 break-words">사유: {{ review.reason }}</p>
+                <Button data-testid="confirm-save" label="확인하고 저장" icon="pi pi-check" :disabled="saving" @click="save" />
             </section>
         </section>
-        <section v-if="settings" data-testid="planned-modules" class="module-card">
-            <span class="eyebrow">준비 중인 모듈</span>
-            <h2>
-                준비 중인 모듈 <small>{{ planned.length }}</small>
+
+        <section v-if="settings" data-testid="planned-modules" class="card">
+            <p class="m-0 text-sm text-muted-color">준비 중인 모듈</p>
+            <h2 class="mt-1 text-xl font-semibold text-surface-900 dark:text-surface-0">
+                준비 중인 모듈 <small class="text-muted-color">{{ planned.length }}</small>
             </h2>
-            <p>아래 모듈은 아직 제공되지 않으며 활성화할 수 없습니다.</p>
-            <ul class="planned-list">
-                <li v-for="module in planned" :key="module.key">
-                    <span>{{ module.label }}</span
-                    ><span class="planned-badge">준비 중</span>
+            <p class="mt-1 mb-4 text-muted-color">아래 모듈은 아직 제공되지 않으며 활성화할 수 없습니다.</p>
+            <ul class="grid grid-cols-1 gap-3 p-0 m-0 list-none md:grid-cols-3">
+                <li v-for="module in planned" :key="module.key" class="flex items-center justify-between gap-2 p-4 border rounded-border border-surface-200 dark:border-surface-700">
+                    <span>{{ module.label }}</span>
+                    <Tag value="준비 중" severity="secondary" />
                 </li>
             </ul>
         </section>
-    </main>
+    </div>
 </template>
-<style scoped>
-.hr-modules {
-    max-width: 1100px;
-    margin: auto;
-    display: grid;
-    gap: 1.5rem;
-    color: var(--text-color);
-}
-h1 {
-    font-size: 1.8rem;
-    margin: 0.4rem 0;
-}
-h2 {
-    font-size: 1.25rem;
-    margin: 0.4rem 0;
-}
-h3 {
-    font-size: 1rem;
-}
-.eyebrow {
-    font-size: 0.7rem;
-    letter-spacing: 0.12em;
-    color: var(--text-color-secondary);
-    font-weight: 700;
-}
-p {
-    line-height: 1.7;
-    color: var(--text-color-secondary);
-}
-.module-card {
-    background: var(--surface-card);
-    border: 1px solid var(--surface-border);
-    border-radius: 12px;
-    padding: 1.5rem;
-}
-.company-bar {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-}
-.company-bar select {
-    flex: 1;
-}
-.module-heading,
-.facts {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-}
-.facts {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    padding: 1rem 0;
-}
-.facts span {
-    padding-right: 1.5rem;
-}
-.state-badge,
-.planned-badge {
-    background: var(--surface-100);
-    padding: 0.4rem 0.7rem;
-    border-radius: 6px;
-    font-size: 0.8rem;
-}
-.module-note,
-.change-review {
-    background: var(--surface-ground);
-    padding: 1rem;
-    border-radius: 8px;
-}
-.error {
-    color: var(--red-600);
-}
-fieldset {
-    border: 0;
-    padding: 0;
-    display: grid;
-    gap: 0.7rem;
-    margin-top: 1.5rem;
-}
-legend {
-    font-weight: 700;
-    margin-bottom: 1rem;
-}
-select,
-textarea {
-    width: 100%;
-    border: 1px solid var(--surface-border);
-    background: var(--surface-card);
-    color: var(--text-color);
-    padding: 0.75rem;
-    border-radius: 6px;
-    font: inherit;
-}
-fieldset select {
-    max-width: 420px;
-}
-fieldset p {
-    margin: 0;
-}
-.check {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-}
-.hint {
-    font-size: 0.85rem;
-}
-fieldset button {
-    justify-self: start;
-    margin-top: 0.5rem;
-}
-.change-review {
-    margin-top: 1.5rem;
-}
-.planned-list {
-    list-style: none;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.7rem;
-}
-.planned-list li {
-    border: 1px solid var(--surface-border);
-    padding: 0.85rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.5rem;
-}
-small {
-    color: var(--text-color-secondary);
-}
-@media (max-width: 700px) {
-    .company-bar {
-        align-items: stretch;
-        flex-direction: column;
-    }
-    .planned-list {
-        grid-template-columns: 1fr;
-    }
-    .module-card {
-        padding: 1rem;
-    }
-    .facts {
-        gap: 0.5rem;
-    }
-}
-</style>

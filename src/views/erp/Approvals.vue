@@ -3,9 +3,10 @@ import { APPROVAL_DECISION_ROLES, formatWon } from '@/data/erp';
 import { APPROVAL_STATUS, statusLabel, statusSeverity } from '@/data/status';
 import { useAuthStore } from '@/stores/auth';
 import { useErpStore } from '@/stores/erp';
+import { numberParam, useQueryState } from '@/composables/useQueryState';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 const DECISION_FAILURE_MESSAGE = '결재를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 const NO_PERMISSION_MESSAGE = '결재 승인과 반려는 결재자 또는 관리자 계정에서만 처리할 수 있습니다.';
@@ -14,9 +15,8 @@ const confirm = useConfirm();
 const toast = useToast();
 const authStore = useAuthStore();
 const { approvals, pendingApprovalCount, isPendingApproval, updateApprovalStatus, loading, error } = useErpStore();
-const keyword = ref('');
+const { keyword, view: viewMode, page, rows, reset: resetQueryState } = useQueryState({ keyword: { fallback: '' }, view: { fallback: '전체' }, page: numberParam(1), rows: numberParam(20) });
 const approvalTableRegion = ref();
-const viewMode = ref('전체');
 const viewOptions = ['전체', '처리 대기', '처리 완료'];
 const canDecide = computed(() => authStore.hasRole(APPROVAL_DECISION_ROLES));
 
@@ -36,9 +36,19 @@ function isPending(approval) {
 }
 
 function resetFilters() {
-    keyword.value = '';
-    viewMode.value = '전체';
+    resetQueryState();
 }
+
+const first = computed(() => (page.value - 1) * rows.value);
+
+function changePage(event) {
+    page.value = Math.floor(event.first / event.rows) + 1;
+    rows.value = event.rows;
+}
+
+watch([keyword, viewMode], () => {
+    page.value = 1;
+});
 
 async function focusApprovalWorkflow() {
     await nextTick();
@@ -115,14 +125,16 @@ function reject(approval) {
                 dataKey="id"
                 :loading="loading"
                 responsiveLayout="scroll"
-                tableStyle="min-width: 72rem"
+                tableClass="min-w-0 lg:min-w-[72rem]"
                 :tableProps="{ 'aria-label': '결재 요청 목록' }"
                 paginator
-                :rows="20"
+                :rows="rows"
+                :first="first"
                 :rowsPerPageOptions="[20, 50, 100]"
                 size="small"
                 stripedRows
                 scrollable
+                @page="changePage"
             >
                 <template #empty>
                     <div class="list-empty">
@@ -132,13 +144,13 @@ function reject(approval) {
                 </template>
                 <Column field="id" header="문서번호" sortable>
                     <template #body="slotProps"
-                        ><span class="font-medium">{{ slotProps.data.id }}</span></template
+                        ><span class="font-medium">{{ slotProps.data.id }}</span> <span class="block text-sm lg:hidden text-muted-color">{{ slotProps.data.title }} · {{ slotProps.data.requester }}</span></template
                     >
                 </Column>
-                <Column field="type" header="업무 유형" sortable />
-                <Column field="title" header="제목" sortable style="min-width: 18rem" />
-                <Column field="requester" header="요청자" sortable />
-                <Column field="requestedAt" header="요청일시" sortable />
+                <Column field="type" header="업무 유형" sortable headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell" />
+                <Column field="title" header="제목" sortable style="min-width: 18rem" headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell" />
+                <Column field="requester" header="요청자" sortable headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell" />
+                <Column field="requestedAt" header="요청일시" sortable headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell" />
                 <Column field="amount" header="금액" sortable headerClass="num-col" bodyClass="num-col">
                     <template #body="slotProps"
                         ><span class="font-medium">{{ formatWon(slotProps.data.amount) }}</span></template

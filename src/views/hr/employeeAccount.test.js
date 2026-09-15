@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { mount, flushPromises } from '@vue/test-utils';
 import { ref } from 'vue';
+import PrimeVue from 'primevue/config';
 import { beforeEach, expect, it, vi } from 'vitest';
 import EmployeeAccount from './EmployeeAccount.vue';
 const mocks = vi.hoisted(() => ({}));
@@ -21,6 +22,10 @@ const data = () => ({
     permissions: { link: true, unlink: false }
 });
 beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+    });
     mocks.auth = { user: ref({ id: 'user' }) };
     mocks.repo = {
         loadOptions: vi.fn().mockResolvedValue(data()),
@@ -31,14 +36,24 @@ beforeEach(() => {
 const setup = () =>
     mount(EmployeeAccount, {
         props: { companyId: 'company', employeeId: 'employee' },
-        global: { stubs: { Button: { props: ['label', 'disabled'], emits: ['click'], template: '<button :disabled="disabled" @click="$emit(\'click\')">{{label}}</button>' } } }
+        global: {
+            plugins: [PrimeVue],
+            stubs: { Button: { props: ['label', 'disabled'], emits: ['click'], template: '<button :disabled="disabled" @click="$emit(\'click\')">{{label}}</button>' } }
+        }
     });
 it('previews the mapped level and requires reason plus review before linking', async () => {
     const wrapper = setup();
     await flushPromises();
     expect(wrapper.get('[data-testid="account-current"]').text()).toContain('연결 없음');
-    expect(wrapper.get('#account-choice').text()).toContain('레벨 1 · 직급 매핑');
-    await wrapper.get('#account-choice').setValue(profile);
+    const choice = wrapper.findAllComponents({ name: 'Select' }).find((candidate) => candidate.props('inputId') === 'account-choice');
+    expect(
+        choice
+            .props('options')
+            .map((option) => option.label)
+            .join(' ')
+    ).toContain('레벨 1 · 직급 매핑');
+    choice.vm.$emit('update:modelValue', profile);
+    await flushPromises();
     await wrapper.get('[data-testid="account-review"]').trigger('click');
     expect(mocks.repo.linkAccount).not.toHaveBeenCalled();
     expect(wrapper.get('[role="alert"]').text()).toContain('변경 사유');

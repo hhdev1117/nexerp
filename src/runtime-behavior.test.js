@@ -34,6 +34,7 @@ const createTestRouter = (path = '/') => {
         history: createMemoryHistory(),
         routes: [
             { path: '/', component: { template: '<div />' } },
+            { path: '/sales/orders', component: { template: '<div />' }, meta: { title: '수주 관리' } },
             {
                 path: '/sales/quotes',
                 component: { template: '<div />' },
@@ -85,7 +86,8 @@ afterEach(async () => {
 
 describe('mounted ERP behavior', () => {
     it('passes required and error-description semantics to the InputNumber spinbutton', async () => {
-        const wrapper = mountWithPrimeVue(SalesOrders);
+        const router = await createTestRouter('/sales/orders');
+        const wrapper = mountWithPrimeVue(SalesOrders, { global: { plugins: [router] } });
         await wrapper
             .findAll('button')
             .find((button) => button.text().includes('신규 수주'))

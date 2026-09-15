@@ -5,6 +5,7 @@
 //   node scripts/verify-pending-migrations.mjs
 
 import { readFileSync } from 'node:fs';
+import { evaluateCatalogChecks } from './pending-migration-checks.mjs';
 
 const PROJECT_REF = 'mehhrnbaiojivesnobpv';
 
@@ -64,46 +65,71 @@ const checks = await query(`select
   exists (select 1 from pg_catalog.pg_proc where proname='enforce_account_parent' and pronamespace='private'::regnamespace) as account_guard_exists,
   (select count(*) from pg_catalog.pg_trigger t join pg_catalog.pg_proc p on p.oid=t.tgfoid where p.proname='deactivate_account_children' and not t.tgisinternal) as account_cascade_triggers,
   coalesce((select has_function_privilege('authenticated', oid, 'EXECUTE') from pg_catalog.pg_proc where proname='next_document_number' and pronamespace='private'::regnamespace limit 1), false) as authenticated_can_issue,
-  (select count(*) from public.role_menu_permissions where 'inventory.items' = any (allowed_menu_keys)) as legacy_item_menu_keys`);
-
-const expected = {
-    audit_logs_exists: true,
-    document_sequences_exists: true,
-    items_exists: true,
-    warehouses_exists: true,
-    accounts_exists: true,
-    audit_logs_rls: true,
-    document_sequences_rls: true,
-    items_rls: true,
-    warehouses_rls: true,
-    accounts_rls: true,
-    audit_write_grants: 0,
-    sequence_write_grants: 0,
-    item_delete_grants: 0,
-    warehouse_delete_grants: 0,
-    account_delete_grants: 0,
-    audit_policies: 1,
-    sequence_policies: 1,
-    item_policies: 3,
-    warehouse_policies: 3,
-    account_policies: 3,
-    audit_triggers: 6,
-    record_audit_exists: true,
-    next_number_exists: true,
-    warehouse_guard_exists: true,
-    warehouse_cascade_triggers: 1,
-    account_guard_exists: true,
-    account_cascade_triggers: 1,
-    authenticated_can_issue: false,
-    legacy_item_menu_keys: 0
-};
+  (select count(*) from public.role_menu_permissions where 'inventory.items' = any (allowed_menu_keys)) as legacy_item_menu_keys,
+  exists (
+    select 1
+    from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'profiles'
+      and a.attname = 'ui_preferences' and a.attnum > 0 and not a.attisdropped
+  ) as profile_ui_preferences_exists,
+  exists (
+    select 1
+    from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'profiles'
+      and a.attname = 'ui_preferences' and a.attnum > 0 and not a.attisdropped
+      and a.atttypid = 'jsonb'::regtype
+  ) as profile_ui_preferences_jsonb,
+  exists (
+    select 1
+    from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'profiles'
+      and a.attname = 'ui_preferences' and a.attnum > 0 and not a.attisdropped
+      and a.attnotnull
+  ) as profile_ui_preferences_not_null,
+  exists (
+    select 1
+    from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    join pg_catalog.pg_attrdef d on d.adrelid = c.oid and d.adnum = a.attnum
+    where n.nspname = 'public' and c.relname = 'profiles'
+      and a.attname = 'ui_preferences' and a.attnum > 0 and not a.attisdropped
+      and pg_catalog.pg_get_expr(d.adbin, d.adrelid) = '''{}''::jsonb'
+  ) as profile_ui_preferences_default,
+  exists (
+    select 1
+    from pg_catalog.pg_constraint con
+    where con.conrelid = to_regclass('public.profiles')
+      and con.contype = 'c'
+      and con.conname = 'profiles_ui_preferences_object'
+      and pg_catalog.pg_get_expr(con.conbin, con.conrelid) ~* 'jsonb_typeof\\([[:space:]]*ui_preferences[[:space:]]*\\)[[:space:]]*=[[:space:]]*''object''::text'
+  ) as profile_ui_preferences_object_constraint,
+  coalesce((
+    select pg_catalog.has_column_privilege('authenticated', c.oid, a.attnum, 'UPDATE')
+    from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'profiles'
+      and a.attname = 'ui_preferences' and a.attnum > 0 and not a.attisdropped
+  ), false) as authenticated_can_update_ui_preferences,
+  coalesce((
+    select pg_catalog.has_column_privilege('anon', c.oid, a.attnum, 'UPDATE')
+    from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'profiles'
+      and a.attname = 'ui_preferences' and a.attnum > 0 and not a.attisdropped
+  ), false) as anon_can_update_ui_preferences`);
 
 const actual = checks[0];
-let failed = 0;
-for (const [key, want] of Object.entries(expected)) {
-    const got = typeof actual[key] === 'string' ? Number(actual[key]) : actual[key];
-    const passed = got === want;
-    if (!passed) failed += 1;
+const { checks: evaluatedChecks, failed } = evaluateCatalogChecks(actual);
+for (const { key, got, want, passed } of evaluatedChecks) {
     console.log(`${passed ? 'PASS' : 'FAIL'}  ${key}: ${got}${passed ? '' : ` (expected ${want})`}`);
 }
 

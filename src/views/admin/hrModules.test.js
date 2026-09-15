@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { mount, flushPromises } from '@vue/test-utils';
 import { ref } from 'vue';
+import PrimeVue from 'primevue/config';
 import { beforeEach, it, expect, vi } from 'vitest';
 import HRModules from './HRModules.vue';
 const m = vi.hoisted(() => ({}));
@@ -16,6 +17,10 @@ const settings = (companyId = 'a') => ({
     ]
 });
 beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+    });
     m.auth = { user: ref({ id: 'u' }), profile: ref({ is_active: true, role: 'admin' }), role: ref('admin') };
     m.runtime = { context: ref({ companyId: 'a' }), refresh: vi.fn().mockResolvedValue(true) };
     m.catalog = {
@@ -26,12 +31,21 @@ beforeEach(() => {
     };
     m.repo = { loadSettings: vi.fn().mockImplementation(async (id) => settings(id)), saveSettings: vi.fn().mockResolvedValue(settings()) };
 });
-const setup = () => mount(HRModules, { global: { stubs: { Button: { props: ['label', 'disabled'], template: '<button :disabled="disabled">{{label}}</button>' } } } });
+const setup = () => mount(HRModules, { global: { plugins: [PrimeVue], stubs: { Button: { props: ['label', 'disabled'], template: '<button :disabled="disabled">{{label}}</button>' } } } });
+const findSelect = (wrapper, inputId) => wrapper.findAllComponents({ name: 'Select' }).find((candidate) => candidate.props('inputId') === inputId);
+const selectValue = (wrapper, inputId) => findSelect(wrapper, inputId)?.props('modelValue');
+const selectOptions = (wrapper, inputId) => findSelect(wrapper, inputId)?.props('options') || [];
+const setSelect = async (wrapper, inputId, value) => {
+    const select = findSelect(wrapper, inputId);
+    expect(select, 'Select#' + inputId).toBeTruthy();
+    select.vm.$emit('update:modelValue', value);
+    await flushPromises();
+};
 it('reviews exact changes and reason before saving; planned modules have no controls', async () => {
     const w = setup();
     await flushPromises();
     expect(w.get('[data-testid="planned-modules"]').findAll('input,select,button')).toHaveLength(0);
-    await w.get('#module-state').setValue('draining');
+    await setSelect(w, 'module-state', 'draining');
     await w.get('[data-testid="review"]').trigger('click');
     expect(m.repo.saveSettings).not.toHaveBeenCalled();
     expect(w.find('[data-testid="confirm-save"]').exists()).toBe(false);
@@ -54,11 +68,11 @@ it('preserves a draft on retry failure and ignores an older company response', a
     let resolve;
     m.repo.loadSettings.mockImplementationOnce(() => new Promise((r) => (resolve = r)));
     await w.get('[data-testid="reload"]').trigger('click');
-    await w.get('#module-company').setValue('b');
+    await setSelect(w, 'module-company', 'b');
     await flushPromises();
     resolve(settings('a'));
     await flushPromises();
-    expect(w.get('#module-company').element.value).toBe('b');
+    expect(selectValue(w, 'module-company')).toBe('b');
     expect(w.get('#module-reason').element.value).toBe('');
 });
 it('invalidates pending loads when the identity becomes inactive', async () => {
@@ -71,8 +85,8 @@ it('invalidates pending loads when the identity becomes inactive', async () => {
     await flushPromises();
     resolve(settings());
     await flushPromises();
-    expect(w.find('#module-state').exists()).toBe(false);
-    expect(w.get('#module-company').findAll('option')).toHaveLength(1);
+    expect(findSelect(w, 'module-state')).toBeUndefined();
+    expect(selectOptions(w, 'module-company')).toHaveLength(1);
 });
 it('preserves the editor while a same-identity runtime refresh clears context', async () => {
     const w = setup();
@@ -80,13 +94,13 @@ it('preserves the editor while a same-identity runtime refresh clears context', 
     m.runtime.refresh.mockImplementation(async () => {
         m.runtime.context.value = null;
     });
-    await w.get('#module-state').setValue('draining');
+    await setSelect(w, 'module-state', 'draining');
     await w.get('#module-reason').setValue('운영 정리');
     await w.get('[data-testid="review"]').trigger('click');
     await w.get('[data-testid="confirm-save"]').trigger('click');
     await flushPromises();
-    expect(w.find('#module-state').exists()).toBe(true);
-    expect(w.get('#module-company').element.value).toBe('a');
+    expect(findSelect(w, 'module-state')).toBeTruthy();
+    expect(selectValue(w, 'module-company')).toBe('a');
 });
 
 it('immediately clears review and rejects pending results after admin role revocation', async () => {
@@ -102,10 +116,10 @@ it('immediately clears review and rejects pending results after admin role revoc
     m.auth.role.value = 'employee';
     await flushPromises();
     expect(w.find('#module-reason').exists()).toBe(false);
-    expect(w.get('#module-company').findAll('option')).toHaveLength(1);
+    expect(selectOptions(w, 'module-company')).toHaveLength(1);
     resolve(settings());
     await flushPromises();
-    expect(w.find('#module-state').exists()).toBe(false);
+    expect(findSelect(w, 'module-state')).toBeUndefined();
     await w.get('[data-testid="reload"]').trigger('click');
     await flushPromises();
     expect(m.catalog.listAdminCompanies).toHaveBeenCalledTimes(1);

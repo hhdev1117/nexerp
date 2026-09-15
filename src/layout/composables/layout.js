@@ -1,12 +1,7 @@
 import { computed, reactive } from 'vue';
+import { applyPrimeTheme, DEFAULT_LAYOUT_PREFERENCES, normalizeLayoutPreferences, presetOptions, primaryColors, surfaces } from '@/theme/layoutTheme';
 
-const layoutConfig = reactive({
-    preset: 'Aura',
-    primary: 'emerald',
-    surface: null,
-    darkTheme: false,
-    menuMode: 'static'
-});
+const layoutConfig = reactive({ ...DEFAULT_LAYOUT_PREFERENCES });
 
 const layoutState = reactive({
     staticMenuInactive: false,
@@ -24,16 +19,64 @@ export function useLayout() {
     const toggleDarkMode = () => {
         if (!document.startViewTransition) {
             executeDarkModeToggle();
-
-            return;
+            return Promise.resolve();
         }
 
-        document.startViewTransition(() => executeDarkModeToggle(event));
+        const transition = document.startViewTransition(() => executeDarkModeToggle());
+        return transition?.updateCallbackDone || Promise.resolve();
     };
 
     const executeDarkModeToggle = () => {
         layoutConfig.darkTheme = !layoutConfig.darkTheme;
-        document.documentElement.classList.toggle('app-dark');
+        document.documentElement.classList.toggle('app-dark', layoutConfig.darkTheme);
+    };
+
+    const resetMenuPresentationState = () => {
+        layoutState.staticMenuInactive = false;
+        layoutState.overlayMenuActive = false;
+        layoutState.mobileMenuActive = false;
+        layoutState.sidebarExpanded = false;
+        layoutState.menuHoverActive = false;
+        layoutState.anchored = false;
+    };
+
+    const resetTransientLayoutState = () => {
+        resetMenuPresentationState();
+        layoutState.profileSidebarVisible = false;
+        layoutState.configSidebarVisible = false;
+        layoutState.activeMenuItem = null;
+        layoutState.activePath = null;
+    };
+
+    const getLayoutPreferences = () => normalizeLayoutPreferences(layoutConfig);
+
+    const applyLayoutPreferences = (preferences) => {
+        const normalized = normalizeLayoutPreferences(preferences);
+        Object.assign(layoutConfig, normalized);
+        document.documentElement.classList.toggle('app-dark', normalized.darkTheme);
+        resetTransientLayoutState();
+        applyPrimeTheme(normalized);
+        return { ...normalized };
+    };
+
+    const resetLayoutPreferences = () => applyLayoutPreferences(DEFAULT_LAYOUT_PREFERENCES);
+
+    const updatePrimaryColor = (name) => {
+        const normalized = normalizeLayoutPreferences({ ...getLayoutPreferences(), primary: name });
+        layoutConfig.primary = normalized.primary;
+        applyPrimeTheme(normalized);
+    };
+
+    const updateSurfaceColor = (name) => {
+        const normalized = normalizeLayoutPreferences({ ...getLayoutPreferences(), surface: name });
+        layoutConfig.surface = normalized.surface;
+        applyPrimeTheme(normalized);
+    };
+
+    const changePreset = (name) => {
+        const normalized = normalizeLayoutPreferences({ ...getLayoutPreferences(), preset: name });
+        layoutConfig.preset = normalized.preset;
+        applyPrimeTheme(normalized);
     };
 
     const toggleMenu = () => {
@@ -58,13 +101,10 @@ export function useLayout() {
         layoutState.mobileMenuActive = false;
     };
 
-    const changeMenuMode = (event) => {
-        layoutConfig.menuMode = event.value;
-        layoutState.staticMenuInactive = false;
-        layoutState.mobileMenuActive = false;
-        layoutState.sidebarExpanded = false;
-        layoutState.menuHoverActive = false;
-        layoutState.anchored = false;
+    const changeMenuMode = (eventOrValue) => {
+        const value = typeof eventOrValue === 'string' ? eventOrValue : eventOrValue?.value;
+        layoutConfig.menuMode = normalizeLayoutPreferences({ ...getLayoutPreferences(), menuMode: value }).menuMode;
+        resetMenuPresentationState();
     };
 
     const isDarkTheme = computed(() => layoutConfig.darkTheme);
@@ -77,11 +117,20 @@ export function useLayout() {
         layoutState,
         isDarkTheme,
         toggleDarkMode,
+        applyLayoutPreferences,
+        resetLayoutPreferences,
+        getLayoutPreferences,
+        updatePrimaryColor,
+        updateSurfaceColor,
+        changePreset,
         toggleConfigSidebar,
         toggleMenu,
         hideMobileMenu,
         changeMenuMode,
         isDesktop,
-        hasOpenOverlay
+        hasOpenOverlay,
+        presetOptions,
+        primaryColors,
+        surfaces
     };
 }

@@ -56,7 +56,17 @@ describe('demo audit repository', () => {
     });
 
     it('pages without losing the filtered total', async () => {
-        const entries = Array.from({ length: AUDIT_PAGE_SIZE + 4 }, (unused, index) => ({ id: index + 1, tableName: 'companies', recordId: 'c-1', companyId: 'c-1', action: AUDIT_ACTION.UPDATE, actorId: 'actor', changedAt: `2026-09-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`, oldData: {}, newData: {} }));
+        const entries = Array.from({ length: AUDIT_PAGE_SIZE + 4 }, (unused, index) => ({
+            id: index + 1,
+            tableName: 'companies',
+            recordId: 'c-1',
+            companyId: 'c-1',
+            action: AUDIT_ACTION.UPDATE,
+            actorId: 'actor',
+            changedAt: `2026-09-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
+            oldData: {},
+            newData: {}
+        }));
         const repository = createDemoAuditRepository({ entries });
         const first = await repository.listAuditLogs({ page: 1 });
         const second = await repository.listAuditLogs({ page: 2 });

@@ -40,7 +40,10 @@ export function createSupabaseAuditRepository(client = getSupabaseClient()) {
                 if (query.from) request = request.gte('changed_at', query.from);
                 if (query.to) request = request.lte('changed_at', query.to);
 
-                const { data, error, count } = await request.order('changed_at', { ascending: false }).order('id', { ascending: false }).range(first, first + AUDIT_PAGE_SIZE - 1);
+                const { data, error, count } = await request
+                    .order('changed_at', { ascending: false })
+                    .order('id', { ascending: false })
+                    .range(first, first + AUDIT_PAGE_SIZE - 1);
                 if (error) throw failure(error);
 
                 const entries = Array.isArray(data) ? data.map(toEntry) : [];

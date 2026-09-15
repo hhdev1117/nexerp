@@ -130,13 +130,13 @@ onMounted(loadPermissions);
 
 <template>
     <p class="mb-4 text-muted-color">인사 메뉴는 전사 권한관리에서 회사별 정책으로 설정하고 발행해야 사용할 수 있습니다.</p>
-    <div class="admin-page permission-page">
+    <div class="min-w-0">
         <div class="flex flex-col gap-3 mb-6 lg:flex-row lg:items-end lg:justify-between">
             <div class="min-w-0">
                 <h1 class="text-2xl font-semibold text-surface-900 dark:text-surface-0">메뉴 권한 관리</h1>
                 <p class="mt-1 text-muted-color">계정 등급별로 사이드바와 직접 경로의 접근 권한을 함께 설정합니다.</p>
             </div>
-            <div class="role-control">
+            <div class="flex flex-col w-full gap-2 lg:w-72">
                 <label id="permission-role-label" for="permission-role" class="font-medium">계정 등급</label>
                 <Select
                     inputId="permission-role"
@@ -159,7 +159,7 @@ onMounted(loadPermissions);
             </div>
         </div>
 
-        <div class="card permission-card">
+        <div class="min-w-0 card">
             <div v-if="loading" class="admin-state" role="status" aria-live="polite">
                 <ProgressSpinner class="state-spinner" strokeWidth="5" />
                 <span>메뉴 권한을 불러오는 중입니다.</span>
@@ -172,7 +172,7 @@ onMounted(loadPermissions);
             </div>
 
             <template v-else-if="selectedPermission && visiblePermissionGroups.length">
-                <div class="permission-toolbar">
+                <div class="flex flex-col gap-4 pb-5 border-b border-surface-200 dark:border-surface-700 md:flex-row md:items-start md:justify-between">
                     <div class="min-w-0">
                         <div class="flex flex-wrap items-center gap-2">
                             <strong>{{ selectedRoleLabel }} 메뉴 접근</strong>
@@ -183,24 +183,24 @@ onMounted(loadPermissions);
                         <p v-else-if="dirty" class="mt-2 text-sm font-medium text-primary" role="status">저장되지 않은 변경 사항이 있습니다.</p>
                         <p v-else class="mt-2 text-sm text-muted-color">저장된 메뉴 권한과 일치합니다.</p>
                     </div>
-                    <div v-if="selectedRole !== 'admin'" class="permission-actions">
-                        <Button label="초기화" icon="pi pi-undo" severity="secondary" outlined :disabled="!dirty || saving" @click="resetPermissions" />
-                        <Button label="저장" icon="pi pi-save" :disabled="!dirty" :loading="saving" @click="savePermissions" />
+                    <div v-if="selectedRole !== 'admin'" class="flex w-full gap-3 shrink-0 md:w-auto">
+                        <Button label="초기화" icon="pi pi-undo" severity="secondary" outlined class="flex-1 md:flex-none" :disabled="!dirty || saving" @click="resetPermissions" />
+                        <Button label="저장" icon="pi pi-save" class="flex-1 md:flex-none" :disabled="!dirty" :loading="saving" @click="savePermissions" />
                     </div>
                 </div>
 
-                <div class="permission-groups">
-                    <section v-for="group in visiblePermissionGroups" :key="group.label" class="permission-group" :aria-labelledby="`permission-group-${group.label}`">
-                        <h2 :id="`permission-group-${group.label}`">{{ group.label }}</h2>
-                        <div class="permission-list">
-                            <div v-for="item in group.items" :key="item.menuKey" class="permission-row">
-                                <div class="permission-copy">
+                <div class="max-w-full overflow-x-auto">
+                    <section v-for="group in visiblePermissionGroups" :key="group.label" class="min-w-[34rem] py-5 border-b border-surface-200 dark:border-surface-700 last:border-0 last:pb-0" :aria-labelledby="`permission-group-${group.label}`">
+                        <h2 :id="`permission-group-${group.label}`" class="mt-0 mb-3 text-base font-bold">{{ group.label }}</h2>
+                        <div class="grid grid-cols-1 gap-x-6 md:grid-cols-2">
+                            <div v-for="item in group.items" :key="item.menuKey" class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 min-h-[4.75rem] py-3 border-b border-surface-200 dark:border-surface-700">
+                                <div class="min-w-0">
                                     <div class="flex flex-wrap items-center gap-2">
                                         <strong>{{ item.label }}</strong>
-                                        <span class="permission-category">{{ item.category }}</span>
+                                        <span class="text-xs font-medium text-muted-color">{{ item.category }}</span>
                                         <i v-if="item.fixed" class="pi pi-lock text-xs text-muted-color" aria-hidden="true"></i>
                                     </div>
-                                    <small>{{ item.description }}</small>
+                                    <small class="block mt-1 leading-snug text-muted-color">{{ item.description }}</small>
                                 </div>
                                 <ToggleSwitch :modelValue="hasPermission(item.menuKey)" :disabled="selectedRole === 'admin' || item.fixed" :aria-label="permissionToggleLabel(item)" @update:modelValue="togglePermission(item, $event)" />
                             </div>
@@ -219,119 +219,3 @@ onMounted(loadPermissions);
         <ConfirmDialog />
     </div>
 </template>
-
-<style scoped>
-.admin-page,
-.permission-page,
-.permission-card,
-.permission-copy {
-    min-width: 0;
-}
-
-.role-control {
-    width: min(100%, 18rem);
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.admin-state {
-    min-height: 15rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    color: var(--text-color-secondary);
-    text-align: center;
-}
-
-.state-spinner {
-    width: 2.5rem;
-    height: 2.5rem;
-}
-
-.permission-toolbar {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-    padding-bottom: 1.25rem;
-    border-bottom: 1px solid var(--surface-border);
-}
-
-.permission-actions {
-    display: flex;
-    gap: 0.75rem;
-    flex-shrink: 0;
-}
-
-.permission-groups {
-    max-width: 100%;
-    overflow-x: auto;
-}
-
-.permission-group {
-    min-width: 34rem;
-    padding: 1.25rem 0;
-    border-bottom: 1px solid var(--surface-border);
-}
-
-.permission-group:last-child {
-    border-bottom: 0;
-    padding-bottom: 0;
-}
-
-.permission-group h2 {
-    margin: 0 0 0.75rem;
-    font-size: 1rem;
-    font-weight: 700;
-}
-
-.permission-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 1.5rem;
-}
-
-.permission-row {
-    min-height: 4.75rem;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.75rem 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--surface-border) 65%, transparent);
-}
-
-.permission-copy small {
-    display: block;
-    margin-top: 0.35rem;
-    color: var(--text-color-secondary);
-    line-height: 1.4;
-}
-
-.permission-category {
-    color: var(--text-color-secondary);
-    font-size: 0.75rem;
-    font-weight: 500;
-}
-
-@media (max-width: 780px) {
-    .permission-toolbar {
-        flex-direction: column;
-    }
-
-    .permission-actions {
-        width: 100%;
-    }
-
-    .permission-actions :deep(.p-button) {
-        flex: 1;
-    }
-
-    .permission-list {
-        grid-template-columns: minmax(0, 1fr);
-    }
-}
-</style>

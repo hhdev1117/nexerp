@@ -113,7 +113,17 @@ const openDetail = (entry) => (selectedEntry.value = entry);
                     </div>
                     <div class="col-span-12 sm:col-span-6 xl:col-span-2">
                         <label id="audit-from-label" for="audit-from" class="block mb-2 font-medium">시작일</label>
-                        <DatePicker inputId="audit-from" :modelValue="filter.from" dateFormat="yy-mm-dd" showIcon iconDisplay="input" ariaLabelledby="audit-from-label" placeholder="시작일" fluid @update:modelValue="applyFilter({ from: $event ?? null })" />
+                        <DatePicker
+                            inputId="audit-from"
+                            :modelValue="filter.from"
+                            dateFormat="yy-mm-dd"
+                            showIcon
+                            iconDisplay="input"
+                            ariaLabelledby="audit-from-label"
+                            placeholder="시작일"
+                            fluid
+                            @update:modelValue="applyFilter({ from: $event ?? null })"
+                        />
                     </div>
                     <div class="col-span-12 sm:col-span-6 xl:col-span-2">
                         <label id="audit-to-label" for="audit-to" class="block mb-2 font-medium">종료일</label>

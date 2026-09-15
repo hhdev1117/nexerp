@@ -5,7 +5,19 @@ html {
 }
 
 body {
-    font-family: 'Lato', sans-serif;
+    // Korean-first stack so the UI renders the same on every workstation without a third-party font request.
+    font-family:
+        Pretendard,
+        'Pretendard Variable',
+        -apple-system,
+        BlinkMacSystemFont,
+        'Apple SD Gothic Neo',
+        'Malgun Gothic',
+        '맑은 고딕',
+        'Noto Sans KR',
+        'Segoe UI',
+        Roboto,
+        sans-serif;
     color: var(--text-color);
     background-color: var(--surface-ground);
     margin: 0;

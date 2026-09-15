@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from '@vue/test-utils';
+import PrimeVue from 'primevue/config';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import InfrastructureUsage from './InfrastructureUsage.vue';
 
@@ -16,6 +17,7 @@ const usage = (supabase, cloudflare) => ({
 const mountView = () =>
     mount(InfrastructureUsage, {
         global: {
+            plugins: [PrimeVue],
             stubs: {
                 Button: {
                     props: ['label', 'loading', 'disabled'],
@@ -35,6 +37,10 @@ const mountView = () =>
 
 describe('InfrastructureUsage', () => {
     beforeEach(() => {
+        Object.defineProperty(window, 'matchMedia', {
+            configurable: true,
+            value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+        });
         vi.useRealTimers();
         getInfrastructureUsage.mockReset();
     });

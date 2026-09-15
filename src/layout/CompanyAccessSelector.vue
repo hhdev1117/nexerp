@@ -1,5 +1,5 @@
 <script setup>
-import { watch } from 'vue';
+import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useEnterpriseRuntimeStore } from '@/stores/enterpriseRuntime';
 import { useAuthStore } from '@/stores/auth';
@@ -9,6 +9,7 @@ const auth = useAuthStore();
 const route = useRoute();
 const router = useRouter();
 const destinations = flattenMenuRoutes(erpMenu);
+const companyOptions = computed(() => [{ value: '', label: '회사 선택', disabled: true }, ...(runtime.context.value?.companies || []).map((company) => ({ value: company.id, label: company.name }))]);
 watch(
     () => [auth.user.value?.id, auth.profile.value?.is_active],
     ([id, active]) => {
@@ -35,13 +36,9 @@ async function navigateAllowed() {
     const next = destinations.find((item) => runtime.canAccess(item.menuKey) && !context.hiddenMenuKeys?.includes(item.menuKey));
     await router.replace(next?.to || (auth.profile.value?.role === 'admin' ? '/settings/enterprise-access' : '/auth/access-denied'));
 }
-async function changeCompany(event) {
-    const company = event.target.value;
+async function changeCompany(company) {
     if (company === runtime.context.value?.companyId) return;
-    if (!window.confirm('회사를 변경하면 현재 화면의 저장하지 않은 입력이 닫힙니다. 변경하시겠습니까?')) {
-        event.target.value = runtime.context.value?.companyId || '';
-        return;
-    }
+    if (!window.confirm('회사를 변경하면 현재 화면의 저장하지 않은 입력이 닫힙니다. 변경하시겠습니까?')) return;
     await runtime.selectCompany(auth.user.value?.id, company);
     await navigateAllowed();
 }
@@ -52,70 +49,27 @@ async function refresh() {
 }
 </script>
 <template>
-    <section v-if="auth.profile.value?.is_active" class="company-access-bar" aria-label="현재 회사와 접근 권한">
-        <label v-if="runtime.context.value?.companies.length" for="runtime-company"
-            >현재 회사<select id="runtime-company" :value="runtime.context.value.companyId || ''" :disabled="runtime.loading.value" @change="changeCompany">
-                <option value="" disabled>회사 선택</option>
-                <option v-for="company in runtime.context.value.companies" :key="company.id" :value="company.id">{{ company.name }}</option>
-            </select></label
-        >
+    <section v-if="auth.profile.value?.is_active" class="flex flex-wrap items-center gap-4 px-4 py-3 mb-4 text-sm border rounded-border border-surface-200 dark:border-surface-700 bg-surface-0 dark:bg-surface-900" aria-label="현재 회사와 접근 권한">
+        <div v-if="runtime.context.value?.companies.length" class="flex flex-col w-full gap-2 sm:flex-row sm:items-center sm:w-auto sm:gap-3">
+            <label id="runtime-company-label" for="runtime-company" class="whitespace-nowrap">현재 회사</label>
+            <Select
+                inputId="runtime-company"
+                :modelValue="runtime.context.value.companyId || ''"
+                :options="companyOptions"
+                optionLabel="label"
+                optionValue="value"
+                :optionDisabled="(option) => option.disabled"
+                ariaLabelledby="runtime-company-label"
+                :disabled="runtime.loading.value"
+                size="small"
+                class="w-56"
+                @update:modelValue="changeCompany"
+            />
+        </div>
         <span v-if="runtime.context.value?.mode === 'active'">권한 버전 {{ runtime.context.value.revision }}</span>
         <span v-else-if="runtime.context.value?.mode === 'legacy'">기존 권한 사용 중</span>
         <span v-if="runtime.loading.value" role="status">회사 권한 확인 중…</span>
         <span v-if="runtime.error.value" role="alert">{{ runtime.error.value }}</span>
-        <button type="button" :disabled="runtime.loading.value" @click="refresh">권한 다시 확인</button>
+        <Button label="권한 다시 확인" icon="pi pi-refresh" size="small" severity="secondary" outlined class="ml-auto" :disabled="runtime.loading.value" @click="refresh" />
     </section>
 </template>
-<style scoped>
-.company-access-bar {
-    display: flex;
-    gap: 1rem;
-    align-items: center;
-    flex-wrap: wrap;
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
-    background: var(--surface-card);
-    border: 1px solid var(--surface-border);
-    border-radius: 8px;
-    font-size: 0.9rem;
-}
-label {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    max-width: 100%;
-}
-select,
-button {
-    font: inherit;
-    color: var(--text-color);
-    background: var(--surface-card);
-    border: 1px solid var(--surface-border);
-    border-radius: 6px;
-    padding: 0.6rem 0.75rem;
-    min-height: 44px;
-    max-width: 100%;
-}
-button {
-    cursor: pointer;
-    margin-left: auto;
-}
-button:disabled {
-    opacity: 0.6;
-    cursor: wait;
-}
-:focus-visible {
-    outline: 3px solid var(--primary-color);
-    outline-offset: 2px;
-}
-@media (max-width: 575px) {
-    label {
-        flex-direction: column;
-        align-items: stretch;
-        width: 100%;
-    }
-    button {
-        margin-left: 0;
-    }
-}
-</style>

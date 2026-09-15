@@ -1,6 +1,6 @@
 # Pending Production Migrations
 
-Five committed migrations are implemented, tested and merged, but not yet applied to the
+Six migrations are implemented and tested locally, but not yet applied to the
 production Supabase project `mehhrnbaiojivesnobpv`. Applying them needs a human or agent with
 authorized Supabase dashboard access. Everything else is already done and verified.
 
@@ -42,11 +42,20 @@ pasting the whole file. The order matters because each later file depends on the
 5. `supabase/migrations/20260916001600_add_accounts.sql` — creates `public.accounts`, a
    self-referencing chart with numeric codes, a parent guard that refuses loops and mismatched
    branches, and a cascade that deactivates descendants. Requires step 1 for the same reason.
+6. `supabase/migrations/20260916001700_add_profile_ui_preferences.sql` — adds the non-null JSONB
+   column `public.profiles.ui_preferences` with an empty-object default and an object-only check.
+   It grants `authenticated` users UPDATE on this column while the existing active-user self-update
+   RLS policy continues to restrict each user to their own profile; `anon` receives no UPDATE grant.
 
-All five are safe to apply while `companies`, `sites` and `partners` hold no rows. Step 3 edits
+All six are safe to apply while `companies`, `sites` and `partners` hold no rows. Step 6 also safely
+initializes existing profile rows to `{}` through its non-null default. Step 3 edits
 `role_menu_permissions`, temporarily disabling and then re-enabling
 `protect_admin_role_menu_permissions` inside the same execution, which is why the file must be run
 whole rather than statement by statement.
+
+**Apply and verify step 6 before deploying the frontend.** The current frontend requests
+`profiles.ui_preferences` as part of profile hydration. If the frontend is deployed before the
+column exists, login/profile hydration fails instead of merely falling back to default UI settings.
 
 ## Verify afterwards
 
@@ -55,14 +64,16 @@ node scripts/verify-pending-migrations.mjs
 ```
 
 The script only reads PostgreSQL catalogs, so the read-scoped token is enough. It checks that the
-five tables exist with row-level security enabled, that `authenticated` holds no write grant on
+five pending tables exist with row-level security enabled, that `authenticated` holds no write grant on
 the ledger or the counters and no delete grant on the master tables, that the policy counts are
 1, 1, 3, 3 and 3, that six triggers reference `private.record_audit`, that both cascades and every
 security-definer guard exist, that `authenticated` cannot execute
 `private.next_document_number`, and that no role still holds the legacy `inventory.items` menu
-key. Every line must read `PASS`.
+key. It also verifies that `profiles.ui_preferences` exists as non-null JSONB with the `{}` default
+and object-only constraint, that `authenticated` can update that column, and that `anon` cannot.
+Every line must read `PASS`.
 
-Then deploy the current `main` so the application matches the schema:
+Only after every catalog check passes, deploy the current `main` so the application matches the schema:
 
 ```bash
 npm run build
@@ -73,7 +84,9 @@ npm run deploy
 Sign in as an administrator, change one company record, and confirm the change appears in
 `감사 로그` at `/settings/audit`. Confirm `품목 기준정보` at `/master/items` loads and that the
 old `/inventory/items` path redirects there. Confirm `창고 관리` at `/inventory/warehouses` and
-`계정과목` at `/master/accounts` load.
+`계정과목` at `/master/accounts` load. Change dark mode and the UI configurator values, sign out,
+and sign back in to confirm that the same account restores them. Then sign in with a different
+account and confirm its settings remain independent.
 
 ## Do not do these
 

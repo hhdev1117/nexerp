@@ -2,6 +2,7 @@
 import { getModuleDefinition } from '@/data/erp';
 import { TASK_STATUS, statusLabel, statusOptions, statusSeverity } from '@/data/status';
 import { useErpStore } from '@/stores/erp';
+import { numberParam, useQueryState } from '@/composables/useQueryState';
 import { useToast } from 'primevue/usetoast';
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -9,8 +10,7 @@ import { useRoute } from 'vue-router';
 const route = useRoute();
 const toast = useToast();
 const { getGenericRecords, ensureGenericRecords, addGenericRecord } = useErpStore();
-const keyword = ref('');
-const selectedStatus = ref(null);
+const { keyword, status: selectedStatus, page, rows, reset: resetQueryState } = useQueryState({ keyword: { fallback: '' }, status: { fallback: null }, page: numberParam(1), rows: numberParam(20) });
 const recordDialog = ref(false);
 const detailDialog = ref(false);
 const selectedRow = ref(null);
@@ -32,29 +32,9 @@ const moduleDefinition = computed(() => {
     };
 });
 
-const modulePrefix = computed(() =>
-    route.path
-        .split('/')
-        .filter(Boolean)
-        .map((part) => part.slice(0, 2).toUpperCase())
-        .join('-')
-);
-
-// Placeholder rows keep unimplemented modules browsable until each one gets a dedicated screen and table.
-const moduleRows = computed(() => {
-    const prefix = modulePrefix.value;
-    const baseRows = Array.isArray(route.meta.rows)
-        ? route.meta.rows
-        : [
-              { id: `${prefix}-260911-04`, subject: `${moduleDefinition.value.title} 정기 업무`, owner: '김서준', updatedAt: '2026-09-11 11:42', status: TASK_STATUS.IN_PROGRESS },
-              { id: `${prefix}-260911-03`, subject: `${moduleDefinition.value.title} 신규 요청`, owner: '박지민', updatedAt: '2026-09-11 10:18', status: TASK_STATUS.PENDING_APPROVAL },
-              { id: `${prefix}-260910-12`, subject: `${moduleDefinition.value.title} 월간 마감`, owner: '이현우', updatedAt: '2026-09-10 16:35', status: TASK_STATUS.DONE },
-              { id: `${prefix}-260909-08`, subject: `${moduleDefinition.value.title} 변경 검토`, owner: '최유진', updatedAt: '2026-09-09 14:07', status: TASK_STATUS.ON_HOLD },
-              { id: `${prefix}-260908-02`, subject: `${moduleDefinition.value.title} 데이터 점검`, owner: '윤하늘', updatedAt: '2026-09-08 09:24', status: TASK_STATUS.DONE }
-          ];
-
-    return [...createdRows.value, ...baseRows];
-});
+// Modules without a dedicated screen show only real records: sample documents would be indistinguishable from live work.
+const moduleRows = computed(() => [...createdRows.value, ...(Array.isArray(route.meta.rows) ? route.meta.rows : [])]);
+const modulePending = computed(() => !Array.isArray(route.meta.rows));
 
 const statusFilterOptions = computed(() => [...new Set(moduleRows.value.map((row) => row.status || TASK_STATUS.IN_PROGRESS))].map((code) => ({ value: code, label: statusLabel(code) })));
 
@@ -69,17 +49,24 @@ const filteredRows = computed(() => {
 });
 
 const hasActiveFilters = computed(() => Boolean(keyword.value.trim() || selectedStatus.value));
+const first = computed(() => (page.value - 1) * rows.value);
+
+function changePage(event) {
+    page.value = Math.floor(event.first / event.rows) + 1;
+    rows.value = event.rows;
+}
+
+watch([keyword, selectedStatus], () => {
+    page.value = 1;
+});
 
 function resetFilters() {
-    keyword.value = '';
-    selectedStatus.value = null;
+    resetQueryState();
 }
 
 watch(
     () => route.path,
     (path) => {
-        keyword.value = '';
-        selectedStatus.value = null;
         recordDialog.value = false;
         detailDialog.value = false;
         selectedRow.value = null;
@@ -139,6 +126,8 @@ async function saveRecord() {
             <Button label="신규 등록" icon="pi pi-plus" @click="openRecordDialog" />
         </div>
 
+        <Message v-if="modulePending" severity="info" :closable="false" class="mb-6"> 이 모듈의 전용 화면은 준비 중입니다. 여기서 등록한 업무는 목록에 남지만, 모듈이 완성되면 전용 화면으로 이어집니다. </Message>
+
         <div class="card">
             <div class="flex flex-col gap-3 mb-6 lg:flex-row lg:items-center lg:justify-between">
                 <div class="flex flex-col gap-3 sm:flex-row">
@@ -158,14 +147,16 @@ async function saveRecord() {
                 :value="filteredRows"
                 dataKey="id"
                 responsiveLayout="scroll"
-                tableStyle="min-width: 52rem"
+                tableClass="min-w-0 lg:min-w-[52rem]"
                 :tableProps="{ 'aria-label': `${moduleDefinition.title} 목록` }"
                 paginator
-                :rows="20"
+                :rows="rows"
+                :first="first"
                 :rowsPerPageOptions="[20, 50, 100]"
                 size="small"
                 stripedRows
                 scrollable
+                @page="changePage"
             >
                 <template #empty>
                     <div class="list-empty">
@@ -176,12 +167,12 @@ async function saveRecord() {
                 </template>
                 <Column field="id" header="문서번호" sortable>
                     <template #body="slotProps"
-                        ><span class="font-medium">{{ slotProps.data.id }}</span></template
+                        ><span class="font-medium">{{ slotProps.data.id }}</span> <span class="block text-sm lg:hidden text-muted-color">{{ slotProps.data.subject }} · {{ slotProps.data.owner }}</span></template
                     >
                 </Column>
-                <Column field="subject" header="업무명" sortable style="min-width: 18rem" />
-                <Column field="owner" header="담당자" sortable />
-                <Column field="updatedAt" header="최종 수정" sortable />
+                <Column field="subject" header="업무명" sortable style="min-width: 18rem" headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell" />
+                <Column field="owner" header="담당자" sortable headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell" />
+                <Column field="updatedAt" header="최종 수정" sortable headerClass="hidden lg:table-cell" bodyClass="hidden lg:table-cell" />
                 <Column field="status" header="상태" sortable>
                     <template #body="slotProps"><Tag :value="statusLabel(slotProps.data.status)" :severity="statusSeverity(slotProps.data.status)" /></template>
                 </Column>

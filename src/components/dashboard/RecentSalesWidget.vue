@@ -45,7 +45,7 @@ function openOrders() {
         >
             <Column field="number" header="수주번호" :sortable="true" style="min-width: 10rem">
                 <template #body="slotProps">
-                    <span class="font-medium text-primary">{{ slotProps.data.number }}</span>
+                    <span class="font-medium">{{ slotProps.data.number }}</span>
                 </template>
             </Column>
             <Column field="customer" header="거래처" :sortable="true" style="min-width: 8rem"></Column>

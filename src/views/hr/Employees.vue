@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useEnterpriseRuntimeStore } from '@/stores/enterpriseRuntime';
 import { useHrReferenceStore } from '@/stores/hrReference';
 import { createHrRepository } from '@/repositories/hr/hrRepository';
+import { numberParam, useQueryState } from '@/composables/useQueryState';
 import ReferenceCatalog from './ReferenceCatalog.vue';
 import EmployeeAccount from './EmployeeAccount.vue';
 import EmployeeEmployment from './EmployeeEmployment.vue';
@@ -45,9 +46,9 @@ const runtime = useEnterpriseRuntimeStore();
 const { directory, loading, saving, error } = hr;
 const moduleState = computed(() => directory.value?.moduleState || 'enabled');
 const company = computed(() => (runtime.context.value?.mode === 'active' ? runtime.context.value.companyId : null));
-const search = ref('');
-const selectedId = ref(null);
+const { search, employee: selectedId, page: queryPage } = useQueryState({ search: { fallback: '' }, employee: { fallback: null }, page: numberParam(1) });
 const detailVersion = ref(0);
+let initialRestore = true;
 const selected = computed(() => directory.value?.employees.find((item) => item.id === selectedId.value));
 const dialog = ref(null);
 const draft = ref({});
@@ -90,19 +91,27 @@ function correct() {
     dialog.value = 'correct';
 }
 function load(page = 1) {
-    if (company.value) return hr.load(company.value, search.value.trim(), page);
+    if (!company.value) return;
+    queryPage.value = page;
+    return hr.load(company.value, search.value.trim(), page);
 }
 watch(
     () => [auth.user.value?.id, company.value],
     ([identity, id]) => {
+        // The first run restores a shared link; later company or identity switches start from a clean list.
+        const restoring = initialRestore;
+        initialRestore = false;
         hr.reset();
         references.reset();
         close();
-        selectedId.value = null;
         detailVersion.value += 1;
-        search.value = '';
+        if (!restoring) {
+            selectedId.value = null;
+            search.value = '';
+            queryPage.value = 1;
+        }
         if (identity && id) {
-            hr.load(id, '', 1);
+            hr.load(id, restoring ? search.value.trim() : '', restoring ? queryPage.value : 1);
             references.load(id);
         }
     },

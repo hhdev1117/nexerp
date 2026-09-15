@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { mount, flushPromises } from '@vue/test-utils';
+import PrimeVue from 'primevue/config';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 import EnterpriseAccess from './EnterpriseAccess.vue';
@@ -17,15 +18,30 @@ vi.mock('vue-router', () => ({ onBeforeRouteLeave: vi.fn() }));
 
 describe('enterprise access management', () => {
     beforeEach(() => {
+        Object.defineProperty(window, 'matchMedia', {
+            configurable: true,
+            value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+        });
+        // PrimeVue TabList observes its scroll container, which jsdom does not implement.
+        window.ResizeObserver = class {
+            observe() {}
+            unobserve() {}
+            disconnect() {}
+        };
         repo.load.mockReset().mockResolvedValue({ policy: null, revision: 0 });
         repo.save.mockReset();
     });
+    const selectCompany = async (wrapper, value) => {
+        const select = wrapper.findAllComponents({ name: 'Select' }).find((candidate) => candidate.props('inputId') === 'access-company');
+        expect(select, 'Select#access-company').toBeTruthy();
+        select.vm.$emit('update:modelValue', value);
+        await flushPromises();
+    };
     it('requires explicit company selection and exposes four workflows', async () => {
-        const wrapper = mount(EnterpriseAccess);
+        const wrapper = mount(EnterpriseAccess, { global: { plugins: [PrimeVue] } });
         expect(repo.load).not.toHaveBeenCalled();
         await flushPromises();
-        await wrapper.get('#access-company').setValue('company-a');
-        await flushPromises();
+        await selectCompany(wrapper, 'company-a');
         expect(repo.load).toHaveBeenCalledWith('company-a');
         expect(wrapper.findAll('[role="tab"]')).toHaveLength(4);
         expect(wrapper.text()).toContain('레벨 5');
@@ -33,20 +49,18 @@ describe('enterprise access management', () => {
     });
     it('keeps load failure distinct from a new policy and offers retry', async () => {
         repo.load.mockRejectedValue(new Error('불러오기 실패'));
-        const wrapper = mount(EnterpriseAccess);
+        const wrapper = mount(EnterpriseAccess, { global: { plugins: [PrimeVue] } });
         await flushPromises();
-        await wrapper.get('#access-company').setValue('company-a');
-        await flushPromises();
+        await selectCompany(wrapper, 'company-a');
         expect(wrapper.get('[role="alert"]').text()).toContain('불러오기 실패');
         expect(wrapper.find('[data-testid="policy-editor"]').exists()).toBe(false);
         expect(wrapper.text()).toContain('다시 불러오기');
     });
     it('saves a reviewed policy with a reason and the loaded revision', async () => {
         repo.save.mockImplementation(async (_company, policy) => ({ policy: JSON.parse(JSON.stringify(policy)), revision: 1 }));
-        const wrapper = mount(EnterpriseAccess);
+        const wrapper = mount(EnterpriseAccess, { global: { plugins: [PrimeVue] } });
         await flushPromises();
-        await wrapper.get('#access-company').setValue('company-a');
-        await flushPromises();
+        await selectCompany(wrapper, 'company-a');
         await wrapper.get('#level-name').setValue('일반 구성원');
         await wrapper
             .findAll('button')

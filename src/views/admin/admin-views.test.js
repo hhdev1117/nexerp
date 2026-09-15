@@ -142,7 +142,7 @@ describe('administrator account screen', () => {
         expect(accountsSource).toContain("severity: 'error'");
         expect(accountsSource).not.toContain('error.message');
         expect(accountsSource).toContain('responsiveLayout="scroll"');
-        expect(accountsSource).toContain('min-width: 0');
+        expect(accountsSource).toContain('min-w-0');
     });
 
     it('provides explicit password-reset and ERP lock actions without allowing self-service', () => {
@@ -247,8 +247,8 @@ describe('administrator menu-permission screen', () => {
         expect(permissionsSource).toContain('표시할 메뉴 권한이 없습니다.');
         expect(permissionsSource).toContain('메뉴 권한 다시 불러오기');
         expect(permissionsSource).toContain('저장되지 않은 변경 사항이 있습니다.');
-        expect(permissionsSource).toContain('overflow-x: auto');
-        expect(permissionsSource).toContain('min-width: 0');
+        expect(permissionsSource).toContain('overflow-x-auto');
+        expect(permissionsSource).toContain('min-w-0');
     });
 });
 
@@ -283,11 +283,11 @@ describe('administrator infrastructure usage screen', () => {
         expect(infrastructureSource).toContain('연결 정보가 준비되면 사용량과 운영 상태가 여기에 표시됩니다.');
     });
 
-    it('uses full-width provider sections and responsive metric grids without nested cards', () => {
-        expect(infrastructureSource).toContain('class="provider-section"');
-        expect(infrastructureSource).toContain('class="metric-grid"');
-        expect(infrastructureSource).toContain('grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr))');
-        expect(infrastructureSource).toContain('min-width: 0');
-        expect(infrastructureSource).not.toContain('class="card');
+    it('uses full-width provider cards and responsive metric grids without nested cards', () => {
+        expect(infrastructureSource).toContain('class="min-w-0 card" aria-labelledby="supabase-heading"');
+        expect(infrastructureSource).toContain('class="min-w-0 card" aria-labelledby="cloudflare-heading"');
+        expect(infrastructureSource).toContain('[grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))]');
+        expect(infrastructureSource).toContain('min-w-0');
+        expect(infrastructureSource).not.toContain('metric-tile card');
     });
 });

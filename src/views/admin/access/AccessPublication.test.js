@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { mount, flushPromises } from '@vue/test-utils';
+import PrimeVue from 'primevue/config';
 import { beforeEach, expect, it, vi } from 'vitest';
 import AccessPublication from './AccessPublication.vue';
 const repository = vi.hoisted(() => ({ loadPublication: vi.fn(), publish: vi.fn(), revert: vi.fn() }));
@@ -11,7 +12,7 @@ beforeEach(() => {
     repository.revert.mockResolvedValue({ active: true, revision: 3, draftRevision: 2 });
 });
 const setup = async (props = {}) => {
-    const wrapper = mount(AccessPublication, { props: { companyId: 'a', draftRevision: 4, dirty: false, ...props } });
+    const wrapper = mount(AccessPublication, { props: { companyId: 'a', draftRevision: 4, dirty: false, ...props }, global: { plugins: [PrimeVue] } });
     await flushPromises();
     return wrapper;
 };
@@ -67,7 +68,7 @@ it('discards late company load and clears review on draft changes', async () => 
                 resolve = done;
             })
     );
-    const wrapper = mount(AccessPublication, { props: { companyId: 'a', draftRevision: 4, dirty: false } });
+    const wrapper = mount(AccessPublication, { props: { companyId: 'a', draftRevision: 4, dirty: false }, global: { plugins: [PrimeVue] } });
     await wrapper.setProps({ companyId: 'b' });
     await flushPromises();
     resolve({ active: true, revision: 99, draftRevision: 99 });

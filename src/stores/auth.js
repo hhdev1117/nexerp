@@ -1,8 +1,9 @@
 import { computed, ref } from 'vue';
+import { normalizeUiPreferences } from '@/domain/uiPreferences';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { readSupabaseConfig } from '@/lib/supabase/config';
 
-const PROFILE_FIELDS = 'id, email, display_name, department, role, is_active';
+const PROFILE_FIELDS = 'id, email, display_name, department, role, is_active, ui_preferences';
 const NOT_CONFIGURED_MESSAGE = 'Supabase 연결 정보가 설정되지 않았습니다.';
 const INACTIVE_PROFILE_MESSAGE = '비활성화된 계정입니다. 관리자에게 문의해 주세요.';
 const MISSING_PROFILE_MESSAGE = '계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.';
@@ -15,9 +16,17 @@ const MFA_CODE_MESSAGE = '인증 앱의 6자리 코드를 입력해 주세요.';
 const MFA_LAST_FACTOR_MESSAGE = '마지막 인증 앱은 삭제할 수 없습니다.';
 const MFA_IDENTITY_MESSAGE = '로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요.';
 const MFA_MUTATION_MESSAGE = '인증 앱 변경을 처리 중입니다. 잠시 후 다시 시도해 주세요.';
+const INVALID_UI_PREFERENCES_MESSAGE = 'UI 설정값을 확인해 주세요.';
+const UI_PREFERENCES_SAVE_MESSAGE = 'UI 설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 const INVALID_SESSION_NAMES = new Set(['AuthSessionMissingError', 'AuthInvalidJwtError', 'AuthInvalidTokenResponseError']);
 const INVALID_SESSION_CODES = new Set(['session_not_found', 'bad_jwt', 'invalid_jwt']);
 const TOTP_CODE_PATTERN = /^\d{6}$/;
+
+const isPlainObject = (value) => {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+};
 
 const isInvalidSessionError = (source) => INVALID_SESSION_NAMES.has(source?.name) || INVALID_SESSION_CODES.has(source?.code) || source?.status === 401 || source?.status === 403;
 
@@ -77,6 +86,8 @@ export function createAuthStore({ client, configured, locks = typeof window === 
     let initializePromise = null;
     let subscription = null;
     let identityVersion = 0;
+    let accountEpoch = 0;
+    let activeAccountId = null;
     let pendingOperations = 0;
     const mfaLoadingTickets = new Set();
     let latestAuthUpdate = Promise.resolve();
@@ -89,6 +100,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
     let mfaOperationVersion = 0;
     let mfaMutation = null;
     let nextTotpLabelNumber = 0;
+    const uiPreferencesSaveQueues = new Map();
     const isRejectedSession = (nextSession) => {
         if (!nextSession) return false;
         const key = authSessionKey(nextSession);
@@ -119,7 +131,15 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         updateLoading();
     };
 
+    const trackActiveAccount = (nextUserId) => {
+        const normalizedUserId = typeof nextUserId === 'string' && nextUserId ? nextUserId : null;
+        if (activeAccountId === normalizedUserId) return;
+        activeAccountId = normalizedUserId;
+        accountEpoch += 1;
+    };
+
     const clearIdentity = () => {
+        trackActiveAccount(null);
         identityVersion += 1;
         latestAuthUpdate = Promise.resolve();
         session.value = null;
@@ -135,6 +155,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         const previousSession = session.value;
         const previousUser = user.value;
         const nextUser = nextSession?.user || null;
+        trackActiveAccount(nextUser?.id);
         const identityChanged = previousUser?.id !== nextUser?.id || authSessionKey(previousSession) !== authSessionKey(nextSession);
         if (identityChanged) clearMfaState();
         const keepRecoverableFailure = Boolean(nextUser && user.value?.id === nextUser.id && profileLoadFailed.value);
@@ -738,6 +759,66 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         }
     };
 
+    const saveUiPreferences = async (preferences) => {
+        const fail = (message, operation = null) => {
+            if (!operation || isCurrentOperation(operation)) error.value = message;
+            throw rejection(message);
+        };
+        const isSameAccountOperation = (operation) => accountEpoch === operation.accountEpoch && user.value?.id === operation.userId && session.value?.user?.id === operation.userId;
+        const isCurrentOperation = (operation) => isSameAccountOperation(operation) && profile.value?.id === operation.userId && profile.value.is_active;
+
+        if (!isConfigured) fail(NOT_CONFIGURED_MESSAGE);
+        if (!isPlainObject(preferences)) fail(INVALID_UI_PREFERENCES_MESSAGE);
+        const canonicalPreferences = normalizeUiPreferences(preferences);
+
+        const currentUserId = user.value?.id;
+        if (!session.value || !currentUserId || session.value.user?.id !== currentUserId) {
+            fail(MFA_IDENTITY_MESSAGE);
+        }
+        if (!profile.value || profile.value.id !== currentUserId) fail(MISSING_PROFILE_MESSAGE);
+        if (!profile.value.is_active) fail(INACTIVE_PROFILE_MESSAGE);
+
+        const operation = {
+            accountEpoch,
+            userId: currentUserId
+        };
+        const previous = uiPreferencesSaveQueues.get(currentUserId) || Promise.resolve();
+        const pending = previous
+            .catch(() => undefined)
+            .then(async () => {
+                await awaitIdentitySettled();
+                if (!isSameAccountOperation(operation)) return null;
+                if (!isCurrentOperation(operation)) fail(MFA_IDENTITY_MESSAGE, operation);
+                error.value = null;
+
+                let result;
+                try {
+                    result = await client.from('profiles').update({ ui_preferences: canonicalPreferences }).eq('id', currentUserId).select('ui_preferences').maybeSingle();
+                } catch {
+                    if (!isSameAccountOperation(operation)) return null;
+                    fail(UI_PREFERENCES_SAVE_MESSAGE, operation);
+                }
+
+                if (!isSameAccountOperation(operation)) return null;
+                if (result?.error) fail(UI_PREFERENCES_SAVE_MESSAGE, operation);
+                const savedValue = result?.data?.ui_preferences;
+                if (!isPlainObject(savedValue)) fail(UI_PREFERENCES_SAVE_MESSAGE, operation);
+                const savedPreferences = normalizeUiPreferences(savedValue);
+
+                if (isCurrentOperation(operation)) {
+                    profile.value = { ...profile.value, ui_preferences: savedPreferences };
+                    error.value = null;
+                }
+                return savedPreferences;
+            });
+        const settled = pending.catch(() => undefined);
+        uiPreferencesSaveQueues.set(currentUserId, settled);
+        settled.then(() => {
+            if (uiPreferencesSaveQueues.get(currentUserId) === settled) uiPreferencesSaveQueues.delete(currentUserId);
+        });
+        return await pending;
+    };
+
     const signOut = async () => {
         if (!isConfigured) {
             error.value = NOT_CONFIGURED_MESSAGE;
@@ -822,6 +903,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         unenrollTotp,
         signIn,
         changePassword,
+        saveUiPreferences,
         signOut,
         retryProfile,
         hasRole

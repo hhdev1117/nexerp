@@ -4,6 +4,7 @@ import PrimeVue from 'primevue/config';
 import ConfirmationService from 'primevue/confirmationservice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { APPROVAL_STATUS } from '@/data/status';
 import { resetErpRepository } from '@/repositories/erp';
 import { useErpStore } from '@/stores/erp';
@@ -21,7 +22,10 @@ vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: toastAdd }) }));
 const wrappers = [];
 
 const mountApprovals = async () => {
-    const wrapper = mount(Approvals, { attachTo: document.body, global: { plugins: [PrimeVue, ConfirmationService] } });
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/approvals', component: { template: '<div />' } }] });
+    await router.push('/approvals');
+    await router.isReady();
+    const wrapper = mount(Approvals, { attachTo: document.body, global: { plugins: [PrimeVue, ConfirmationService, router] } });
     wrappers.push(wrapper);
     await flushPromises();
     return wrapper;

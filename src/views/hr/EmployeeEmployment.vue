@@ -27,6 +27,14 @@ const latest = computed(() => employments.value.filter((row) => !row.cancelled).
 const referenceRows = (kind) => preparation.value?.references.filter((row) => row.kind === kind) || [];
 const referenceName = (kind, code) => referenceRows(kind).find((row) => row.code === code)?.name || code || '미지정';
 const siteName = (id) => preparation.value?.sites.find((row) => row.id === id)?.name || (id ? '비활성 사업장' : '미지정');
+const referenceOptions = (kind) => [{ value: '', label: '선택' }, ...referenceRows(kind).map((row) => ({ value: row.code, label: row.name + ' (' + row.code + ')' }))];
+const siteOptions = computed(() => [{ value: '', label: '미지정' }, ...(preparation.value?.sites || []).map((row) => ({ value: row.id, label: row.name }))]);
+const candidateOptions = computed(() => [{ value: '', label: '선택' }, ...(preparation.value?.accountCandidates || []).map((row) => ({ value: row.id, label: row.name }))]);
+const accountModeOptions = [
+    { value: 'keep', label: '기존 연결 유지' },
+    { value: 'unlink', label: '연결 해제' },
+    { value: 'replace', label: '다른 계정 연결' }
+];
 const accountName = computed(() =>
     draft.value.accountMode === 'replace'
         ? preparation.value?.accountCandidates.find((row) => row.id === draft.value.profileId)?.name || '선택 필요'
@@ -193,193 +201,109 @@ watch(() => [props.companyId, props.employeeId, auth.user.value?.id], load, { im
 watch(draft, () => (review.value = null), { deep: true });
 onBeforeUnmount(() => ++sequence);
 </script>
-
 <template>
-    <section class="employment" aria-labelledby="employment-title">
-        <div class="employment-heading">
-            <h3 id="employment-title" class="font-semibold">고용 이력</h3>
-            <Button v-if="preparation?.eligible && preparation.permissions.create" data-testid="rehire-open" label="재입사 등록" :disabled="loading || saving" @click="openRehire" />
+    <section class="mt-8" aria-labelledby="employment-title">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h3 id="employment-title" class="text-lg font-semibold text-surface-900 dark:text-surface-0">고용 이력</h3>
+            <Button v-if="preparation?.eligible && preparation.permissions.create" data-testid="rehire-open" label="재입사 등록" icon="pi pi-user-plus" size="small" :disabled="loading || saving" @click="openRehire" />
         </div>
-        <p v-if="loading" role="status">고용 이력을 불러오는 중입니다.</p>
-        <p v-if="error" role="alert" class="employment-error">{{ error }}</p>
-        <p v-if="notice" role="status">{{ notice }}</p>
-        <p v-if="history && !history.permissions.create && !history.permissions.cancel" data-testid="employment-readonly" class="employment-note">고용 이력은 조회만 할 수 있습니다.</p>
-        <ol v-if="history" class="cycle-list">
-            <li v-for="row in employments" :key="row.id" :data-testid="`employment-cycle-${row.sequenceNo}`" class="cycle-card">
-                <div class="cycle-title">
+
+        <p v-if="loading" role="status" class="text-muted-color">고용 이력을 불러오는 중입니다.</p>
+        <Message v-if="error" severity="error" :closable="false" class="mb-4" role="alert">{{ error }}</Message>
+        <Message v-if="notice" severity="success" :closable="false" class="mb-4" role="status">{{ notice }}</Message>
+        <p v-if="history && !history.permissions.create && !history.permissions.cancel" data-testid="employment-readonly" class="mb-4 text-muted-color">고용 이력은 조회만 할 수 있습니다.</p>
+
+        <ol v-if="history" class="grid gap-3 p-0 m-0 list-none">
+            <li v-for="row in employments" :key="row.id" :data-testid="'employment-cycle-' + row.sequenceNo" class="p-4 border rounded-border border-surface-200 dark:border-surface-700">
+                <div class="flex flex-wrap items-center justify-between gap-3">
                     <strong>{{ row.sequenceNo }}회차 · {{ labels[row.status] }}</strong>
-                    <Button v-if="row.status === 'planned' && history.permissions.cancel" data-testid="employment-cancel-open" label="예정 회차 취소" severity="secondary" :disabled="saving" @click="openCancel(row)" />
+                    <Button
+                        v-if="row.status === 'planned' && history.permissions.cancel"
+                        data-testid="employment-cancel-open"
+                        label="예정 회차 취소"
+                        icon="pi pi-undo"
+                        size="small"
+                        severity="secondary"
+                        outlined
+                        :disabled="saving"
+                        @click="openCancel(row)"
+                    />
                 </div>
-                <p>
+                <p class="mt-2 mb-0">
                     {{ row.hireDate }} 입사<span v-if="row.endDate"> · {{ row.endDate }} 퇴사</span>
                 </p>
-                <p>{{ siteName(row.siteId) }} / {{ referenceName('department', row.department) }} / {{ referenceName('grade', row.grade) }} / {{ referenceName('position', row.position) }}</p>
-                <p v-if="row.cancelled">취소됨 · {{ row.cancellationReason }}</p>
-                <ul v-if="row.actions.length" class="action-list">
+                <p class="mt-1 mb-0 text-muted-color">{{ siteName(row.siteId) }} / {{ referenceName('department', row.department) }} / {{ referenceName('grade', row.grade) }} / {{ referenceName('position', row.position) }}</p>
+                <p v-if="row.cancelled" class="mt-1 mb-0">취소됨 · {{ row.cancellationReason }}</p>
+                <ul v-if="row.actions.length" class="mt-3 mb-0 pl-5 text-muted-color">
                     <li v-for="action in row.actions" :key="action.id">{{ action.effectiveDate }} · {{ action.type === 'terminate' ? '퇴사' : '소속 변경' }}<span v-if="action.cancelled"> · 취소됨</span></li>
                 </ul>
             </li>
         </ol>
 
-        <form v-if="formOpen" class="rehire-form" @submit.prevent="prepareReview">
-            <h4 class="font-semibold">재입사 정보</h4>
-            <p class="employment-note">이전 퇴사일 {{ latest?.endDate }} · 가장 빠른 재입사일 {{ preparation.earliestHireDate }}</p>
-            <div class="rehire-grid">
-                <label>재입사일<input id="rehire-date" v-model="draft.hireDate" type="date" :min="preparation.earliestHireDate" /></label>
-                <label
-                    >주 사업장<select id="rehire-site" v-model="draft.siteId">
-                        <option value="">미지정</option>
-                        <option v-for="row in preparation.sites" :key="row.id" :value="row.id">{{ row.name }}</option>
-                    </select></label
-                >
-                <label
-                    >부서<select id="rehire-department" v-model="draft.department">
-                        <option value="">선택</option>
-                        <option v-for="row in referenceRows('department')" :key="row.id" :value="row.code">{{ row.name }} ({{ row.code }})</option>
-                    </select></label
-                >
-                <label
-                    >직급<select id="rehire-grade" v-model="draft.grade">
-                        <option value="">선택</option>
-                        <option v-for="row in referenceRows('grade')" :key="row.id" :value="row.code">{{ row.name }} ({{ row.code }})</option>
-                    </select></label
-                >
-                <label
-                    >직책<select id="rehire-position" v-model="draft.position">
-                        <option value="">선택</option>
-                        <option v-for="row in referenceRows('position')" :key="row.id" :value="row.code">{{ row.name }} ({{ row.code }})</option>
-                    </select></label
-                >
-                <label
-                    >로그인 계정 처리<select id="rehire-account-mode" v-model="draft.accountMode">
-                        <option value="keep">기존 연결 유지</option>
-                        <option value="unlink">연결 해제</option>
-                        <option value="replace">다른 계정 연결</option>
-                    </select></label
-                >
-                <label v-if="draft.accountMode === 'replace'" class="wide"
-                    >연결할 계정<select id="rehire-profile" v-model="draft.profileId">
-                        <option value="">선택</option>
-                        <option v-for="row in preparation.accountCandidates" :key="row.id" :value="row.id">{{ row.name }}</option>
-                    </select></label
-                >
-                <label class="wide">변경 사유<textarea id="rehire-reason" v-model="draft.reason" rows="3" maxlength="2000" /></label>
+        <form v-if="formOpen" class="p-5 mt-4 rounded-border bg-surface-50 dark:bg-surface-800" novalidate @submit.prevent="prepareReview">
+            <h4 class="mb-2 text-base font-semibold">재입사 정보</h4>
+            <p class="mb-4 text-muted-color">이전 퇴사일 {{ latest?.endDate }} · 가장 빠른 재입사일 {{ preparation.earliestHireDate }}</p>
+            <div class="grid grid-cols-12 gap-4">
+                <div class="flex flex-col col-span-12 gap-2 md:col-span-6">
+                    <label for="rehire-date" class="font-medium">재입사일</label>
+                    <InputText id="rehire-date" v-model="draft.hireDate" type="date" :min="preparation.earliestHireDate" fluid />
+                </div>
+                <div class="flex flex-col col-span-12 gap-2 md:col-span-6">
+                    <label id="rehire-site-label" for="rehire-site" class="font-medium">주 사업장</label>
+                    <Select inputId="rehire-site" v-model="draft.siteId" :options="siteOptions" optionLabel="label" optionValue="value" ariaLabelledby="rehire-site-label" fluid />
+                </div>
+                <div class="flex flex-col col-span-12 gap-2 md:col-span-6">
+                    <label id="rehire-department-label" for="rehire-department" class="font-medium">부서</label>
+                    <Select inputId="rehire-department" v-model="draft.department" :options="referenceOptions('department')" optionLabel="label" optionValue="value" ariaLabelledby="rehire-department-label" fluid />
+                </div>
+                <div class="flex flex-col col-span-12 gap-2 md:col-span-6">
+                    <label id="rehire-grade-label" for="rehire-grade" class="font-medium">직급</label>
+                    <Select inputId="rehire-grade" v-model="draft.grade" :options="referenceOptions('grade')" optionLabel="label" optionValue="value" ariaLabelledby="rehire-grade-label" fluid />
+                </div>
+                <div class="flex flex-col col-span-12 gap-2 md:col-span-6">
+                    <label id="rehire-position-label" for="rehire-position" class="font-medium">직책</label>
+                    <Select inputId="rehire-position" v-model="draft.position" :options="referenceOptions('position')" optionLabel="label" optionValue="value" ariaLabelledby="rehire-position-label" fluid />
+                </div>
+                <div class="flex flex-col col-span-12 gap-2 md:col-span-6">
+                    <label id="rehire-account-mode-label" for="rehire-account-mode" class="font-medium">로그인 계정 처리</label>
+                    <Select inputId="rehire-account-mode" v-model="draft.accountMode" :options="accountModeOptions" optionLabel="label" optionValue="value" ariaLabelledby="rehire-account-mode-label" fluid />
+                </div>
+                <div v-if="draft.accountMode === 'replace'" class="flex flex-col col-span-12 gap-2">
+                    <label id="rehire-profile-label" for="rehire-profile" class="font-medium">연결할 계정</label>
+                    <Select inputId="rehire-profile" v-model="draft.profileId" :options="candidateOptions" optionLabel="label" optionValue="value" ariaLabelledby="rehire-profile-label" fluid />
+                </div>
+                <div class="flex flex-col col-span-12 gap-2">
+                    <label for="rehire-reason" class="font-medium">변경 사유</label>
+                    <Textarea id="rehire-reason" v-model="draft.reason" rows="3" maxlength="2000" fluid />
+                </div>
             </div>
-            <div class="employment-actions">
-                <Button data-testid="rehire-review" label="변경 내용 검토" type="button" :disabled="saving" @click="prepareReview" /><Button label="닫기" type="button" severity="secondary" :disabled="saving" @click="clearEditor" />
+            <div class="flex justify-end gap-2 mt-4">
+                <Button type="button" label="닫기" severity="secondary" text :disabled="saving" @click="clearEditor" />
+                <Button data-testid="rehire-review" type="button" label="변경 내용 검토" icon="pi pi-eye" :disabled="saving" @click="prepareReview" />
             </div>
         </form>
 
-        <section v-if="review" data-testid="rehire-review-panel" class="review-panel">
-            <h4 class="font-semibold">재입사 등록 확인</h4>
-            <p>{{ review.beforeEndDate }} 퇴사 → {{ review.hireDate }} 재입사</p>
-            <p>{{ siteName(review.siteId) }} / {{ referenceName('department', review.department) }} / {{ referenceName('grade', review.grade) }} / {{ referenceName('position', review.position) }}</p>
-            <p>로그인 계정: {{ review.accountName }} · {{ levelText(review.preview) }}</p>
-            <p>사유: {{ review.reason }}</p>
-            <Button data-testid="rehire-save" label="확인하고 등록" :disabled="saving" @click="saveRehire" />
+        <section v-if="review" data-testid="rehire-review-panel" class="p-5 mt-4 rounded-border bg-surface-50 dark:bg-surface-800">
+            <h4 class="mb-3 text-base font-semibold">재입사 등록 확인</h4>
+            <p class="m-0">{{ review.beforeEndDate }} 퇴사 → {{ review.hireDate }} 재입사</p>
+            <p class="mt-1 mb-0">{{ siteName(review.siteId) }} / {{ referenceName('department', review.department) }} / {{ referenceName('grade', review.grade) }} / {{ referenceName('position', review.position) }}</p>
+            <p class="mt-1 mb-0">로그인 계정: {{ review.accountName }} · {{ levelText(review.preview) }}</p>
+            <p class="mt-1 mb-4 text-muted-color break-words">사유: {{ review.reason }}</p>
+            <Button data-testid="rehire-save" label="확인하고 등록" icon="pi pi-check" :disabled="saving" @click="saveRehire" />
         </section>
 
-        <section v-if="cancelTarget" class="review-panel">
-            <h4 class="font-semibold">재입사 예정 취소</h4>
-            <p>{{ cancelTarget.sequenceNo }}회차 · {{ cancelTarget.hireDate }} 입사 예정</p>
-            <label>취소 사유<textarea id="employment-cancel-reason" v-model="cancelReason" rows="2" maxlength="2000" /></label>
-            <label class="confirm"><input id="employment-cancel-confirm" v-model="cancelConfirmed" type="checkbox" /> 계정 연결과 예정 권한에 미치는 영향을 확인했습니다.</label>
-            <Button data-testid="employment-cancel-save" label="확인하고 취소" severity="danger" :disabled="saving" @click="cancelEmployment" />
+        <section v-if="cancelTarget" class="p-5 mt-4 rounded-border bg-surface-50 dark:bg-surface-800">
+            <h4 class="mb-3 text-base font-semibold">재입사 예정 취소</h4>
+            <p class="mt-0 mb-4">{{ cancelTarget.sequenceNo }}회차 · {{ cancelTarget.hireDate }} 입사 예정</p>
+            <div class="flex flex-col gap-2 mb-4">
+                <label for="employment-cancel-reason" class="font-medium">취소 사유</label>
+                <Textarea id="employment-cancel-reason" v-model="cancelReason" rows="2" maxlength="2000" fluid />
+            </div>
+            <div class="flex items-start gap-3 mb-4">
+                <Checkbox inputId="employment-cancel-confirm" v-model="cancelConfirmed" binary />
+                <label for="employment-cancel-confirm" class="leading-relaxed">계정 연결과 예정 권한에 미치는 영향을 확인했습니다.</label>
+            </div>
+            <Button data-testid="employment-cancel-save" label="확인하고 취소" icon="pi pi-check" severity="danger" :disabled="saving" @click="cancelEmployment" />
         </section>
     </section>
 </template>
-
-<style scoped>
-.employment {
-    display: grid;
-    gap: 1rem;
-    margin: 1.5rem 0;
-}
-.employment-heading,
-.cycle-title,
-.employment-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-}
-.cycle-list {
-    display: grid;
-    gap: 0.75rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-.cycle-card {
-    padding: 1rem;
-    border: 1px solid var(--surface-border);
-    border-radius: 12px;
-}
-.cycle-card p {
-    margin: 0.4rem 0;
-}
-.action-list {
-    margin: 0.75rem 0 0;
-    padding-left: 1.25rem;
-    color: var(--text-color-secondary);
-}
-.rehire-form,
-.review-panel {
-    display: grid;
-    gap: 1rem;
-    padding: 1.25rem;
-    border-radius: 12px;
-    background: var(--surface-100, #f1f5f9);
-}
-.rehire-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1rem;
-}
-.rehire-grid label,
-.review-panel label {
-    display: grid;
-    gap: 0.4rem;
-}
-.rehire-grid .wide {
-    grid-column: 1 / -1;
-}
-.employment :is(select, input[type='date'], textarea) {
-    width: 100%;
-    min-width: 0;
-    padding: 0.65rem;
-    border: 1px solid var(--surface-border);
-    border-radius: 8px;
-    background: var(--surface-card);
-    color: var(--text-color);
-}
-.employment-note {
-    color: var(--text-color-secondary);
-    line-height: 1.7;
-}
-.employment-error {
-    color: var(--red-600, #b91c1c);
-    line-height: 1.7;
-}
-.confirm {
-    display: flex !important;
-    grid-template-columns: auto 1fr;
-    align-items: start;
-}
-.confirm input {
-    width: auto;
-    margin-top: 0.25rem;
-}
-@media (max-width: 640px) {
-    .rehire-grid {
-        grid-template-columns: 1fr;
-    }
-    .rehire-grid .wide {
-        grid-column: auto;
-    }
-    .employment :deep(button) {
-        min-height: 44px;
-    }
-}
-</style>

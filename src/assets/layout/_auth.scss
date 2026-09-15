@@ -1,0 +1,145 @@
+/* Shared shell for the standalone auth screens (login, MFA, access denied, setup). */
+.auth-shell {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 1.5rem;
+    background: var(--surface-ground);
+    color: var(--text-color);
+}
+
+.auth-panel {
+    width: min(100%, 30rem);
+    padding: 2rem;
+    border: 1px solid var(--surface-border);
+    border-top: 4px solid var(--primary-color);
+    border-radius: var(--content-border-radius);
+    background: var(--surface-card);
+    box-shadow: 0 12px 28px color-mix(in srgb, var(--p-surface-900) 9%, transparent);
+}
+
+.auth-panel-wide {
+    width: min(100%, 34rem);
+}
+
+.auth-panel-centered {
+    text-align: center;
+}
+
+.auth-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+}
+
+.auth-brand-mark {
+    width: 2.5rem;
+    height: 2.5rem;
+    display: grid;
+    place-items: center;
+    border-radius: var(--content-border-radius);
+    background: var(--primary-color);
+    color: var(--primary-contrast-color);
+}
+
+.auth-brand div {
+    display: grid;
+    gap: 0.1rem;
+}
+
+.auth-brand strong {
+    font-size: 1.05rem;
+}
+
+.auth-brand span:last-child {
+    color: var(--text-color-secondary);
+    font-size: 0.8rem;
+}
+
+.auth-heading {
+    margin-bottom: 1.5rem;
+}
+
+.auth-heading h1 {
+    margin: 0 0 0.4rem;
+    font-size: 1.75rem;
+}
+
+.auth-heading p {
+    margin: 0;
+    color: var(--text-color-secondary);
+}
+
+.auth-status-icon {
+    width: 3rem;
+    height: 3rem;
+    display: grid;
+    place-items: center;
+    margin: 0 auto 1rem;
+    border-radius: 50%;
+    background: var(--p-primary-50);
+    color: var(--primary-color);
+    font-size: 1.25rem;
+}
+
+.auth-status-icon-danger {
+    background: var(--p-red-50);
+    color: var(--p-red-600);
+}
+
+.auth-field {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.auth-field label {
+    font-weight: 600;
+}
+
+.auth-field small {
+    min-height: 1.1rem;
+    color: var(--p-red-600);
+}
+
+.auth-alert {
+    display: flex;
+    gap: 0.6rem;
+    padding: 0.75rem;
+    border: 1px solid var(--p-red-300);
+    border-radius: var(--content-border-radius);
+    background: var(--p-red-50);
+    color: var(--p-red-700);
+    text-align: left;
+}
+
+.auth-alert:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.auth-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+}
+
+@media (max-width: 575px) {
+    .auth-shell {
+        align-items: stretch;
+        padding: 0;
+        background: var(--surface-card);
+    }
+
+    .auth-panel,
+    .auth-panel-wide {
+        width: 100%;
+        min-height: 100vh;
+        padding: 2rem 1.25rem;
+        border: 0;
+        border-top: 4px solid var(--primary-color);
+        border-radius: 0;
+        box-shadow: none;
+    }
+}
