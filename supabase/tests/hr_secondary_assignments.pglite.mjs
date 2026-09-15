@@ -38,7 +38,7 @@ await db.query("update profiles set role='admin' where id=$1", [admin]);
 await db.query("insert into companies(id,code,name) values($1,'C1','Company'),($2,'C2','Other')", [company, otherCompany]);
 await db.query("insert into sites(id,company_id,code,name,site_type) values($1,$3,'MAIN','Main','head_office'),($2,$3,'OTHER','Other','branch')", [mainSite, otherSite, company]);
 
-const grants = ['menu', 'read', 'create', 'update'].map(action => ({ resource: 'hr.core', action, scope: 'company' }));
+const grants = [...['menu', 'read', 'create', 'update'].map(action => ({ resource: 'hr.core', action, scope: 'company' })), { resource: 'settings.enterprise-access', action: 'read', scope: 'company' }];
 const member = (id, name, extra = {}) => ({ id, name, grade: '', position: '', level: null, organizationId: null, siteId: null, active: true, from: null, to: null, ...extra });
 const policy = {
     levels: Array.from({ length: 5 }, (_, index) => ({ id: index + 1, name: `L${index + 1}`, permissions: index === 4 ? grants : index === 3 ? [{ resource: 'sales.orders', action: 'read', scope: 'company' }] : [] })),
@@ -55,12 +55,6 @@ await rpc('enterprise_save_access_policy', [company, JSON.stringify(policy), 0, 
 await rpc('enterprise_publish_access_policy', [company, 1, 0, 'setup']);
 
 const login = async (id = hr) => db.exec(`reset role;set request.jwt.claim.sub='${id}';set role authenticated`);
-const asOwner = async (query, args = []) => {
-    await db.exec('reset role');
-    const result = await db.query(query, args);
-    await login();
-    return result;
-};
 await login();
 for (const [kind, code, name, parentCode] of [
     ['department', 'HQ', '본부', null],
@@ -160,6 +154,16 @@ eq(explanation.allowed, true);
 eq(explanation.baseLevel, { level: 1, source: 'grade' });
 eq(explanation.sources[0].type, 'secondary');
 eq(explanation.sources[0].position, 'TEAM_LEAD');
+await login();
+const adminExplanation = await rpc('enterprise_explain_scoped_access', [company, employeeAccount, today, 'sales.orders', 'read', mainSite, 'SALES']);
+eq(adminExplanation.allowed, true);
+await login(admin);
+const deniedPolicy = { ...policy, overrides: [{ actorId: employeeAccount, resource: 'sales.orders', action: 'read', scope: 'company', effect: 'deny', from: null, to: null }] };
+await rpc('enterprise_save_access_policy', [company, JSON.stringify(deniedPolicy), 1, 'deny setup']);
+await rpc('enterprise_publish_access_policy', [company, 2, 1, 'deny setup']);
+await login(employeeAccount);
+eq(await rpc('enterprise_granted_for_target', [company, 'sales.orders', 'read', mainSite, 'SALES']), false);
+eq((await rpc('enterprise_explain_scoped_access', [company, employeeAccount, today, 'sales.orders', 'read', mainSite, 'SALES'])).denies.length, 1);
 await login();
 
 await db.exec('reset role');

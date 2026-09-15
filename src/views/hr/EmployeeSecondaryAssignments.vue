@@ -3,9 +3,9 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 import { createHrSecondaryAssignmentRepository } from '@/repositories/hr/hrSecondaryAssignmentRepository'
 import { useAuthStore } from '@/stores/auth'
 
-const props=defineProps({ companyId:{type:String,required:true}, employeeId:{type:String,required:true} })
+const props=defineProps({ companyId:{type:String,required:true}, employeeId:{type:String,required:true}, repository:{type:Object,default:null}, identity:{type:String,default:''} })
 const emit=defineEmits(['changed'])
-const repository=createHrSecondaryAssignmentRepository()
+const repository=props.repository||createHrSecondaryAssignmentRepository()
 const auth=useAuthStore()
 const history=ref(null), preparation=ref(null), loading=ref(false), error=ref(''), mode=ref(''), saving=ref(false)
 const draft=ref({employmentId:'',siteId:'',department:'',position:'',startDate:'',endDate:'',reason:''})
@@ -20,7 +20,7 @@ function positionLevel(code){return preparation.value?.mappings.find(x=>x.kind==
 async function create(){saving.value=true;try{history.value=await repository.create(props.companyId,props.employeeId,history.value.employeeRevision,{employmentId:draft.value.employmentId,siteId:draft.value.siteId,department:draft.value.department,position:draft.value.position,startDate:draft.value.startDate,endDate:draft.value.endDate||null},draft.value.reason);mode.value='';emit('changed')}catch(e){error.value=e.message}finally{saving.value=false}}
 function openAction(row,type){actionTarget.value=row;actionReason.value='';actionEndDate.value='';mode.value=type}
 async function saveAction(){if(!actionReason.value.trim()||(mode.value==='end'&&!actionEndDate.value)){error.value='종료일과 사유를 입력해 주세요.';return}saving.value=true;try{history.value=mode.value==='end'?await repository.end(props.companyId,props.employeeId,actionTarget.value.id,history.value.employeeRevision,actionTarget.value.revision,actionEndDate.value,actionReason.value):await repository.cancel(props.companyId,props.employeeId,actionTarget.value.id,history.value.employeeRevision,actionTarget.value.revision,actionReason.value);mode.value='';emit('changed')}catch(e){error.value=e.message}finally{saving.value=false}}
-watch(()=>[props.companyId,props.employeeId,auth.user.value?.id],()=>{mode.value='';actionTarget.value=null;load()},{immediate:true});onBeforeUnmount(()=>version++)
+watch(()=>[props.companyId,props.employeeId,props.identity||auth.user.value?.id],()=>{mode.value='';actionTarget.value=null;load()},{immediate:true});onBeforeUnmount(()=>version++)
 </script>
 
 <template>

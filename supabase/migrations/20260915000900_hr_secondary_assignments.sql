@@ -298,12 +298,18 @@ $$;
 
 create function public.enterprise_explain_scoped_access(target_company uuid,target_profile uuid,as_of date,resource_key text,action_key text,target_site uuid,target_department text) returns jsonb
 language plpgsql stable security definer set search_path='' as $$
-declare document jsonb; member jsonb; employee uuid; base_level integer; base_source text; sources jsonb:='[]'::jsonb; denies jsonb:='[]'::jsonb; base_grants jsonb:='[]'::jsonb; secondary_sources jsonb:='[]'::jsonb;
+declare document jsonb; member jsonb; employee uuid; employee_state jsonb; base_level integer; base_source text; sources jsonb:='[]'::jsonb; denies jsonb:='[]'::jsonb; base_grants jsonb:='[]'::jsonb; secondary_sources jsonb:='[]'::jsonb;
 begin
  if target_profile<>auth.uid() and not private.enterprise_granted(target_company,'settings.enterprise-access','read','company') then raise exception 'access_denied' using errcode='42501';end if;
- if target_profile<>auth.uid() then raise exception 'access_denied' using errcode='42501';end if;
  select policy into document from public.enterprise_access_publications where company_id=target_company order by revision desc limit 1;
- member:=private.enterprise_member(target_company,document);
+ select m into member from jsonb_array_elements(coalesce(document->'members','[]'::jsonb))m
+ where m->>'id'=target_profile::text and private.enterprise_valid_now(m) and coalesce((m->>'active')::boolean,false) limit 1;
+ select e.id into employee from public.hr_employees e where e.company_id=target_company and e.profile_id=target_profile;
+ if employee is not null then
+  employee_state:=private.hr_employee_state(target_company,employee);
+  if employee_state is null or employee_state->>'status'<>'active' then member:=null;
+  elsif member is not null then member:=member||jsonb_build_object('grade',employee_state->'grade','position',employee_state->'position','siteId',employee_state->'siteId','organizationId',employee_state->'department');end if;
+ end if;
  if member is null then return jsonb_build_object('allowed',false,'baseLevel',null,'target',jsonb_build_object('siteId',target_site,'department',target_department),'sources','[]'::jsonb,'denies','[]'::jsonb);end if;
  base_level:=nullif(member->>'level','')::integer;base_source:='direct';
  if base_level is null then
@@ -325,7 +331,6 @@ begin
     union all select r.code,t.path||r.code from tree t join public.hr_reference_codes r on r.company_id=target_company and r.kind='department' and r.is_active and r.parent_code=t.code where not r.code=any(t.path)
    ) select 1 from tree where code=target_department)))
  );
- select e.id into employee from public.hr_employees e where e.company_id=target_company and e.profile_id=target_profile;
  if employee is not null then
   select coalesce(jsonb_agg(jsonb_build_object('type','secondary','assignmentId',q.assignment_id,'position',q.position,'level',q.level,'department',q.department,'scope',q.scope)),'[]'::jsonb)
   into secondary_sources from (
