@@ -9,7 +9,7 @@
 - 데이터 계층: `src/data/master.js`, `src/repositories/master/*`, `src/stores/master.js`
 - 검증: Vitest 74개 파일 830개 통과, PGlite 거래처 런타임 단언 14개 통과, ESLint 통과, 프로덕션 빌드 성공, `npm audit --omit=dev` 취약점 0개, Wrangler 드라이런 성공
 - 미실행: `supabase/tests/partners_rls.test.sql`의 pgTAP 35개 단언. 이 PC에는 Docker 명령이 없어 실행하지 못했다.
-- 운영 상태: 마이그레이션 적용, Cloudflare 배포, 원격 푸시는 수행하지 않았다. 운영 적용 직전에 SQL 변경 내용 검토와 별도 승인이 필요하다.
+- 운영 상태: 실제 앱 설정과 대시보드가 일치하는 Supabase 프로젝트 `mehhrnbaiojivesnobpv`에는 기존 거래처 원장이 먼저 적용되어 있었다. `20260915001100_upgrade_partner_master.sql`로 누락된 연락 담당자·결제 조건·여신 한도 열과 두 숫자 제약을 2026-09-15 적용했다. 적용 후 새 열과 기본값, RLS, 정책 3개, 트리거 2개, 필수 제약 4개, 사업자번호 인덱스, DELETE 차단, 메뉴 키를 다시 검증했다. Cloudflare 배포와 원격 푸시는 Git 통합 대상 결정 전이라 아직 수행하지 않았다.
 - 수동 화면 확인: 로컬 서버는 Supabase 환경 변수가 없어 `/auth/setup`으로 이동하므로 인증 후 거래처 화면 확인은 대기 상태다. 빌드와 정적 화면 계약 테스트는 통과했다.
 
 ## 전사 권한 작업 브랜치 추가 (2026-09-14)
