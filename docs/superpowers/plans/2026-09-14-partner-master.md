@@ -270,7 +270,7 @@ Show the user the migration filename, created table, three policies, two trigger
 
 - [ ] **Step 3: Apply and verify the Supabase migration**
 
-Apply the exact contents of `supabase/migrations/20260914000200_add_partners.sql` to project `kctewzpeymlncibgyosz`. Query `pg_class`, `pg_policies`, `information_schema.role_table_grants`, `pg_trigger`, `pg_constraint`, `pg_indexes`, and `role_menu_permissions` to verify the table, RLS, three policies, no delete grant, two triggers, required constraints/indexes, and absence of legacy permission keys.
+Apply the exact contents of `supabase/migrations/20260914000200_add_partners.sql` to the current production project `mehhrnbaiojivesnobpv` (`nexerp`). The earlier reference `kctewzpeymlncibgyosz` is superseded and must not be used. Query `pg_class`, `pg_policies`, `information_schema.role_table_grants`, `pg_trigger`, `pg_constraint`, `pg_indexes`, and `role_menu_permissions` to verify the table, RLS, three policies, no delete grant, two triggers, required constraints/indexes, and absence of legacy permission keys.
 
 - [ ] **Step 4: Deploy and smoke-test Cloudflare**
 

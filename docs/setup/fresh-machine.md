@@ -40,10 +40,9 @@ npm run dev:cloudflare
 
 ## Link External Services
 
-Only an operator authorized for the target Supabase and Cloudflare projects should link or deploy. Apply the database workflow from [Cloudflare and Supabase operations](cloudflare-supabase.md), including:
+Only an operator authorized for the target Supabase and Cloudflare projects should link or deploy. Follow the migration-history gate in [Cloudflare and Supabase operations](cloudflare-supabase.md) before any database push. The production history is not yet reconciled, so a fresh machine must not run `npx supabase db push` merely because the repository was linked. Configure Worker secrets with:
 
 ```bash
-npx supabase db push
 npx wrangler secret put SUPABASE_URL --name nexerp
 npx wrangler secret put SUPABASE_PUBLISHABLE_KEY --name nexerp
 npx wrangler secret put SUPABASE_SECRET_KEY --name nexerp

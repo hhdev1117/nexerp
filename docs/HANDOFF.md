@@ -1,18 +1,18 @@
 # NEXERP 인수인계 문서
 
-> 기준 시점: 2026-09-14, `feature/partner-master` 브랜치 커밋 `ac2f730`까지 구현하고 거래처 기준정보를 운영 적용한 후. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다. 작업 단위를 끝낼 때마다 "현재 상태"와 "다음 할 일"을 갱신하고 함께 커밋해 주세요.
+> 기준 시점: 2026-09-15, `feature/partner-master` 브랜치에서 거래처 기준정보 운영 적용 후 최종 검토 수정까지 반영. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다. 작업 단위를 끝낼 때마다 "현재 상태"와 "다음 할 일"을 갱신하고 함께 커밋해 주세요.
 
 ## 1. 한눈에 보기
 
 | 항목 | 상태 |
 |---|---|
 | 스택 | Vue 3 + PrimeVue 4 + Tailwind, Cloudflare Workers Static Assets, Supabase (Auth + Postgres + RLS), Vitest |
-| 최신 구현 커밋 | `ac2f730 fix: harden partner management interactions` (`1f74169`부터 거래처 통합 작업 10개 커밋) |
-| 작업 트리 | 이 인수인계 갱신 커밋 후 `feature/partner-master` clean. 원격 푸시는 컨트롤러 최종 검토 후 진행 |
-| 검증 | Vitest 47개 파일 643개 통과, ESLint 무결, `npm run build` 성공, 운영 의존성 취약점 0개, Wrangler dry-run 성공 |
+| 최신 구현 커밋 | `61b3a60 docs: correct partner rollout deployment record` 기반 최종 검토 수정 진행 중. 최종 커밋과 검증 수치는 아래 실행 기록에서 갱신 |
+| 작업 트리 | 최종 수정 브랜치 `feature/partner-master`. 원격 푸시는 컨트롤러 최종 재검토와 main 통합 후 진행 |
+| 검증 | 최종 수정 전 Vitest 47개 파일 643개 통과, ESLint 무결, `npm run build` 성공, 운영 의존성 취약점 0개, Wrangler dry-run 성공. 수정 후 전체 검증 결과는 아래에 추가 |
 | Supabase 운영 프로젝트 | `mehhrnbaiojivesnobpv` (`nexerp`). 이전 문서·계획의 `kctewzpeymlncibgyosz`는 오래된 프로젝트 식별자이므로 사용하지 않음 |
-| 미적용 마이그레이션 | 없음. 회사·사업장 및 거래처 마이그레이션을 2026-09-14 운영 프로젝트에 적용하고 카탈로그 검증 완료 |
-| 미실행 테스트 | pgTAP `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 35개. 이 PC에 Docker가 없어 실행 불가 |
+| 운영 스키마 / CLI 이력 | 회사·사업장 및 거래처 스키마는 2026-09-14 운영 프로젝트에 적용하고 카탈로그 검증 완료. 단, CLI migration history는 미복구이며 복구 전 `db push` 금지 |
+| 미실행 테스트 | pgTAP `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 38개. 이 PC에 Docker가 없어 실행 불가 |
 | 확정된 결정 | 다회사·다사업장. 모든 업무 테이블은 `company_id`를 가지며 고객/공급처는 `master.partners`에서 통합 관리 |
 | 운영 배포 | Cloudflare Worker 버전 `61f5266c-d201-48c9-940a-eeb22fc7de05`, 진입 자산 `index-Cbfjxbkr.js`, `https://nexerp.merciful-chips.workers.dev` |
 
@@ -61,6 +61,7 @@ Supabase에 존재하는 앱 테이블은 `profiles`, `role_menu_permissions`, `
 - **권한 이전**: 기존 고객/공급처 메뉴 권한을 가진 역할에 `master.partners`를 보존한 뒤 두 레거시 키를 제거하고 revision을 올립니다. 관리자 보호 트리거는 이전 동안만 비활성화하고 다시 활성화합니다.
 - **도메인·리포지토리·스토어**: `src/data/master.js`, `src/repositories/master/*`, `src/stores/master.js`에 거래처 검증, 오류 매핑, demo/Supabase 구현, 캐시와 CRUD를 회사·사업장 패턴으로 추가했습니다.
 - **화면** `src/views/master/Partners.vue`: 회사 선택, 검색, 고객/공급업체 역할, 등록·수정·비활성/활성 전환을 제공합니다. 일반 사용자는 조회 전용이고 관리자만 쓰기 UI를 봅니다.
+- **코드 불변**: 거래처 코드는 수정 대화상자에서 잠기고 수정 페이로드에서 빠집니다. demo/Supabase 리포지토리도 `updatePartner()`에 전달된 `code`를 무시하므로 애플리케이션 저장소 경로에서 기존 코드가 유지됩니다.
 - **운영 적용**: 실제 프로젝트 `mehhrnbaiojivesnobpv`에 정확한 SQL을 적용했습니다. table/RLS, 최소 권한, 정책 3개, 트리거 2개, 제약·인덱스, 보안 함수, 권한 키 통합, 관리자 보호 트리거 복원, 빈 테이블을 모두 확인했습니다.
 - **배포 교정**: 첫 격리 워크트리 배포 `444dfd1c-3082-49b4-94c7-24bee73bcd09`는 Git 제외 파일 `.env.local`이 없어 Supabase 미설정 번들을 만들었고 `/auth/setup`으로 이동했습니다. 루트의 운영 `.env.local`을 워크트리에 복사한 뒤 빌드 자산에 실제 프로젝트 ID가 포함됐는지 확인하고 `61f5266c-d201-48c9-940a-eeb22fc7de05`로 재배포했습니다. 앞 버전은 최종 운영 버전이 아닙니다.
 
@@ -112,7 +113,8 @@ npm run build
 - Docker와 Supabase CLI 로컬 스택이 없습니다. pgTAP은 작성만 하고, 실행은 Docker가 있는 환경에서 `npx supabase test db`로 합니다.
 - 저장소 루트 `.env.local`, `.dev.vars`에 운영 Supabase 프로젝트 `mehhrnbaiojivesnobpv` 자격증명이 있습니다. 커밋 금지. `SUPABASE_SECRET_KEY`, `SUPABASE_MANAGEMENT_TOKEN`, `CLOUDFLARE_API_TOKEN`은 Worker 전용입니다. 이전 계획에 남은 `kctewzpeymlncibgyosz`를 운영 대상으로 사용하지 마세요.
 - 격리 Git 워크트리는 `.env.local`을 자동으로 공유하지 않습니다. 그 워크트리에서 Vite 운영 빌드나 `npm run deploy`를 실행하기 전에 루트의 커밋 제외 `.env.local`을 워크트리 루트로 복사하거나 같은 `VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY`를 환경변수로 주입하세요. 빌드 후 생성 자산에 프로젝트 ID `mehhrnbaiojivesnobpv`가 포함됐는지 확인한 다음 배포해야 합니다.
-- 회사·사업장과 거래처 마이그레이션은 2026-09-14 운영 프로젝트에 적용됐습니다. 후속 마이그레이션은 Supabase CLI가 있는 환경의 `npx supabase db push` 또는 권한이 확인된 SQL Editor에서 적용하고, 적용 결과를 카탈로그로 검증하세요.
+- 회사·사업장과 거래처 스키마는 2026-09-14 운영 프로젝트에 적용됐지만 CLI migration history는 아직 복구되지 않았습니다. 거래처 `20260914000200`은 SQL Editor로 직접 적용했고, `supabase_migrations.schema_migrations` 조회 시 테이블이 없었습니다. 현재 토큰으로 프로젝트 link는 성공했으나 CLI login-role 초기화가 HTTP 403으로 막혀 `migration list`/repair를 완료하지 못했습니다.
+- 권한 있는 운영자가 실제 카탈로그와 각 로컬 파일을 대조한 뒤, 이미 적용된 버전마다 공식 `npx supabase migration repair --status applied <VERSION>`을 실행하고 `npx supabase migration list --linked`의 local/remote 일치를 확인해야 합니다. 그 전에는 운영 프로젝트에 `npx supabase db push`를 실행하지 마세요. 원격 migration ledger를 수동으로 만들거나 행을 직접 삽입해서는 안 됩니다.
 - 커밋 메시지에 한글이나 여러 줄이 필요하면 파일로 써서 `git commit -F <file>`을 쓰세요. PowerShell here-string을 `-F -`로 넘기면 stdin이 비어 실패합니다.
 
 ## 6. 결정 사항과 미결 사항
@@ -137,12 +139,13 @@ npm run build
 
 - [x] 호스팅 Supabase에 `companies`/`sites` 마이그레이션 적용. `tables_exist`, `rls_enabled`, `no_delete_grant`, `six_rls_policies`, `four_triggers`, `security_functions`, `tables_empty` 카탈로그 점검이 모두 `true`.
 - [x] 운영 프로젝트 `mehhrnbaiojivesnobpv`에 `partners` 마이그레이션 적용. table/RLS, 최소 권한, 정책 3개, 트리거 2개, 제약·인덱스, 보안 함수, 레거시 권한 키 제거, 관리자 보호 트리거 복원, 빈 테이블 점검이 모두 `true`.
+- [ ] 권한 있는 Supabase 토큰으로 수동 적용된 모든 마이그레이션을 카탈로그와 대조한 뒤 `migration repair --status applied`로 CLI 이력을 복구하고 `migration list --linked` 일치 확인. 현재 login-role 초기화 403으로 중단됨. 완료 전 `db push` 금지.
 - [ ] 관리자 Google Authenticator 등록을 완료한 뒤 `/settings/company`에서 회사 1개와 사업장 1개가 등록되는지 확인. 현재 운영 브라우저는 MFA 등록 화면에서 해당 경로로 리다이렉트하도록 열려 있음.
 - [ ] `user` 역할로 `/settings/company`의 등록·수정·비활성화 버튼이 숨겨지는지 운영 화면에서 확인. 마운트 테스트에서는 조회 전용 동작 통과.
 - [ ] 관리자 MFA 인증 후 `/master/partners`에서 고객·공급업체·겸용 거래처 등록, 수정, 비활성/활성 전환을 운영 확인.
 - [ ] `user` 역할로 `/master/partners`의 등록·수정·상태 전환 버튼이 숨겨지는지 운영 확인. 마운트 테스트에서는 조회 전용 동작 통과.
 - [x] 운영 브라우저에서 두 레거시 경로 확인. 비로그인 상태에서 `/sales/customers`, `/purchasing/vendors` 모두 `/auth/login?redirect=/master/partners`로 끝나 통합 경로를 보존함. PWA 업데이트 적용 완료, 브라우저 개발 로그 비어 있음.
-- [ ] Docker가 있는 환경에서 `npx supabase test db` 실행. 기대: `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 35개 통과.
+- [ ] Docker가 있는 환경에서 `npx supabase test db` 실행. 기대: `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 38개 통과.
 - [x] Cloudflare Worker 최종 배포 (`61f5266c-d201-48c9-940a-eeb22fc7de05`, `index-Cbfjxbkr.js`). `/api/health` HTTP 200, Supabase `configured`; 레거시 2경로, 통합 경로, manifest, service worker HTTP 200.
 - [ ] 최종 전체 브랜치 검토 후 `git push origin main` 및 로컬/원격 HEAD 일치 확인.
 
