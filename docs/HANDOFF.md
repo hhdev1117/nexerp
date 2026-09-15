@@ -1,6 +1,6 @@
 # NEXERP 인수인계 문서
 
-> 기준 시점: 2026-09-15, 전사 권한관리와 인사 원장·기준정보·계정 연결·재직 이력·겸직 범위 권한을 `main`에 통합하고 운영 Supabase 및 Cloudflare에 적용한 뒤, 전 모듈 공통 기반인 감사 로그와 서버 측 문서 채번을 추가한 상태입니다. 두 마이그레이션은 아직 운영 프로젝트에 적용하지 않았습니다. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다.
+> 기준 시점: 2026-09-16, 전사 권한관리와 인사 모듈을 운영에 적용한 뒤, 전 모듈 공통 기반인 감사 로그와 서버 측 문서 채번, 그리고 품목 기준정보를 추가한 상태입니다. **이 세 마이그레이션은 아직 운영 프로젝트에 적용하지 않았습니다.** 적용 절차와 그 이유는 [운영 미적용 마이그레이션](setup/pending-migrations.md)에 따로 정리했습니다. 이 문서는 여러 AI 도구와 사람이 같은 저장소에서 번갈아 작업할 때 현재 상태, 지켜야 할 규약, 다음 할 일을 한곳에서 확인하기 위해 유지합니다.
 
 ## 1. 한눈에 보기
 
@@ -27,10 +27,11 @@
 | **거래처 통합 기준정보** | 구현·운영 마이그레이션·배포 완료. 고객/공급처 레거시 경로 통합, 관리자 MFA 후 실제 CRUD 및 역할별 UI 점검 대기 | `src/views/master/Partners.vue`, `src/stores/master.js`, `src/repositories/master/*` |
 | **전사 권한관리** | 구현·운영 마이그레이션·배포 완료. 레벨 1~5, 직급·직책 매칭, 회사·사업장 범위, 정책 초안·발행·복원 지원 | `src/views/admin/EnterpriseAccess.vue`, `src/repositories/access/*`, `supabase/migrations/20260914000200_enterprise_access_policy.sql` |
 | **인사관리** | 직원 원장, 인사발령, 기준정보, 모듈 설정, 계정 연결, 재직 이력, 겸직 부서·직책 범위를 구현하고 운영 적용 완료 | `src/views/hr/*`, `src/repositories/hr/*`, `supabase/migrations/20260914000400_hr_employee_ledger.sql` 이후 |
-| **감사 로그** | 구현 완료, 운영 마이그레이션 대기. 범용 트리거가 회사·사업장·거래처 변경을 기록하고 관리자만 조회 | `src/views/admin/AuditLogs.vue`, `src/data/audit.js`, `src/repositories/audit/*`, `supabase/migrations/20260915001200_add_audit_logs.sql` |
+| **감사 로그** | 구현 완료, 운영 마이그레이션 대기. 범용 트리거가 회사·사업장·거래처·품목 변경을 기록하고 관리자만 조회 | `src/views/admin/AuditLogs.vue`, `src/data/audit.js`, `src/repositories/audit/*`, `supabase/migrations/20260915001200_add_audit_logs.sql` |
 | **서버 측 문서 채번** | 구현 완료, 운영 마이그레이션 대기. 업무 테이블이 생기면 이 함수에서 번호를 받아야 함 | `supabase/migrations/20260915001300_add_document_sequences.sql` |
+| **품목 기준정보** | 구현 완료, 운영 마이그레이션 대기. `inventory.items`를 `master.items`로 통합하고 레거시 경로는 리다이렉트 | `src/views/master/Items.vue`, `src/data/master.js`, `supabase/migrations/20260915001400_add_items.sql` |
 | 결재함, 수주 관리, 재고 현황, 재무 현황, 통합 대시보드 | 데모 (메모리 리포지토리) | `src/views/erp/*`, `src/views/Dashboard.vue`, `src/stores/erp.js` |
-| 나머지 22개 메뉴 (견적, 발주, 입고, 품목, 창고, BOM, 전표 등) | 플레이스홀더 공용 화면. 전용 화면 14개를 뺀 실제 수치 | `src/views/erp/GenericModule.vue` |
+| 나머지 20개 메뉴 (견적, 발주, 입고, 창고, BOM, 전표 등) | 플레이스홀더 공용 화면. 전용 화면 15개를 뺀 실제 수치 | `src/views/erp/GenericModule.vue` |
 
 Supabase에는 기존 인증·권한·회사·사업장·거래처 테이블과 함께 전사 권한 3개 테이블, HR 10개 테이블이 운영 적용되어 있습니다. 신규 운영 테이블 13개는 모두 RLS가 활성화되어 있고 `authenticated` 역할의 DELETE 권한은 없습니다. 정책 발행본과 직원·겸직 데이터는 현재 0건입니다. 감사 로그 `public.audit_logs`와 채번 `public.document_sequences`는 로컬 마이그레이션에만 있으므로 운영 적용 전까지 운영 화면 `/settings/audit`은 빈 목록을 보여줍니다.
 
@@ -59,6 +60,14 @@ Supabase에는 기존 인증·권한·회사·사업장·거래처 테이블과 
 - 형식은 `SO-260915-001`이고 날짜를 넘기지 않으면 한국 영업일 기준으로 계산합니다. 999를 넘으면 자리수가 늘어나며 업무 문서 발행이 실패하지 않습니다.
 - `private.` 함수이므로 클라이언트가 직접 호출해 번호만 소진시킬 수 없습니다. 실제 업무 테이블을 만들 때 그 테이블 전용 `security definer` RPC 안에서 호출해야 합니다.
 - `src/data/erp.js`의 `nextOrderNumber()`에는 데모 전용이며 동시 등록 시 충돌한다는 주석을 남겼습니다.
+
+### 커밋 `ec1759b` 이후 — 품목 기준정보 (Task C)
+
+- **메뉴 통합 확정.** 미결이던 `inventory.items` / `master.items` 중복은 핸드오프 권장안대로 `master.items` 하나로 정리했습니다. 거래처 통합과 같은 방식으로 `inventory.items` 메뉴를 제거하고 `/inventory/items`는 `/master/items`로 리다이렉트하며, 권한 키 이전은 마이그레이션이 수행합니다.
+- **마이그레이션** `20260915001400_add_items.sql`: `public.items(company_id, code, name, item_type, unit, safety_stock, standard_price, is_active, 감사 컬럼)`. `(company_id, code)` 유일, 코드·단위 형식과 음수 금지 제약. 조회는 활성 사용자, 쓰기는 관리자, delete grant 없음.
+- **감사 로그 재사용 검증.** 새 테이블에 `create trigger record_items_audit ... execute function private.record_audit()` 한 줄만 추가해 변경 이력이 붙는 것을 pglite 런타임 테스트로 확인했습니다. 감사 로그를 먼저 만든 이유가 여기서 실증됩니다.
+- **계층**: `src/data/master.js`(품목 유형·단위·검증·페이로드) → `src/repositories/master/*`(계약 3개 추가, demo + supabase) → `src/stores/master.js` → `src/views/master/Items.vue`(회사·유형·검색 필터, 관리자 전용 쓰기, 코드 불변).
+- **리포지토리 정리**: `updatePartner`와 `updateItem`이 공유하는 "코드 불변 + 없음/거부 구분" 로직을 `updateImmutableCode`로 묶었습니다.
 
 ### 커밋 `42dce82` — 기반 정리 4종
 
@@ -181,26 +190,27 @@ npm run build
 - [x] 전사 권한 및 HR 마이그레이션 002~009 운영 적용. 대상 테이블 13개 존재, RLS 13개 활성, 핵심 RPC 11종 존재, DELETE grant 0개를 카탈로그에서 확인.
 - [x] 최신 `main` Cloudflare Worker 배포. 버전 `a6e74fee-404f-4f98-a5fc-7f12fd075af9`; `/api/health`, `/settings/enterprise-access`, `/hr/employees`, manifest, service worker HTTP 200 확인.
 - [x] `git push origin main` 및 로컬/원격 HEAD 일치 확인.
-- [ ] **권한 있는 운영자 작업.** SQL Editor에서 `20260915001200_add_audit_logs.sql`, 이어서 `20260915001300_add_document_sequences.sql`을 각각 파일 전체를 한 번에 실행. 세 기준정보 테이블이 0건이므로 지금 적용해도 기존 데이터 영향 없음. 저장소 토큰으로는 불가능하며 시도해도 `403`/`25006`으로 막힙니다.
-- [ ] 적용 후 검증: `audit_logs`·`document_sequences` 존재와 RLS 활성, `authenticated`의 insert/update/delete grant 0개, 각 테이블 select 정책 1개, `private.record_audit` 참조 트리거 3개, `private.next_document_number` 존재와 `authenticated` execute 권한 없음. 읽기 전용 토큰으로 수행 가능.
-- [ ] 검증 통과 후 최신 `main`을 Cloudflare에 배포하고 관리자 계정으로 `/settings/audit`에서 회사 수정 1건이 즉시 이력으로 보이는지 확인.
+- [ ] **권한 있는 운영자 작업.** SQL Editor에서 `20260915001200` → `20260915001300` → `20260915001400` 순서로 각 파일 전체를 한 번에 실행. 절차와 금지사항은 [운영 미적용 마이그레이션](setup/pending-migrations.md)에 있습니다. 저장소 토큰으로는 불가능하며 시도해도 `403`/`25006`으로 막힙니다.
+- [ ] 적용 후 `node scripts/verify-pending-migrations.mjs`로 검증. 읽기 전용 토큰으로 동작하며 모든 줄이 `PASS`여야 합니다.
+- [ ] 검증 통과 후 최신 `main`을 Cloudflare에 배포하고 관리자 계정으로 `/settings/audit`에서 회사 수정 1건이 이력으로 보이는지, `/master/items`가 열리고 `/inventory/items`가 리다이렉트되는지 확인.
 - [x] `git push origin main`. `730f95e..e3756a0`, 로컬/원격 HEAD 일치 확인.
 
 ### 7.2 1단계 기준정보 마무리
 
 **Task A: 중복 메뉴 통합**
 - [x] 고객·공급처를 `master.partners`로 통합하고 레거시 URL/권한 키 이전.
-- [ ] 품목 `inventory.items` / `master.items` 통합 여부 확정 후 같은 방식으로 메뉴·권한 키 이전.
+- [x] 품목을 `master.items`로 통합. `inventory.items` 메뉴 제거, `/inventory/items` → `/master/items` 리다이렉트, 권한 키 이전을 `20260915001400`이 수행.
 
 **Task B: 거래처(partners) 기준정보**
 - [x] 도메인, demo/Supabase 리포지토리, 스토어, 관리 화면, 마이그레이션, 텍스트 계약 테스트와 pgTAP 작성.
 - [x] 운영 마이그레이션과 Worker 배포.
 - [ ] 관리자 MFA와 일반 사용자 계정으로 실제 역할별 동작 확인.
 
-**Task C: 품목(items) 기준정보**
-- 테이블 `public.items`: `company_id`, `code`, `name`, `item_type enum(raw_material, semi_finished, finished_good, consumable, service)`, `unit text`(EA, KG, M 등), `safety_stock numeric(18,3) default 0`, `standard_price numeric(18,0) default 0`, `is_active`, 감사 컬럼. `(company_id, code)` 유일.
-- 기존 `inventoryRows`(`src/data/erp.js`)의 코드 체계 `RM-`, `FG-`, `PK-`를 시드/데모에 반영. `stockStatusFor()`가 `safety_stock`을 쓰도록 연결.
-- 커밋: `feat: add item master data`.
+**Task C: 품목(items) 기준정보** — 구현 완료
+- [x] 테이블, 정책 3개, 감사 컬럼·활성 회사·변경 이력 트리거, 레거시 권한 키 이전, 텍스트 계약 테스트, pgTAP 25개, pglite 런타임 단언 22개.
+- [x] 도메인·리포지토리·스토어·화면 `src/views/master/Items.vue`. 데모 시드는 `inventoryRows`의 `RM-`, `FG-`, `PK-` 코드 체계를 따릅니다.
+- [ ] 운영 마이그레이션 적용 (7.1 참고).
+- [ ] `InventoryStock.vue`가 `inventoryRows` 대신 품목 원장의 `safetyStock`으로 `stockStatusFor()`를 계산하도록 연결. 재고 트랜잭션 원장(2단계)과 함께 처리하는 편이 낫습니다.
 
 **Task D: 창고(warehouses) 기준정보**
 - 테이블 `public.warehouses`: `company_id`, `site_id → sites`, `code`, `name`, `warehouse_type enum(raw_material, finished_good, packaging, general)`, `is_active`, 감사 컬럼. 사업장이 비활성이면 활성 창고 금지(`enforce_site_company_active` 패턴 재사용).

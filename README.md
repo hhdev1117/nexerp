@@ -18,6 +18,7 @@ Detailed instructions:
 - [Enterprise access policy configuration and rollout status](docs/setup/enterprise-access.md)
 
 - [Cloudflare and Supabase operations](docs/setup/cloudflare-supabase.md)
+- [Pending production migrations and how to apply them](docs/setup/pending-migrations.md)
 - [Fresh-machine setup and handoff](docs/setup/fresh-machine.md)
 - [Current state, conventions, and next tasks for parallel contributors](docs/HANDOFF.md)
 

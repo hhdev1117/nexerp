@@ -46,9 +46,7 @@ Do not run `npx supabase db push` against `mehhrnbaiojivesnobpv` until an author
 
 ### Applying a Pending Migration
 
-Until CLI history is reconciled, an authorized operator applies a committed migration by pasting the whole file into the Supabase SQL Editor as one execution, in ascending version order. Two migrations are pending as of 2026-09-15: `20260915001200_add_audit_logs.sql` then `20260915001300_add_document_sequences.sql`. The first creates the shared change ledger and attaches `private.record_audit()` to `companies`, `sites` and `partners`; the second creates `public.document_sequences` and `private.next_document_number()`. Both are safe to apply while the three master tables hold no rows.
-
-Verify afterwards with catalog reads, which the read-scoped management token can perform: `public.audit_logs` and `public.document_sequences` exist with row-level security enabled, `authenticated` holds no `INSERT`, `UPDATE` or `DELETE` grant on either table, each table has exactly one select policy, three triggers reference `private.record_audit`, and `authenticated` cannot execute `private.next_document_number`.
+Until CLI history is reconciled, an authorized operator applies a committed migration by pasting the whole file into the Supabase SQL Editor as one execution, in ascending version order. The currently pending files, the reason the repository token cannot apply them, and the verification command are all in [Pending production migrations](pending-migrations.md). Run `node scripts/verify-pending-migrations.mjs` afterwards; it reads catalogs only and works with the read-scoped token.
 
 The migrations create `profiles`, the `admin`/`approver`/`user` role type, account and menu-permission RPCs, signup triggers, explicit grants, and RLS policies. New accounts always begin with the `user` role until an authorized administrator assigns another role.
 
