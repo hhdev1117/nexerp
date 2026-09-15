@@ -46,6 +46,7 @@ const createClient = ({
     signInResult,
     signOutError = null,
     updateUserResult,
+    profileResult,
     profileUpdateResult,
     getUserResult,
     mfaFactors = [],
@@ -135,7 +136,7 @@ const createClient = ({
                         const result = typeof profileUpdateResult === 'function' ? profileUpdateResult(request) : profileUpdateResult || { data: { ui_preferences: request.values.ui_preferences }, error: null };
                         return result instanceof Promise ? result : Promise.resolve(result);
                     }
-                    const result = profiles[request.id];
+                    const result = typeof profileResult === 'function' ? profileResult(request) : profiles[request.id];
                     return result instanceof Promise ? result : Promise.resolve(result || { data: null, error: null });
                 }
             };
@@ -176,6 +177,29 @@ describe('Supabase auth store', () => {
         expect(store.initialized.value).toBe(true);
         expect(store.loading.value).toBe(false);
         expect(store.configured.value).toBe(true);
+    });
+
+    it('loads core authorization fields when the optional UI-preferences migration is not applied', async () => {
+        const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver01@nexerp.internal' } };
+        const profileWithoutPreferences = Object.fromEntries(Object.entries(approverProfile).filter(([key]) => key !== 'ui_preferences'));
+        const fixture = createClient({
+            session,
+            profileResult: ({ fields }) =>
+                fields.includes('ui_preferences')
+                    ? { data: null, error: { code: '42703', message: 'column profiles.ui_preferences does not exist' } }
+                    : { data: profileWithoutPreferences, error: null }
+        });
+        const store = createAuthStore({ client: fixture.client, configured: true });
+
+        await store.initialize();
+
+        expect(store.profile.value).toEqual(profileWithoutPreferences);
+        expect(store.role.value).toBe('approver');
+        expect(store.error.value).toBeNull();
+        expect(fixture.profileRequests).toEqual([
+            { fields: 'id, login_id, display_name, department, role, is_active, ui_preferences', id: 'user-1' },
+            { fields: 'id, login_id, display_name, department, role, is_active', id: 'user-1' }
+        ]);
     });
 
     it('canonicalizes partial UI preferences at the signed-in profile persistence boundary', async () => {

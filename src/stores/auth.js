@@ -5,6 +5,7 @@ import { readSupabaseConfig } from '@/lib/supabase/config';
 import { internalEmailToLoginId, loginIdToInternalEmail } from '@/lib/auth/loginIdentity';
 
 const PROFILE_FIELDS = 'id, login_id, display_name, department, role, is_active, ui_preferences';
+const CORE_PROFILE_FIELDS = 'id, login_id, display_name, department, role, is_active';
 const NOT_CONFIGURED_MESSAGE = 'Supabase 연결 정보가 설정되지 않았습니다.';
 const INACTIVE_PROFILE_MESSAGE = '비활성화된 계정입니다. 관리자에게 문의해 주세요.';
 const MISSING_PROFILE_MESSAGE = '계정 권한 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.';
@@ -30,6 +31,8 @@ const isPlainObject = (value) => {
 };
 
 const isInvalidSessionError = (source) => INVALID_SESSION_NAMES.has(source?.name) || INVALID_SESSION_CODES.has(source?.code) || source?.status === 401 || source?.status === 403;
+
+const isMissingUiPreferencesColumn = (source) => source?.code === '42703' && typeof source?.message === 'string' && source.message.includes('ui_preferences');
 
 const authSessionKey = (authSession) => {
     const token = authSession?.access_token;
@@ -192,6 +195,9 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         let result;
         try {
             result = await client.from('profiles').select(PROFILE_FIELDS).eq('id', nextUser.id).maybeSingle();
+            if (isMissingUiPreferencesColumn(result?.error)) {
+                result = await client.from('profiles').select(CORE_PROFILE_FIELDS).eq('id', nextUser.id).maybeSingle();
+            }
         } catch (cause) {
             result = { data: null, error: cause };
         }
