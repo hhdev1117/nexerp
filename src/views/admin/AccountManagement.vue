@@ -612,6 +612,11 @@ onMounted(loadAccounts);
         min-width: 2.75rem;
     }
 
+    :deep(.p-toggleswitch) {
+        min-width: 2.75rem;
+        min-height: 2.75rem;
+    }
+
     .form-grid {
         grid-template-columns: minmax(0, 1fr);
     }

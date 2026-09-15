@@ -138,6 +138,7 @@ describe('administrator account screen', () => {
         expect(loginSource).toMatch(/@media \(max-width: 575px\)[\s\S]*:deep\(\.p-button\)\s*\{[\s\S]*min-width:\s*2\.75rem/);
         expect(accountsSource).toMatch(/@media \(max-width: 640px\)[\s\S]*:deep\(\.p-inputtext\),[\s\S]*:deep\(\.p-select\),[\s\S]*:deep\(\.p-button\)[\s\S]*min-height:\s*2\.75rem/);
         expect(accountsSource).toMatch(/@media \(max-width: 640px\)[\s\S]*:deep\(\.p-button\)\s*\{[\s\S]*min-width:\s*2\.75rem/);
+        expect(accountsSource).toMatch(/@media \(max-width: 640px\)[\s\S]*:deep\(\.p-toggleswitch\)\s*\{[\s\S]*min-width:\s*2\.75rem;[\s\S]*min-height:\s*2\.75rem/);
     });
 
     it('validates every required create field before submitting', () => {
