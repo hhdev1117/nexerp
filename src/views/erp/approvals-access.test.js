@@ -28,6 +28,10 @@ const mountApprovals = async () => {
 };
 
 beforeEach(async () => {
+    Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+    });
     resetErpRepository();
     await useErpStore().resetDemoState();
     toastAdd.mockReset();

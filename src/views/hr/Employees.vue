@@ -225,17 +225,7 @@ async function employmentChanged() {
 
             <p v-if="!company" role="status" class="text-muted-color">상단에서 접근 가능한 회사를 선택해 주세요.</p>
             <template v-else>
-                <DataTable
-                    :value="directory?.employees || []"
-                    dataKey="id"
-                    :loading="loading"
-                    size="small"
-                    stripedRows
-                    scrollable
-                    responsiveLayout="scroll"
-                    tableStyle="min-width: 52rem"
-                    :tableProps="{ 'aria-label': '직원 명부' }"
-                >
+                <DataTable :value="directory?.employees || []" dataKey="id" :loading="loading" size="small" stripedRows scrollable responsiveLayout="scroll" tableStyle="min-width: 52rem" :tableProps="{ 'aria-label': '직원 명부' }">
                     <template #empty>
                         <div class="list-empty">
                             <p class="list-empty-message">조건에 맞는 직원이 없습니다.</p>
@@ -314,7 +304,9 @@ async function employmentChanged() {
                         <strong>{{ item.effectiveDate }} · {{ item.type === 'terminate' ? '퇴사' : '주 소속 변경' }}</strong>
                         <span v-if="item.cancelled" class="text-muted-color"> · 취소됨</span>
                         <span v-else class="text-muted-color"> · {{ item.effectiveDate > today() ? '예정' : '적용됨' }}</span>
-                        <p v-if="item.type === 'transfer'" class="mt-1 mb-0">{{ siteName(item.siteId) }} / {{ referenceName('department', item.department) }} / {{ referenceName('grade', item.grade) }} / {{ referenceName('position', item.position) }}</p>
+                        <p v-if="item.type === 'transfer'" class="mt-1 mb-0">
+                            {{ siteName(item.siteId) }} / {{ referenceName('department', item.department) }} / {{ referenceName('grade', item.grade) }} / {{ referenceName('position', item.position) }}
+                        </p>
                         <p class="mt-1 mb-0 text-muted-color break-words">{{ item.reason }}</p>
                     </div>
                     <Button
@@ -370,16 +362,7 @@ async function employmentChanged() {
                     </div>
                     <div class="flex flex-col gap-2">
                         <label id="profile-id-label" for="profile-id" class="font-medium">로그인 계정 연결 (선택)</label>
-                        <Select
-                            inputId="profile-id"
-                            v-model="draft.profileId"
-                            :options="accountOptions"
-                            optionLabel="label"
-                            optionValue="value"
-                            ariaLabelledby="profile-id-label"
-                            aria-describedby="profile-help"
-                            fluid
-                        />
+                        <Select inputId="profile-id" v-model="draft.profileId" :options="accountOptions" optionLabel="label" optionValue="value" ariaLabelledby="profile-id-label" aria-describedby="profile-help" fluid />
                         <small id="profile-help" class="text-muted-color">전사 권한관리에서 회사에 연결한 계정을 선택합니다. 등록 후 직원 상세에서 연결을 변경할 수 있습니다. 입사 예정 계정은 입사일부터 접근할 수 있습니다.</small>
                     </div>
                 </template>

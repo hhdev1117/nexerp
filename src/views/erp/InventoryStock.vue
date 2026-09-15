@@ -24,6 +24,13 @@ const warehouseCount = computed(() => new Set(inventoryRows.map((item) => item.w
 function stockRatio(item) {
     return Math.min(100, Math.round((item.stock / item.safety) * 100));
 }
+
+const hasActiveFilters = computed(() => Boolean(keyword.value.trim() || selectedStatus.value));
+
+function resetFilters() {
+    keyword.value = '';
+    selectedStatus.value = null;
+}
 </script>
 
 <template>
@@ -84,22 +91,30 @@ function stockRatio(item) {
                     </IconField>
                     <Select v-model="selectedStatus" :options="stockStatusOptions" optionLabel="label" optionValue="value" placeholder="전체 상태" aria-label="재고 상태 필터" showClear class="w-full sm:w-40" />
                 </div>
-                <div class="text-sm text-muted-color">조회 결과 {{ filteredRows.length }}건</div>
+                <div class="text-sm text-muted-color" aria-live="polite">
+                    총 <strong class="text-color">{{ filteredRows.length }}</strong
+                    >건
+                </div>
             </div>
 
-            <DataTable :value="filteredRows" dataKey="code" responsiveLayout="scroll" tableStyle="min-width: 62rem" :tableProps="{ 'aria-label': '재고 현황 목록' }" stripedRows>
-                <template #empty>조건에 맞는 재고 품목이 없습니다.</template>
+            <DataTable :value="filteredRows" dataKey="code" size="small" responsiveLayout="scroll" tableStyle="min-width: 62rem" :tableProps="{ 'aria-label': '재고 현황 목록' }" stripedRows>
+                <template #empty>
+                    <div class="list-empty">
+                        <p class="list-empty-message">조건에 맞는 재고 품목이 없습니다.</p>
+                        <Button v-if="hasActiveFilters" label="필터 초기화" icon="pi pi-filter-slash" severity="secondary" outlined size="small" @click="resetFilters" />
+                    </div>
+                </template>
                 <Column field="code" header="품목코드" sortable>
                     <template #body="slotProps"
-                        ><span class="font-medium text-primary">{{ slotProps.data.code }}</span></template
+                        ><span class="font-medium">{{ slotProps.data.code }}</span></template
                     >
                 </Column>
                 <Column field="name" header="품목명" sortable />
                 <Column field="warehouse" header="창고" sortable />
-                <Column field="stock" header="현재고" sortable>
+                <Column field="stock" header="현재고" sortable headerClass="num-col" bodyClass="num-col">
                     <template #body="slotProps">{{ slotProps.data.stock.toLocaleString('ko-KR') }} {{ slotProps.data.unit }}</template>
                 </Column>
-                <Column field="safety" header="안전재고" sortable>
+                <Column field="safety" header="안전재고" sortable headerClass="num-col" bodyClass="num-col">
                     <template #body="slotProps">{{ slotProps.data.safety.toLocaleString('ko-KR') }} {{ slotProps.data.unit }}</template>
                 </Column>
                 <Column header="안전재고 충족률" style="min-width: 10rem">
