@@ -966,7 +966,7 @@ describe('Supabase auth store', () => {
         expect(fixture.client.auth.onAuthStateChange).toHaveBeenCalledOnce();
     });
 
-    it('signs in with email and password and loads the authenticated profile', async () => {
+    it('signs in with a login ID mapped to its internal email and loads the authenticated profile', async () => {
         const session = { access_token: 'not-logged', user: { id: 'user-1', email: 'approver@nexerp.test' } };
         const fixture = createClient({
             profiles: { 'user-1': { data: approverProfile, error: null } },
@@ -974,9 +974,9 @@ describe('Supabase auth store', () => {
         });
         const store = createAuthStore({ client: fixture.client, configured: true });
 
-        const result = await store.signIn('approver@nexerp.test', 'password');
+        const result = await store.signIn('approver1', 'password');
 
-        expect(fixture.client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'approver@nexerp.test', password: 'password' });
+        expect(fixture.client.auth.signInWithPassword).toHaveBeenCalledWith({ email: 'approver1@nexerp.internal', password: 'password' });
         expect(result).toEqual({ session, user: session.user });
         expect(store.profile.value).toEqual(approverProfile);
         expect(store.role.value).toBe('approver');

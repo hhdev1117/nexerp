@@ -117,29 +117,29 @@ describe('login view', () => {
         await wrapper.get('form').trigger('submit');
         await nextTick();
 
-        expect(wrapper.get('#email-error').text()).toContain('이메일을 입력해 주세요.');
+        expect(wrapper.get('#login-id-error').text()).toContain('아이디를 입력해 주세요.');
         expect(wrapper.get('#password-error').text()).toContain('비밀번호를 입력해 주세요.');
-        expect(document.activeElement).toBe(wrapper.get('#email').element);
+        expect(document.activeElement).toBe(wrapper.get('#login-id').element);
         expect(authStore.signIn).not.toHaveBeenCalled();
     });
 
-    it('rejects an invalid email and focuses the email control', async () => {
+    it('rejects an invalid login ID and focuses the login ID control', async () => {
         const { wrapper } = await mountLogin();
-        await wrapper.get('#email').setValue('not-an-email');
+        await wrapper.get('#login-id').setValue('INVALID-ID');
         await wrapper.get('#password').setValue('password');
 
         await wrapper.get('form').trigger('submit');
         await nextTick();
 
-        expect(wrapper.get('#email-error').text()).toContain('올바른 이메일 주소를 입력해 주세요.');
-        expect(document.activeElement).toBe(wrapper.get('#email').element);
+        expect(wrapper.get('#login-id-error').text()).toContain('아이디는 영문 소문자와 숫자 4~20자로 입력해 주세요.');
+        expect(document.activeElement).toBe(wrapper.get('#login-id').element);
     });
 
     it('disables the submit action while sign-in is pending', async () => {
         const pending = deferred();
         authStore.signIn.mockReturnValueOnce(pending.promise);
         const { wrapper } = await mountLogin();
-        await wrapper.get('#email').setValue('user@nexerp.test');
+        await wrapper.get('#login-id').setValue('user1234');
         await wrapper.get('#password').setValue('password');
 
         await wrapper.get('form').trigger('submit');
@@ -154,13 +154,13 @@ describe('login view', () => {
     it('signs in and restores a safe local redirect with router replacement', async () => {
         const { wrapper, router } = await mountLogin('/login?redirect=/approvals');
         const replace = vi.spyOn(router, 'replace');
-        await wrapper.get('#email').setValue('user@nexerp.test');
+        await wrapper.get('#login-id').setValue('user1234');
         await wrapper.get('#password').setValue('password');
 
         await wrapper.get('form').trigger('submit');
         await flushPromises();
 
-        expect(authStore.signIn).toHaveBeenCalledWith('user@nexerp.test', 'password');
+        expect(authStore.signIn).toHaveBeenCalledWith('user1234', 'password');
         expect(replace).toHaveBeenCalledWith('/approvals');
     });
 

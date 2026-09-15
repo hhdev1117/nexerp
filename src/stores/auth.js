@@ -2,6 +2,7 @@ import { computed, ref } from 'vue';
 import { normalizeUiPreferences } from '@/domain/uiPreferences';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { readSupabaseConfig } from '@/lib/supabase/config';
+import { loginIdToInternalEmail } from '@/lib/auth/loginIdentity';
 
 const PROFILE_FIELDS = 'id, email, display_name, department, role, is_active, ui_preferences';
 const NOT_CONFIGURED_MESSAGE = 'Supabase 연결 정보가 설정되지 않았습니다.';
@@ -53,7 +54,7 @@ const normalizedError = (source, fallback = '인증 처리 중 오류가 발생�
     const status = Number(source?.status);
 
     if (status === 400 || status === 401 || message.includes('invalid login') || message.includes('invalid credentials')) {
-        return '이메일 또는 비밀번호가 올바르지 않습니다.';
+        return '아이디 또는 비밀번호가 올바르지 않습니다.';
     }
     if (message.includes('network') || message.includes('failed to fetch') || message.includes('fetch failed')) {
         return '네트워크 연결을 확인한 후 다시 시도해 주세요.';
@@ -672,7 +673,7 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         return initializePromise;
     };
 
-    const signIn = async (email, password) => {
+    const signIn = async (loginId, password) => {
         if (!isConfigured) {
             error.value = NOT_CONFIGURED_MESSAGE;
             throw rejection(NOT_CONFIGURED_MESSAGE);
@@ -682,6 +683,11 @@ export function createAuthStore({ client, configured, locks = typeof window === 
         error.value = null;
         const startingVersion = identityVersion;
         try {
+            const email = loginIdToInternalEmail(loginId);
+            if (!email) {
+                error.value = '아이디 또는 비밀번호가 올바르지 않습니다.';
+                throw rejection(error.value);
+            }
             let response;
             try {
                 response = await client.auth.signInWithPassword({ email, password });
