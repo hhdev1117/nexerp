@@ -14,7 +14,7 @@
 | 운영 스키마 / CLI 이력 | 회사·사업장·거래처와 전사 권한 및 HR 마이그레이션 002~009를 운영 프로젝트에 적용하고 카탈로그 검증 완료. CLI migration history는 미복구이며 복구 전 `db push` 금지 |
 | 미실행 테스트 | pgTAP `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 38개. 이 PC에 Docker가 없어 실행 불가 |
 | 확정된 결정 | 다회사·다사업장. 모든 업무 테이블은 `company_id`를 가지며 고객/공급처는 `master.partners`에서 통합 관리 |
-| 운영 배포 | Cloudflare Worker 버전 `3dedd823-282e-4327-9a51-bbc9439717a9`, 진입 자산 `index-DFGDZqNf.js`, `https://nexerp.nexerp.workers.dev` |
+| 운영 배포 | Cloudflare Worker 버전 `a6e74fee-404f-4f98-a5fc-7f12fd075af9`, 진입 자산 `index-DFGDZqNf.js`, `https://nexerp.nexerp.workers.dev` |
 
 ## 2. 현재 구현 상태
 
@@ -149,7 +149,7 @@ npm run build
 - [x] 운영 브라우저에서 두 레거시 경로 확인. 비로그인 상태에서 `/sales/customers`, `/purchasing/vendors` 모두 `/auth/login?redirect=/master/partners`로 끝나 통합 경로를 보존함. PWA 업데이트 적용 완료, 브라우저 개발 로그 비어 있음.
 - [ ] Docker가 있는 환경에서 `npx supabase test db` 실행. 기대: `companies_sites_rls.test.sql` 35개와 `partners_rls.test.sql` 38개 통과.
 - [x] 전사 권한 및 HR 마이그레이션 002~009 운영 적용. 대상 테이블 13개 존재, RLS 13개 활성, 핵심 RPC 11종 존재, DELETE grant 0개를 카탈로그에서 확인.
-- [x] 최신 `main` Cloudflare Worker 배포. 버전 `3dedd823-282e-4327-9a51-bbc9439717a9`; `/api/health`, `/settings/enterprise-access`, `/hr/employees`, manifest, service worker HTTP 200 확인.
+- [x] 최신 `main` Cloudflare Worker 배포. 버전 `a6e74fee-404f-4f98-a5fc-7f12fd075af9`; `/api/health`, `/settings/enterprise-access`, `/hr/employees`, manifest, service worker HTTP 200 확인.
 - [x] `git push origin main` 및 로컬/원격 HEAD 일치 확인.
 
 ### 7.2 1단계 기준정보 마무리
