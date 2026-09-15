@@ -1,6 +1,6 @@
-import { ITEM_TYPE, SITE_TYPE } from '@/data/master';
+import { ITEM_TYPE, SITE_TYPE, WAREHOUSE_TYPE } from '@/data/master';
 import { describe, expect, it } from 'vitest';
-import { createDemoMasterRepository, demoCompanies, demoItems, demoPartners, demoSites } from './demoMasterRepository';
+import { createDemoMasterRepository, demoCompanies, demoItems, demoPartners, demoSites, demoWarehouses } from './demoMasterRepository';
 
 const companyDraft = (overrides = {}) => ({ code: 'NXT', name: '넥서스 테크', businessNumber: '3018800001', representative: '박서연', address: '대전광역시 유성구', isActive: true, ...overrides });
 const siteDraft = (overrides = {}) => ({ companyId: 'company-nxm', code: 'DJ', name: '대전 지점', siteType: SITE_TYPE.BRANCH, address: '대전광역시 유성구', isActive: true, ...overrides });
@@ -278,5 +278,48 @@ describe('demo item master', () => {
         await expect(repository.createItem(itemDraft({ companyId: 'company-nxd' }))).rejects.toMatchObject({ code: 'company_inactive' });
         await expect(repository.createItem(itemDraft({ companyId: 'company-nxd', isActive: false }))).resolves.toMatchObject({ isActive: false });
         await expect(repository.createItem(itemDraft({ companyId: 'missing-company' }))).rejects.toMatchObject({ code: 'not_found' });
+    });
+});
+
+const warehouseDraft = (overrides = {}) => ({ companyId: 'company-nxm', siteId: 'site-nxm-icn', code: 'WH-NEW', name: '신규 창고', warehouseType: WAREHOUSE_TYPE.GENERAL, isActive: true, ...overrides });
+
+describe('demo warehouse master', () => {
+    it('seeds the warehouse names the demo inventory rows reference', async () => {
+        const listed = await createDemoMasterRepository().listWarehouses();
+        expect(listed.map((warehouse) => warehouse.code)).toEqual(['WH-BSN-FG', 'WH-BSN-PK', 'WH-ICN-FG', 'WH-ICN-RM']);
+        expect(demoWarehouses.every((warehouse) => warehouse.isActive)).toBe(true);
+    });
+
+    it('requires the site to exist and to belong to the same company', async () => {
+        const repository = createDemoMasterRepository();
+
+        await expect(repository.createWarehouse(warehouseDraft({ siteId: 'missing-site' }))).rejects.toMatchObject({ code: 'site_not_found' });
+        await expect(repository.createWarehouse(warehouseDraft({ siteId: 'site-nxd-bsn' }))).rejects.toMatchObject({ code: 'site_company_mismatch' });
+        await expect(repository.createWarehouse(warehouseDraft())).resolves.toMatchObject({ code: 'WH-NEW', siteId: 'site-nxm-icn' });
+    });
+
+    it('scopes code uniqueness to the company and keeps the code immutable', async () => {
+        const repository = createDemoMasterRepository();
+        const created = await repository.createWarehouse(warehouseDraft());
+
+        await expect(repository.createWarehouse(warehouseDraft())).rejects.toMatchObject({ code: 'duplicate_code' });
+        await expect(repository.createWarehouse(warehouseDraft({ companyId: 'company-nxd', siteId: 'site-nxd-bsn' }))).resolves.toMatchObject({ code: 'WH-NEW' });
+
+        const updated = await repository.updateWarehouse(created.id, { code: 'CHANGED', name: '수정 창고' });
+        expect(updated).toMatchObject({ code: 'WH-NEW', name: '수정 창고' });
+        await expect(repository.updateWarehouse('missing', { name: '없음' })).rejects.toMatchObject({ code: 'not_found' });
+    });
+
+    it('deactivates the warehouses of a site, directly and through the company cascade', async () => {
+        const repository = createDemoMasterRepository();
+
+        await repository.updateSite('site-nxm-icn', { isActive: false });
+        const afterSite = await repository.listWarehouses();
+        expect(afterSite.filter((warehouse) => warehouse.siteId === 'site-nxm-icn').every((warehouse) => !warehouse.isActive)).toBe(true);
+        await expect(repository.updateWarehouse('warehouse-icn-rm', { isActive: true })).rejects.toMatchObject({ code: 'site_inactive' });
+
+        await repository.updateCompany('company-nxd', { isActive: false });
+        const afterCompany = await repository.listWarehouses();
+        expect(afterCompany.some((warehouse) => warehouse.isActive)).toBe(false);
     });
 });

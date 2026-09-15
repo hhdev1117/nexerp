@@ -3,10 +3,12 @@ import {
     MASTER_MESSAGES,
     ITEM_TYPE,
     SITE_TYPE,
+    WAREHOUSE_TYPE,
     companyPayload,
     createCompanyDraft,
     createItemDraft,
     createSiteDraft,
+    createWarehouseDraft,
     formatBusinessNumber,
     itemPayload,
     itemTypeLabel,
@@ -19,7 +21,11 @@ import {
     validateCompanyDraft,
     validateItemDraft,
     validatePartnerDraft,
-    validateSiteDraft
+    validateSiteDraft,
+    validateWarehouseDraft,
+    warehousePayload,
+    warehouseTypeLabel,
+    warehouseTypeOptions
 } from './master';
 
 describe('company master rules', () => {
@@ -189,6 +195,45 @@ describe('item master rules', () => {
             unit: 'EA',
             safetyStock: 1200,
             standardPrice: 0,
+            isActive: true
+        });
+    });
+});
+
+describe('warehouse master rules', () => {
+    it('labels warehouse types in Korean and falls back to the raw code', () => {
+        expect(warehouseTypeLabel(WAREHOUSE_TYPE.RAW_MATERIAL)).toBe('원자재창고');
+        expect(warehouseTypeLabel(WAREHOUSE_TYPE.PACKAGING)).toBe('부자재창고');
+        expect(warehouseTypeLabel('unmapped')).toBe('unmapped');
+        expect(warehouseTypeOptions.map((option) => option.value)).toEqual(['raw_material', 'finished_good', 'packaging', 'general']);
+    });
+
+    it('drafts with the general type and carries the company and site through', () => {
+        expect(createWarehouseDraft(null, 'company-1', 'site-1')).toEqual({ companyId: 'company-1', siteId: 'site-1', code: '', name: '', warehouseType: WAREHOUSE_TYPE.GENERAL, isActive: true });
+        expect(createWarehouseDraft({ companyId: 'c1', siteId: 's1', code: 'WH-1', name: '창고', warehouseType: WAREHOUSE_TYPE.PACKAGING, isActive: false })).toEqual({
+            companyId: 'c1',
+            siteId: 's1',
+            code: 'WH-1',
+            name: '창고',
+            warehouseType: WAREHOUSE_TYPE.PACKAGING,
+            isActive: false
+        });
+    });
+
+    it('requires a company, a site, a valid code, a name and a known type', () => {
+        expect(validateWarehouseDraft({ companyId: 'c1', siteId: 's1', code: 'WH-ICN-RM', name: '인천 원자재창고', warehouseType: WAREHOUSE_TYPE.RAW_MATERIAL })).toEqual({});
+
+        const errors = validateWarehouseDraft({ companyId: '', siteId: '', code: 'W', name: '  ', warehouseType: 'unknown' });
+        expect(Object.keys(errors).sort()).toEqual(['code', 'companyId', 'name', 'siteId', 'warehouseType']);
+    });
+
+    it('normalizes the code and trims identifiers on the payload', () => {
+        expect(warehousePayload({ companyId: ' c1 ', siteId: ' s1 ', code: ' wh-icn-rm ', name: ' 인천 원자재창고 ', warehouseType: WAREHOUSE_TYPE.RAW_MATERIAL, isActive: true })).toEqual({
+            companyId: 'c1',
+            siteId: 's1',
+            code: 'WH-ICN-RM',
+            name: '인천 원자재창고',
+            warehouseType: WAREHOUSE_TYPE.RAW_MATERIAL,
             isActive: true
         });
     });

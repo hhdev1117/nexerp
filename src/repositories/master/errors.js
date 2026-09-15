@@ -6,6 +6,9 @@ export const MASTER_ERROR_MESSAGES = Object.freeze({
     duplicate_business_number: '이미 사용 중인 사업자등록번호입니다.',
     invalid_value: '입력 값의 형식이 올바르지 않습니다.',
     company_inactive: '비활성 회사에는 활성 사업장 또는 거래처를 둘 수 없습니다.',
+    site_inactive: '비활성 사업장에는 활성 창고를 둘 수 없습니다.',
+    site_company_mismatch: '선택한 사업장이 해당 회사 소속이 아닙니다.',
+    site_not_found: '사업장을 찾을 수 없습니다.',
     admin_required: '관리자 권한이 필요합니다.',
     not_found: '대상을 찾을 수 없습니다.'
 });

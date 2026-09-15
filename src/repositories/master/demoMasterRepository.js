@@ -1,4 +1,4 @@
-import { ITEM_TYPE, ITEM_UNIT_PATTERN, MASTER_CODE_PATTERN, SITE_TYPE, normalizeBusinessNumber, normalizeCode, normalizeText, normalizeUnit } from '@/data/master';
+import { ITEM_TYPE, ITEM_UNIT_PATTERN, MASTER_CODE_PATTERN, SITE_TYPE, WAREHOUSE_TYPE, normalizeBusinessNumber, normalizeCode, normalizeText, normalizeUnit } from '@/data/master';
 import { masterError } from './errors';
 
 export const demoCompanies = Object.freeze([
@@ -136,6 +136,16 @@ export const demoItems = Object.freeze(
     ].map((item) => Object.freeze({ ...item, companyId: 'company-nxm', isActive: true, createdAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z' }))
 );
 
+// Names mirror the warehouse labels used by the demo inventory rows in src/data/erp.js.
+export const demoWarehouses = Object.freeze(
+    [
+        { id: 'warehouse-icn-rm', companyId: 'company-nxm', siteId: 'site-nxm-icn', code: 'WH-ICN-RM', name: '인천 원자재창고', warehouseType: WAREHOUSE_TYPE.RAW_MATERIAL },
+        { id: 'warehouse-icn-fg', companyId: 'company-nxm', siteId: 'site-nxm-icn', code: 'WH-ICN-FG', name: '인천 완제품창고', warehouseType: WAREHOUSE_TYPE.FINISHED_GOOD },
+        { id: 'warehouse-bsn-fg', companyId: 'company-nxd', siteId: 'site-nxd-bsn', code: 'WH-BSN-FG', name: '부산 완제품창고', warehouseType: WAREHOUSE_TYPE.FINISHED_GOOD },
+        { id: 'warehouse-bsn-pk', companyId: 'company-nxd', siteId: 'site-nxd-bsn', code: 'WH-BSN-PK', name: '부산 부자재창고', warehouseType: WAREHOUSE_TYPE.PACKAGING }
+    ].map((warehouse) => Object.freeze({ ...warehouse, isActive: true, createdAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z' }))
+);
+
 const withoutIdentity = (fields) => {
     const draft = { ...fields };
     delete draft.id;
@@ -152,14 +162,17 @@ const BUSINESS_NUMBER_PATTERN = /^\d{10}$/;
 
 const ITEM_WRITABLE_FIELDS = Object.freeze(['companyId', 'code', 'name', 'itemType', 'unit', 'safetyStock', 'standardPrice', 'isActive']);
 const itemFields = (values) => Object.fromEntries(ITEM_WRITABLE_FIELDS.filter((key) => values?.[key] !== undefined).map((key) => [key, values[key]]));
+const WAREHOUSE_WRITABLE_FIELDS = Object.freeze(['companyId', 'siteId', 'code', 'name', 'warehouseType', 'isActive']);
+const warehouseFields = (values) => Object.fromEntries(WAREHOUSE_WRITABLE_FIELDS.filter((key) => values?.[key] !== undefined).map((key) => [key, values[key]]));
 
 // In-memory implementation that mirrors the database rules (unique codes, active-company
 // requirement, cascade deactivation) so the UI behaves the same before Supabase is connected.
-export function createDemoMasterRepository({ companies = demoCompanies, sites = demoSites, partners = demoPartners, items = demoItems, now = () => new Date() } = {}) {
+export function createDemoMasterRepository({ companies = demoCompanies, sites = demoSites, partners = demoPartners, items = demoItems, warehouses = demoWarehouses, now = () => new Date() } = {}) {
     const companyState = cloneRows(companies);
     const siteState = cloneRows(sites);
     const partnerState = cloneRows(partners);
     const itemState = cloneRows(items);
+    const warehouseState = cloneRows(warehouses);
     let sequence = 0;
 
     const nextId = (prefix) => `${prefix}-${String(++sequence).padStart(3, '0')}`;
@@ -168,6 +181,7 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
     const findSite = (id) => siteState.find((site) => site.id === id);
     const findPartner = (id) => partnerState.find((partner) => partner.id === id);
     const findItem = (id) => itemState.find((row) => row.id === id);
+    const findWarehouse = (id) => warehouseState.find((row) => row.id === id);
 
     const assertCompanyUnique = (code, businessNumber, exceptId) => {
         if (companyState.some((company) => company.id !== exceptId && company.code === code)) throw masterError('duplicate_code');
@@ -180,6 +194,17 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
 
     const assertItemUnique = (companyId, code, exceptId) => {
         if (itemState.some((row) => row.id !== exceptId && row.companyId === companyId && row.code === code)) throw masterError('duplicate_code');
+    };
+
+    const assertWarehouseUnique = (companyId, code, exceptId) => {
+        if (warehouseState.some((row) => row.id !== exceptId && row.companyId === companyId && row.code === code)) throw masterError('duplicate_code');
+    };
+
+    // The database deactivates a site's warehouses through a trigger; mirror that here.
+    const deactivateWarehousesOfSite = (siteId) => {
+        for (const row of warehouseState) {
+            if (row.siteId === siteId && row.isActive) Object.assign(row, { isActive: false, updatedAt: stamp() });
+        }
     };
 
     const assertPartnerUnique = (companyId, code, businessNumber, exceptId) => {
@@ -265,6 +290,30 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
         if (row.isActive && !company.isActive) throw masterError('company_inactive');
     };
 
+    const normalizeWarehouseFields = (values) => {
+        const fields = warehouseFields(values);
+        if (fields.code !== undefined) fields.code = normalizeCode(fields.code);
+        for (const key of ['companyId', 'siteId', 'name']) {
+            if (fields[key] === undefined) continue;
+            if (typeof fields[key] !== 'string') throw masterError('invalid_value');
+            fields[key] = normalizeText(fields[key]);
+        }
+        if (fields.isActive !== undefined && typeof fields.isActive !== 'boolean') throw masterError('invalid_value');
+        return fields;
+    };
+
+    const assertWarehouse = (row) => {
+        assertCode(row.code);
+        if (typeof row.companyId !== 'string' || !row.companyId) throw masterError('invalid_value');
+        if (typeof row.name !== 'string' || !row.name) throw masterError('invalid_value');
+        if (!Object.values(WAREHOUSE_TYPE).includes(row.warehouseType)) throw masterError('invalid_value');
+
+        const site = findSite(row.siteId);
+        if (!site) throw masterError('site_not_found');
+        if (site.companyId !== row.companyId) throw masterError('site_company_mismatch');
+        if (row.isActive && !site.isActive) throw masterError('site_inactive');
+    };
+
     return {
         async listCompanies() {
             return cloneRows(byCode(companyState));
@@ -308,7 +357,9 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
             Object.assign(company, next, { updatedAt: stamp() });
             if (wasActive && !company.isActive) {
                 for (const site of siteState) {
-                    if (site.companyId === id && site.isActive) Object.assign(site, { isActive: false, updatedAt: stamp() });
+                    if (site.companyId !== id || !site.isActive) continue;
+                    Object.assign(site, { isActive: false, updatedAt: stamp() });
+                    deactivateWarehousesOfSite(site.id);
                 }
             }
             return { ...company };
@@ -351,7 +402,9 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
             }
             assertSiteCompany(next);
             assertSiteUnique(next.companyId, next.code, id);
+            const siteWasActive = site.isActive;
             Object.assign(site, next, { updatedAt: stamp() });
+            if (siteWasActive && !site.isActive) deactivateWarehousesOfSite(id);
             return { ...site };
         },
 
@@ -435,6 +488,43 @@ export function createDemoMasterRepository({ companies = demoCompanies, sites = 
             const next = { ...row, ...fields };
             assertItem(next);
             assertItemUnique(next.companyId, next.code, id);
+            Object.assign(row, next, { updatedAt: stamp() });
+            return { ...row };
+        },
+
+        async listWarehouses() {
+            return cloneRows(byCode(warehouseState));
+        },
+
+        async createWarehouse(draft) {
+            const fields = normalizeWarehouseFields(withoutIdentity(draft));
+            const candidate = {
+                companyId: fields.companyId,
+                siteId: fields.siteId,
+                code: fields.code,
+                name: fields.name,
+                warehouseType: fields.warehouseType ?? WAREHOUSE_TYPE.GENERAL,
+                isActive: fields.isActive !== false
+            };
+            assertWarehouse(candidate);
+            assertWarehouseUnique(candidate.companyId, candidate.code);
+
+            const timestamp = stamp();
+            const created = { id: nextId('warehouse'), ...candidate, createdAt: timestamp, updatedAt: timestamp };
+            warehouseState.push(created);
+            return { ...created };
+        },
+
+        async updateWarehouse(id, changes) {
+            const row = findWarehouse(id);
+            if (!row) throw masterError('not_found');
+
+            const mutableChanges = withoutIdentity(changes);
+            delete mutableChanges.code;
+            const fields = normalizeWarehouseFields(mutableChanges);
+            const next = { ...row, ...fields };
+            assertWarehouse(next);
+            assertWarehouseUnique(next.companyId, next.code, id);
             Object.assign(row, next, { updatedAt: stamp() });
             return { ...row };
         }

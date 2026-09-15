@@ -12,6 +12,7 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
     const sites = ref([]);
     const partners = ref([]);
     const items = ref([]);
+    const warehouses = ref([]);
     const loading = ref(false);
     const loaded = ref(false);
     const error = ref(null);
@@ -22,6 +23,7 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
     const activeSites = computed(() => sites.value.filter((site) => site.isActive));
     const activePartners = computed(() => partners.value.filter((partner) => partner.isActive));
     const activeItems = computed(() => items.value.filter((item) => item.isActive));
+    const activeWarehouses = computed(() => warehouses.value.filter((warehouse) => warehouse.isActive));
     const siteCountByCompany = computed(() =>
         sites.value.reduce((counts, site) => {
             counts[site.companyId] = (counts[site.companyId] || 0) + 1;
@@ -34,17 +36,20 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
     const partnersFor = (companyId) => partners.value.filter((partner) => partner.companyId === companyId);
     const itemsFor = (companyId) => items.value.filter((item) => item.companyId === companyId);
     const itemById = (id) => items.value.find((item) => item.id === id) || null;
+    const warehousesFor = (companyId) => warehouses.value.filter((warehouse) => warehouse.companyId === companyId);
+    const warehousesForSite = (siteId) => warehouses.value.filter((warehouse) => warehouse.siteId === siteId);
 
     async function load() {
         const sequence = ++loadSequence;
         loading.value = true;
         try {
-            const [nextCompanies, nextSites, nextPartners, nextItems] = await Promise.all([repository.listCompanies(), repository.listSites(), repository.listPartners(), repository.listItems()]);
+            const [nextCompanies, nextSites, nextPartners, nextItems, nextWarehouses] = await Promise.all([repository.listCompanies(), repository.listSites(), repository.listPartners(), repository.listItems(), repository.listWarehouses()]);
             if (sequence !== loadSequence) return;
             companies.value = byCode(nextCompanies);
             sites.value = byCode(nextSites);
             partners.value = byCode(nextPartners);
             items.value = byCode(nextItems);
+            warehouses.value = byCode(nextWarehouses);
             loaded.value = true;
             error.value = null;
         } catch {
@@ -77,8 +82,11 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
         if (changes?.isActive === false) {
             // The database cascades deactivation to sites; refresh them, or mirror it locally if the refresh fails.
             try {
-                sites.value = byCode(await repository.listSites());
+                const [nextSites, nextWarehouses] = await Promise.all([repository.listSites(), repository.listWarehouses()]);
+                sites.value = byCode(nextSites);
+                warehouses.value = byCode(nextWarehouses);
             } catch {
+                applyWarehouseCascade(sites.value.filter((site) => site.companyId === id).map((site) => site.id));
                 sites.value = sites.value.map((site) => (site.companyId === id ? { ...site, isActive: false } : site));
             }
         }
@@ -95,6 +103,7 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
     async function updateSite(id, changes) {
         const updated = await repository.updateSite(id, changes);
         sites.value = byCode(replaceById(sites.value, updated));
+        if (changes?.isActive === false) applyWarehouseCascade([id]);
         return updated;
     }
 
@@ -122,15 +131,35 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
         return updated;
     }
 
+    async function createWarehouse(draft) {
+        const created = await repository.createWarehouse(draft);
+        warehouses.value = byCode([...warehouses.value, created]);
+        return created;
+    }
+
+    async function updateWarehouse(id, changes) {
+        const updated = await repository.updateWarehouse(id, changes);
+        warehouses.value = byCode(replaceById(warehouses.value, updated));
+        return updated;
+    }
+
+    // Deactivating a site cascades to its warehouses in the database; mirror it locally so the
+    // screen does not keep showing a warehouse as active after the write succeeds.
+    const applyWarehouseCascade = (siteIds) => {
+        warehouses.value = warehouses.value.map((warehouse) => (siteIds.includes(warehouse.siteId) && warehouse.isActive ? { ...warehouse, isActive: false } : warehouse));
+    };
+
     return {
         companies,
         sites,
         partners,
         items,
+        warehouses,
         activeCompanies,
         activeSites,
         activePartners,
         activeItems,
+        activeWarehouses,
         siteCountByCompany,
         loading,
         loaded,
@@ -140,6 +169,8 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
         partnersFor,
         itemsFor,
         itemById,
+        warehousesFor,
+        warehousesForSite,
         ensureLoaded,
         reload,
         createCompany,
@@ -149,7 +180,9 @@ export function createMasterStore({ repository = createDefaultMasterRepository()
         createPartner,
         updatePartner,
         createItem,
-        updateItem
+        updateItem,
+        createWarehouse,
+        updateWarehouse
     };
 }
 

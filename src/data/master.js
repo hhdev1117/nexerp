@@ -48,6 +48,26 @@ export function itemTypeLabel(code) {
 export const ITEM_UNITS = Object.freeze(['EA', 'BOX', 'SET', 'KG', 'G', 'TON', 'M', 'CM', 'MM', 'L', 'ML', 'ROLL', 'HR']);
 export const itemUnitOptions = Object.freeze(ITEM_UNITS.map((value) => Object.freeze({ value, label: value })));
 
+export const WAREHOUSE_TYPE = Object.freeze({
+    RAW_MATERIAL: 'raw_material',
+    FINISHED_GOOD: 'finished_good',
+    PACKAGING: 'packaging',
+    GENERAL: 'general'
+});
+
+const warehouseTypeLabels = Object.freeze({
+    raw_material: '원자재창고',
+    finished_good: '완제품창고',
+    packaging: '부자재창고',
+    general: '일반창고'
+});
+
+export const warehouseTypeOptions = Object.freeze(Object.entries(warehouseTypeLabels).map(([value, label]) => Object.freeze({ value, label })));
+
+export function warehouseTypeLabel(code) {
+    return warehouseTypeLabels[code] ?? (typeof code === 'string' ? code : '');
+}
+
 // Mirrors the database check constraints so users see the problem before a round trip.
 export const MASTER_CODE_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
 export const ITEM_UNIT_PATTERN = /^[A-Z]{1,8}$/;
@@ -65,7 +85,10 @@ export const MASTER_MESSAGES = Object.freeze({
     itemType: '품목 유형을 선택해 주세요.',
     unit: '단위는 영문 대문자 1자 이상 8자 이하여야 합니다.',
     safetyStock: '안전재고는 0 이상의 숫자여야 합니다.',
-    standardPrice: '표준단가는 0 이상의 숫자여야 합니다.'
+    standardPrice: '표준단가는 0 이상의 숫자여야 합니다.',
+    site: '사업장을 선택해 주세요.',
+    warehouseName: '창고명을 입력해 주세요.',
+    warehouseType: '창고 유형을 선택해 주세요.'
 });
 
 export const normalizeCode = (value) => (typeof value === 'string' ? value.trim().toUpperCase() : '');
@@ -207,6 +230,38 @@ export function itemPayload(draft) {
         unit: normalizeUnit(draft.unit),
         safetyStock: toAmount(draft.safetyStock),
         standardPrice: toAmount(draft.standardPrice),
+        isActive: draft.isActive === true
+    };
+}
+
+export function createWarehouseDraft(warehouse = null, companyId = '', siteId = '') {
+    return {
+        companyId: warehouse?.companyId ?? companyId ?? '',
+        siteId: warehouse?.siteId ?? siteId ?? '',
+        code: warehouse?.code ?? '',
+        name: warehouse?.name ?? '',
+        warehouseType: warehouse?.warehouseType ?? WAREHOUSE_TYPE.GENERAL,
+        isActive: warehouse ? warehouse.isActive === true : true
+    };
+}
+
+export function validateWarehouseDraft(draft) {
+    const errors = {};
+    if (!normalizeText(draft?.companyId)) errors.companyId = MASTER_MESSAGES.company;
+    if (!normalizeText(draft?.siteId)) errors.siteId = MASTER_MESSAGES.site;
+    if (!MASTER_CODE_PATTERN.test(normalizeCode(draft?.code))) errors.code = MASTER_MESSAGES.code;
+    if (!normalizeText(draft?.name)) errors.name = MASTER_MESSAGES.warehouseName;
+    if (!Object.hasOwn(warehouseTypeLabels, draft?.warehouseType)) errors.warehouseType = MASTER_MESSAGES.warehouseType;
+    return errors;
+}
+
+export function warehousePayload(draft) {
+    return {
+        companyId: normalizeText(draft.companyId),
+        siteId: normalizeText(draft.siteId),
+        code: normalizeCode(draft.code),
+        name: normalizeText(draft.name),
+        warehouseType: draft.warehouseType,
         isActive: draft.isActive === true
     };
 }

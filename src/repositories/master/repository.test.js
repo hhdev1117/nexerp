@@ -5,7 +5,23 @@ import { MASTER_REPOSITORY_METHODS, assertMasterRepository, createDefaultMasterR
 
 describe('master repository contract', () => {
     it('declares the complete asynchronous contract', () => {
-        expect(MASTER_REPOSITORY_METHODS).toEqual(['listCompanies', 'createCompany', 'updateCompany', 'listSites', 'createSite', 'updateSite', 'listPartners', 'createPartner', 'updatePartner', 'listItems', 'createItem', 'updateItem']);
+        expect(MASTER_REPOSITORY_METHODS).toEqual([
+            'listCompanies',
+            'createCompany',
+            'updateCompany',
+            'listSites',
+            'createSite',
+            'updateSite',
+            'listPartners',
+            'createPartner',
+            'updatePartner',
+            'listItems',
+            'createItem',
+            'updateItem',
+            'listWarehouses',
+            'createWarehouse',
+            'updateWarehouse'
+        ]);
         for (const method of MASTER_REPOSITORY_METHODS) expect(createDemoMasterRepository()[method]).toEqual(expect.any(Function));
     });
 
@@ -24,11 +40,16 @@ describe('master repository contract', () => {
             createPartner() {},
             updatePartner() {},
             listItems() {},
-            createItem() {}
+            createItem() {},
+            updateItem() {},
+            listWarehouses() {},
+            createWarehouse() {}
         }
     ])('rejects an incomplete repository %#', (repository) => {
+        // Derived from the contract so a new method does not require editing this string.
+        const expectedMethods = `${MASTER_REPOSITORY_METHODS.slice(0, -1).join(', ')}, and ${MASTER_REPOSITORY_METHODS.at(-1)}`;
         expect(() => assertMasterRepository(repository)).toThrow(TypeError);
-        expect(() => assertMasterRepository(repository)).toThrow('listCompanies, createCompany, updateCompany, listSites, createSite, updateSite, listPartners, createPartner, updatePartner, listItems, createItem, and updateItem');
+        expect(() => assertMasterRepository(repository)).toThrow(expectedMethods);
     });
 
     it('returns the same complete repository it validated', () => {
