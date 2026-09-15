@@ -5,8 +5,59 @@ import { createMasterStore } from './master';
 
 const mockRepository = () => Object.fromEntries(MASTER_REPOSITORY_METHODS.map((method) => [method, vi.fn()]));
 
+const deferred = () => {
+    let resolve;
+    const promise = new Promise((next) => {
+        resolve = next;
+    });
+    return { promise, resolve };
+};
+
+const partnerRecord = (overrides = {}) => ({
+    id: 'partner-1',
+    companyId: 'company-1',
+    code: 'CUS-001',
+    name: '테스트 거래처',
+    businessNumber: null,
+    isCustomer: true,
+    isVendor: false,
+    representative: '',
+    email: '',
+    phone: '',
+    address: '',
+    isActive: true,
+    createdAt: '2026-01-05T00:00:00.000Z',
+    updatedAt: '2026-01-05T00:00:00.000Z',
+    ...overrides
+});
+
 describe('master store', () => {
-    it('loads companies and sites once, sorted by code, and exposes derived views', async () => {
+    it('starts company, site, and partner reads before any initial read resolves', async () => {
+        const repository = mockRepository();
+        const companies = deferred();
+        const sites = deferred();
+        const partners = deferred();
+        repository.listCompanies.mockReturnValue(companies.promise);
+        repository.listSites.mockReturnValue(sites.promise);
+        repository.listPartners.mockReturnValue(partners.promise);
+        const store = createMasterStore({ repository });
+
+        const loading = store.ensureLoaded();
+        const callsBeforeResolution = {
+            companies: repository.listCompanies.mock.calls.length,
+            sites: repository.listSites.mock.calls.length,
+            partners: repository.listPartners.mock.calls.length
+        };
+        companies.resolve([]);
+        sites.resolve([]);
+        partners.resolve([]);
+        await loading;
+
+        expect(callsBeforeResolution).toEqual({ companies: 1, sites: 1, partners: 1 });
+        expect(store.loaded.value).toBe(true);
+    });
+
+    it('loads master data once, sorted by code, and exposes derived views', async () => {
         const repository = mockRepository();
         repository.listCompanies.mockResolvedValue([
             { id: 'b', code: 'NXM', isActive: true },
@@ -16,6 +67,11 @@ describe('master store', () => {
             { id: 's2', companyId: 'b', code: 'ICN', isActive: true },
             { id: 's1', companyId: 'b', code: 'HQ', isActive: false }
         ]);
+        repository.listPartners.mockResolvedValue([
+            partnerRecord({ id: 'p2', companyId: 'b', code: 'VEN-010', isActive: false }),
+            partnerRecord({ id: 'p1', companyId: 'a', code: 'CUS-002' }),
+            partnerRecord({ id: 'p3', companyId: 'b', code: 'CUS-001' })
+        ]);
         const store = createMasterStore({ repository });
 
         expect(store.loaded.value).toBe(false);
@@ -23,23 +79,32 @@ describe('master store', () => {
         await store.ensureLoaded();
 
         expect(repository.listCompanies).toHaveBeenCalledOnce();
+        expect(repository.listSites).toHaveBeenCalledOnce();
+        expect(repository.listPartners).toHaveBeenCalledOnce();
         expect(store.companies.value.map((company) => company.code)).toEqual(['NXD', 'NXM']);
         expect(store.sites.value.map((site) => site.code)).toEqual(['HQ', 'ICN']);
+        expect(store.partners.value.map((partner) => partner.code)).toEqual(['CUS-001', 'CUS-002', 'VEN-010']);
         expect(store.activeCompanies.value.map((company) => company.id)).toEqual(['b']);
         expect(store.activeSites.value.map((site) => site.id)).toEqual(['s2']);
+        expect(store.activePartners.value.map((partner) => partner.id)).toEqual(['p3', 'p1']);
         expect(store.siteCountByCompany.value).toEqual({ b: 2 });
         expect(store.companyById('a')).toMatchObject({ code: 'NXD' });
         expect(store.companyById('zzz')).toBeNull();
         expect(store.sitesFor('b')).toHaveLength(2);
+        expect(store.partnersFor('b').map((partner) => partner.id)).toEqual(['p3', 'p2']);
+        expect(store.partnersFor('a').map((partner) => partner.id)).toEqual(['p1']);
+        expect(store.partnersFor('missing')).toEqual([]);
         expect(store.loaded.value).toBe(true);
         expect(store.loading.value).toBe(false);
         expect(store.error.value).toBeNull();
 
         await store.reload();
         expect(repository.listCompanies).toHaveBeenCalledTimes(2);
+        expect(repository.listSites).toHaveBeenCalledTimes(2);
+        expect(repository.listPartners).toHaveBeenCalledTimes(2);
     });
 
-    it('creates and updates companies and sites through the repository', async () => {
+    it('creates and updates companies, sites, and partners through the repository', async () => {
         const store = createMasterStore({ repository: createDemoMasterRepository() });
         await store.ensureLoaded();
 
@@ -56,6 +121,28 @@ describe('master store', () => {
         const updatedSite = await store.updateSite(site.id, { name: '대전 사무소' });
         expect(updatedSite.name).toBe('대전 사무소');
         expect(store.sitesFor(created.id)[0]).toMatchObject({ id: site.id, name: '대전 사무소' });
+
+        const partner = await store.createPartner({
+            companyId: created.id,
+            code: 'AAA-001',
+            name: '새 거래처',
+            businessNumber: '1234567890',
+            isCustomer: true,
+            isVendor: true,
+            representative: '',
+            email: '',
+            phone: '',
+            address: '',
+            isActive: true
+        });
+        expect(store.partners.value.map((row) => row.code)).toEqual(['AAA-001', 'CUS-001', 'DUAL-001', 'VEN-001']);
+
+        const updatedPartner = await store.updatePartner(partner.id, { code: 'ZZZ-001', name: '수정 거래처' });
+        expect(updatedPartner.name).toBe('수정 거래처');
+        expect(updatedPartner.code).toBe('AAA-001');
+        expect(store.partners.value).toHaveLength(4);
+        expect(store.partners.value.map((row) => row.code)).toEqual(['AAA-001', 'CUS-001', 'DUAL-001', 'VEN-001']);
+        expect(store.partners.value.find((row) => row.id === partner.id)).toEqual(updatedPartner);
     });
 
     it('refreshes sites after a company is deactivated so the cascade is visible', async () => {
@@ -70,10 +157,30 @@ describe('master store', () => {
         expect(store.activeCompanies.value.map((company) => company.code)).toEqual(['NXD']);
     });
 
+    it('does not let a stale overlapping load overwrite newer partner state', async () => {
+        const repository = mockRepository();
+        const olderPartners = deferred();
+        const newerPartners = deferred();
+        repository.listCompanies.mockResolvedValue([]);
+        repository.listSites.mockResolvedValue([]);
+        repository.listPartners.mockReturnValueOnce(olderPartners.promise).mockReturnValueOnce(newerPartners.promise);
+        const store = createMasterStore({ repository });
+
+        const olderLoad = store.ensureLoaded();
+        const newerLoad = store.reload();
+        newerPartners.resolve([partnerRecord({ id: 'newer', code: 'NEW-001' })]);
+        await newerLoad;
+        olderPartners.resolve([partnerRecord({ id: 'older', code: 'OLD-001' })]);
+        await olderLoad;
+
+        expect(store.partners.value.map((partner) => partner.id)).toEqual(['newer']);
+    });
+
     it('mirrors the cascade locally when the site refresh fails', async () => {
         const repository = mockRepository();
         repository.listCompanies.mockResolvedValue([{ id: 'c1', code: 'NXM', isActive: true }]);
         repository.listSites.mockResolvedValueOnce([{ id: 's1', companyId: 'c1', code: 'HQ', isActive: true }]).mockRejectedValueOnce(new Error('sentinel'));
+        repository.listPartners.mockResolvedValue([]);
         repository.updateCompany.mockResolvedValue({ id: 'c1', code: 'NXM', isActive: false });
         const store = createMasterStore({ repository });
         await store.ensureLoaded();
@@ -89,6 +196,7 @@ describe('master store', () => {
         const repository = mockRepository();
         repository.listCompanies.mockRejectedValue(new Error('sentinel-connection-string'));
         repository.listSites.mockResolvedValue([]);
+        repository.listPartners.mockResolvedValue([]);
         repository.createCompany.mockRejectedValue(Object.assign(new Error('이미 사용 중인 코드 또는 사업자등록번호입니다.'), { code: 'duplicate_code' }));
         const store = createMasterStore({ repository });
 

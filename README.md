@@ -1,6 +1,6 @@
 # NEXERP
 
-NEXERP is a multi-company, multi-site ERP built on Vue 3, PrimeVue, Cloudflare Workers Static Assets, and Supabase authentication. Roles are `admin`, `approver`, and `user`. Company and site master data persist in Supabase (`companies`, `sites`); the remaining business records still use the in-memory demo repository.
+NEXERP is a multi-company, multi-site ERP built on Vue 3, PrimeVue, Cloudflare Workers Static Assets, and Supabase authentication. Roles are `admin`, `approver`, and `user`. Company, site, and partner master data persist in Supabase (`companies`, `sites`, `partners`); the remaining transaction records still use the in-memory demo repository. Active MFA-verified users may read `master.partners`, while only administrators may create, edit, deactivate, or reactivate partners.
 
 ## Quick Start
 

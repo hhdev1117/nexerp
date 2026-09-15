@@ -50,4 +50,21 @@ describe('setup documentation', () => {
         expect(localExample).not.toMatch(/SUPABASE_MANAGEMENT_TOKEN=(?:sbp_|eyJ|[A-Za-z0-9_-]{20,})/);
         expect(localExample).not.toMatch(/CLOUDFLARE_API_TOKEN=[A-Za-z0-9_-]{20,}/);
     });
+
+    it('documents persistent partner master data and its access boundary', () => {
+        const docs = readDocumentationSet();
+
+        expect(docs).toMatch(/companies[\s\S]*sites[\s\S]*partners/i);
+        expect(docs).toContain('master.partners');
+        expect(docs).toMatch(/MFA-verified[\s\S]*read[\s\S]*administrator/i);
+    });
+
+    it('blocks db push until manually applied migrations are reconciled', () => {
+        const operations = readDocument(operationsPath);
+
+        expect(operations).toContain('mehhrnbaiojivesnobpv');
+        expect(operations).toContain('supabase_migrations.schema_migrations');
+        expect(operations).toContain('migration repair --status applied');
+        expect(operations).toMatch(/403[\s\S]*Do not run `npx supabase db push`/i);
+    });
 });

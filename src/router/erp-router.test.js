@@ -23,6 +23,8 @@ describe('ERP router', () => {
         expect(router.resolve('/finance/summary').name).toBe('finance-summary');
         expect(routerSource).toContain("'/settings/company': () => import('@/views/master/CompanySites.vue')");
         expect(router.resolve('/settings/company').name).toBe('settings-company');
+        expect(routerSource).toContain("'/master/partners': () => import('@/views/master/Partners.vue')");
+        expect(router.resolve('/master/partners').name).toBe('master-partners');
     });
 
     it('uses dedicated administrator screens instead of the generic module', () => {
@@ -52,6 +54,13 @@ describe('ERP router', () => {
         for (const item of flattenMenuRoutes(erpMenu)) {
             expect(router.resolve(item.to).meta.menuKey, item.to).toBe(item.menuKey);
         }
+    });
+
+    it('redirects legacy customer and vendor bookmarks to the partner master', () => {
+        const routes = router.getRoutes();
+
+        expect(routes.find((route) => route.path === '/sales/customers')?.redirect).toBe('/master/partners');
+        expect(routes.find((route) => route.path === '/purchasing/vendors')?.redirect).toBe('/master/partners');
     });
 
     it('uses the canonical NEXERP browser title', () => {

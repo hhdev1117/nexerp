@@ -11,6 +11,7 @@ const dedicatedViews = {
     '/sales/orders': () => import('@/views/erp/SalesOrders.vue'),
     '/inventory/stock': () => import('@/views/erp/InventoryStock.vue'),
     '/finance/summary': () => import('@/views/erp/FinanceSummary.vue'),
+    '/master/partners': () => import('@/views/master/Partners.vue'),
     '/settings/company': () => import('@/views/master/CompanySites.vue'),
     '/settings/accounts': () => import('@/views/admin/AccountManagement.vue'),
     '/settings/menu-permissions': () => import('@/views/admin/MenuPermissionManagement.vue'),
@@ -60,6 +61,8 @@ const router = createRouter({
             component: () => import('@/views/auth/AccessDeniedView.vue'),
             meta: { title: '접근 권한 없음' }
         },
+        { path: '/sales/customers', redirect: '/master/partners' },
+        { path: '/purchasing/vendors', redirect: '/master/partners' },
         {
             path: '/',
             component: AppLayout,

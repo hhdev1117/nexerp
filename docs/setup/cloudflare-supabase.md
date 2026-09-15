@@ -21,7 +21,7 @@ Replace the placeholders locally. Do not commit either file. `.env.local` config
 
 ## Supabase Setup
 
-Authenticate the CLI, link the repository to the intended project, and apply committed migrations:
+For a new project whose migration history has always been managed by the CLI, authenticate, link the repository, and apply committed migrations:
 
 ```bash
 npx supabase login
@@ -29,9 +29,15 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase db push
 ```
 
+### Production Migration-History Blocker
+
+The current production project is `mehhrnbaiojivesnobpv` (`nexerp`). Migration `20260914000200_add_partners.sql` was applied through the authorized SQL Editor and its resulting schema was verified from PostgreSQL catalogs. That direct SQL execution did not establish CLI migration history. A subsequent read of `supabase_migrations.schema_migrations` reported that the table was absent, and the available management token reached the linked project but failed during CLI login-role initialization with HTTP `403`.
+
+Do not run `npx supabase db push` against `mehhrnbaiojivesnobpv` until an authorized operator has reconciled every manually applied version. First compare each committed migration with the live catalog. For each version confirmed as already applied, use the official tracking-only command `npx supabase migration repair --status applied <VERSION>`, then require `npx supabase migration list --linked` to succeed and show the expected local/remote versions. The local migration inventory currently contains `20260911000100`, `20260912000100`, `20260913000100`, `20260913000200`, `20260913000300`, `20260914000100`, and `20260914000200`; this inventory is not proof that every version is present remotely. Do not fabricate `supabase_migrations` tables or rows, and do not mark a version applied without the catalog comparison.
+
 The migrations create `profiles`, the `admin`/`approver`/`user` role type, account and menu-permission RPCs, signup triggers, explicit grants, and RLS policies. New accounts always begin with the `user` role until an authorized administrator assigns another role.
 
-They also create the `companies` and `sites` master tables. Any active, MFA-verified user can read them; only administrators can insert or update rows, and nothing can be deleted: deactivate a company or site instead. Deactivating a company automatically deactivates its sites. Register the first company and its sites from the `회사 · 사업장` screen after the administrator signs in.
+They also create the `companies`, `sites`, and `partners` master tables. Any active, MFA-verified user can read them; only administrators can insert or update rows, and nothing can be deleted. Deactivate a company, site, or partner instead. Deactivating a company automatically deactivates its sites, and inactive companies cannot receive or reactivate active partners. Partner codes are immutable after creation. Register companies and sites from `회사 · 사업장`, and manage customer/vendor roles in the unified `master.partners` screen (`거래처 관리`).
 
 After the intended first administrator has created an account, replace the placeholder below with that account's exact, already-known email. Run this read-only preflight in an authorized Supabase SQL Editor and confirm that it returns exactly one active profile with the expected identity:
 
@@ -133,7 +139,7 @@ After deployment, check `/api/health` at the assigned Worker domain. Exercise `/
 
 ## Data and Backup Scope
 
-The current `createDemoErpRepository()` implementation supplies cloned in-memory orders, approvals, and generic route records. Supabase currently persists authentication identities and profiles only; ERP business records reset with the demo state and are not persisted to Supabase yet.
+The current `createDemoErpRepository()` implementation supplies cloned in-memory orders, approvals, and generic route records. Supabase persists authentication identities, profiles, role-menu permissions, companies, sites, and partners. ERP transaction records still reset with the demo state and are not persisted to Supabase yet.
 
 The R2 capability boundary is explicitly disabled (`enabled: false`, `destructiveCleanup: false`). R2 bindings, scheduled exports, retention, purge, restore, encryption, lifecycle policy, and destructive cleanup are all deferred. Do not infer backup coverage from the presence of the boundary module.
 
